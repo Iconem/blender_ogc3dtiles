@@ -311,10 +311,13 @@ def select(root: Tile, view: ViewState, max_sse: float,
     queued: set = set()
     px, py, pz = view.position
 
-    def want(node: Tile, prio: float) -> None:
+    def want(node: Tile, prio: float, depth: int = 0) -> None:
+        """Queue a load. Ancestors go first (CesiumJS does the same): while a
+        parent is missing nothing can be shown for its whole region, so a
+        shallow tile is always worth more than a deep one."""
         if id(node) not in queued:
             queued.add(id(node))
-            sel.load.append((prio, node))
+            sel.load.append((prio - depth * 1e5, node))
 
     def visible(node: Tile):
         """→ (dist, err) or None when culled."""
@@ -367,7 +370,7 @@ def select(root: Tile, view: ViewState, max_sse: float,
         wc = wants_children(node, dist, err) and depth < max_depth
 
         if node.is_external_tileset and not node.grafted:
-            want(node, err + 1e6)            # tileset.json first, always
+            want(node, err + 1e7, depth)     # tileset.json first, always
             continue
 
         if node.refine == "ADD":
@@ -375,7 +378,7 @@ def select(root: Tile, view: ViewState, max_sse: float,
                 if not load_only:
                     sel.render.append(node)
                 if not is_ready(node):
-                    want(node, err)
+                    want(node, err, depth)
             if wc:
                 for c in node.children:
                     stack.append((c, depth + 1, load_only))
@@ -385,7 +388,7 @@ def select(root: Tile, view: ViewState, max_sse: float,
         if not wc:
             if node.has_drawable:
                 if not is_ready(node):
-                    want(node, err)
+                    want(node, err, depth)
                     # zoom-out: this coarser tile is not in yet but the finer
                     # children we were showing are — keep them on screen
                     # instead of dropping to nothing until it arrives
@@ -400,7 +403,7 @@ def select(root: Tile, view: ViewState, max_sse: float,
             # the parent above us waits for *this* node's content (one-level
             # gating), so request it even though we would refine it later
             if node.has_drawable and not is_ready(node):
-                want(node, err)
+                want(node, err, depth)
             for c in node.children:
                 stack.append((c, depth + 1, True))
             continue
@@ -410,7 +413,7 @@ def select(root: Tile, view: ViewState, max_sse: float,
         else:
             sel.render.append(node)          # keep parent until children are in
             if not is_ready(node):
-                want(node, err)
+                want(node, err, depth)
             for c in node.children:
                 stack.append((c, depth + 1, True))
 

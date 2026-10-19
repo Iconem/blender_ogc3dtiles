@@ -28,17 +28,19 @@ if sys.version_info < (3, 11):
 # neither of which imports bpy.
 if "bpy" in sys.modules:
     import bpy  # noqa: F401
-    from . import addon_prefs, tileset, camera, io, ui
+    from . import addon_prefs, tileset, camera, io, materials, ui
 
     def register():
         addon_prefs.register()
         tileset.register()
         camera.register()
         io.register()
+        materials.register()
         ui.register()
 
     def unregister():
         ui.unregister()
+        materials.unregister()
         io.unregister()
         camera.unregister()
         tileset.unregister()

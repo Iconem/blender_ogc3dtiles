@@ -451,8 +451,13 @@ def import_glb_file(path: str, key: str, scene: bpy.types.Scene, root: bpy.types
             obj.select_set(False)
         holder.hide_viewport = hidden
         holder.hide_render = hidden
+    new_mats = sorted(set(bpy.data.materials.keys()) - before_ma)
+    if getattr(scene.ogc3dtiles, "auto_relight", False):
+        from ..materials import apply_relight
+        for n in new_mats:
+            apply_relight(bpy.data.materials.get(n))
     data_names = (sorted(set(bpy.data.meshes.keys()) - before_m)
-                  + sorted(set(bpy.data.materials.keys()) - before_ma)
+                  + new_mats
                   + sorted(set(bpy.data.images.keys()) - before_i))
     return holder.name, data_names
 
@@ -591,6 +596,10 @@ def build_tile_from_payload(payload: dict, key: str, scene: bpy.types.Scene,
     obj.matrix_world = root.matrix_world @ Matrix(matrix_rows)
     if payload.get("points"):
         _add_points_modifier(obj)
+    elif getattr(scene.ogc3dtiles, "auto_relight", False):
+        from ..materials import apply_relight
+        for m in me.materials:
+            apply_relight(m)
     obj.hide_viewport = hidden
     obj.hide_render = hidden
     obj.select_set(False)

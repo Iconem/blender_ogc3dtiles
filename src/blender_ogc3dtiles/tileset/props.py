@@ -94,6 +94,12 @@ class TilesSceneProps(PropertyGroup):
         description="GLBs imported per 50 ms timer tick (1 keeps the UI smooth)",
         default=1, min=1, max=16,
     )
+    auto_relight: BoolProperty(
+        name="Relight new tiles",
+        description="Give every newly imported tile the shared 'OGC3D Relight' node group "
+                    "(roughness / gold mask / shadow lift derived from the albedo)",
+        default=False,
+    )
     native_direct_mesh: BoolProperty(
         name="Direct mesh (native)",
         description="cesium-native backend: build Blender meshes from numpy arrays "

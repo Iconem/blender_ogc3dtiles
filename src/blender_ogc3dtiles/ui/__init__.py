@@ -258,6 +258,8 @@ class OGC3D_OT_StartStream(Operator):
             headers = {}
             if st["token"] and not st["url"].isdigit():
                 headers["Authorization"] = f"Bearer {st['token']}"
+            backend.main_thread_ms = max(4.0, 12.0 * props.imports_per_tick)
+            backend.on_main_thread_ready = _make_native_builder(scene, props, st)
             backend.load_tileset(url=st["url"], ion_token=st["token"],
                                  options={"request_headers": headers})
             st["mode"] = "native"
@@ -560,13 +562,43 @@ def _tick_python(scene, props, st, now) -> bool:
     return changed
 
 
-# ---------------------------------------------------------- native
-def _tick_native(scene, props, st, now) -> bool:
+def _build_native_tile(scene, props, st, rt) -> bool:
+    """Create the Blender object for a native ReadyTile. Returns True on success."""
     from ..tileset.native_backend import blender_matrix_for_tile
 
+    root_obj, coll = _root_and_coll(scene, st)
+    m = blender_matrix_for_tile(rt.transform_ecef, props.origin_lat, props.origin_lon,
+                                props.origin_height, rt.rtc, rt.up_axis)
+    t_imp = time.perf_counter()
+    if rt.mesh_payload is not None:
+        r = build_tile_from_payload(rt.mesh_payload, rt.key, scene, root_obj, m.tolist(),
+                                    hidden=True, coll=coll)
+    else:
+        r = import_glb_file(rt.glb_path, rt.key, scene, root_obj, m.tolist(), hidden=True, coll=coll)
+    st["import_s"] = st.get("import_s", 0.0) + (time.perf_counter() - t_imp)
+    st["import_n"] = st.get("import_n", 0) + 1
+    if r:
+        st["tiles"][rt.key] = _Rec(r[0], r[1])
+        st["dirty"] = True
+        return True
+    return False
+
+
+def _make_native_builder(scene, props, st):
+    """Callback for CesiumNativeBackend.on_main_thread_ready: build immediately
+    when the scene origin is known, otherwise let the backend queue it."""
+    def cb(rt):
+        if not _state["origin_set"]:
+            return False
+        return _build_native_tile(scene, props, st, rt)
+    return cb
+
+
+# ---------------------------------------------------------- native
+def _tick_native(scene, props, st, now) -> bool:
     backend, tiles = st["backend"], st["tiles"]
     changed = False
-    backend.tick()
+    backend.tick()      # dispatches cesium-native main-thread work → builds tiles via callback
 
     if not _state["origin_set"]:
         c = backend.root_center_ecef()
@@ -584,31 +616,21 @@ def _tick_native(scene, props, st, now) -> bool:
             remove_tile(rec.holder, rec.data)
             changed = True
 
+    # tiles that arrived before the origin was known (queued by the backend)
     imported = 0
-    root_obj, coll = _root_and_coll(scene, st)
     for rt in backend.pop_ready():
         if imported >= max(1, props.imports_per_tick):
             backend.push_back_ready(rt)
             continue
-        m = blender_matrix_for_tile(rt.transform_ecef, props.origin_lat, props.origin_lon,
-                                    props.origin_height, rt.rtc, rt.up_axis)
-        t_imp = time.perf_counter()
-        if rt.mesh_payload is not None:
-            try:
-                r = build_tile_from_payload(rt.mesh_payload, rt.key, scene, root_obj, m.tolist(),
-                                            hidden=True, coll=coll)
-            except Exception as e:                   # noqa: BLE001
-                import traceback
-                traceback.print_exc()
-                print(f"[3DTiles] direct mesh build failed for {rt.key}: {e}")
-                r = None
-        else:
-            r = import_glb_file(rt.glb_path, rt.key, scene, root_obj, m.tolist(), hidden=True, coll=coll)
-        st["import_s"] = st.get("import_s", 0.0) + (time.perf_counter() - t_imp)
-        st["import_n"] = st.get("import_n", 0) + 1
-        if r:
-            tiles[rt.key] = _Rec(r[0], r[1])
+        try:
+            _build_native_tile(scene, props, st, rt)
+        except Exception as e:                       # noqa: BLE001
+            import traceback
+            traceback.print_exc()
+            print(f"[3DTiles] tile build failed for {rt.key}: {e}")
         imported += 1
+        changed = True
+    if st.pop("dirty", False):
         changed = True
 
     view = _view_for(st)
@@ -820,6 +842,11 @@ class OGC3D_PT_MainPanel(Panel):
         row = layout.row(align=True)
         row.prop(props, "use_disk_cache", text="Disk cache")
         row.operator("ogc3dtiles.clear_cache", icon="TRASH", text="")
+
+        # Materials
+        layout.separator()
+        from .. import materials as _materials
+        _materials.draw_panel(layout, props)
 
         layout.separator()
         row = layout.row(align=True)

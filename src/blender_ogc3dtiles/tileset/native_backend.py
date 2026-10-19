@@ -212,9 +212,21 @@ class _GlbPreparer:
 
     # main thread ---------------------------------------------------------
     def prepare_in_main_thread(self, tile, load_result):
-        if load_result is not None:
-            with self._owner._lock:
-                self._owner._ready.append(load_result)
+        """Runs on Blender's main thread (inside our tick). If the UI installed
+        ``on_main_thread_ready`` we build the Blender object right here, so
+        cesium-native only considers the tile renderable once it really is on
+        screen (no holes while our import queue catches up). Otherwise queue."""
+        if load_result is None:
+            return None
+        cb = self._owner.on_main_thread_ready
+        if cb is not None:
+            try:
+                if cb(load_result):
+                    return load_result
+            except Exception as exc:          # noqa: BLE001
+                print("[3DTiles/native] main-thread build failed for %s: %r" % (load_result.key, exc))
+        with self._owner._lock:
+            self._owner._ready.append(load_result)
         return load_result
 
     def free_tile(self, tile, load_result, main_result):
@@ -255,6 +267,8 @@ class CesiumNativeBackend:
                  max_dist=float("inf"), detail_falloff=600.0, direct_mesh=True, **_ignored):
         self._max_sse = max_sse
         self.direct_mesh = bool(direct_mesh)   # numpy -> bpy mesh instead of GLB re-import
+        self.on_main_thread_ready = None        # UI callback: ReadyTile -> bool (built now?)
+        self.main_thread_ms = 12.0              # cesium-native main-thread load budget per tick
         self._max_dist = max_dist              # cesium-native culls by fog/frustum; kept for parity
         self._detail_falloff = detail_falloff
         self._cache_dir = cache_dir
@@ -330,6 +344,9 @@ class CesiumNativeBackend:
         opts.enable_occlusion_culling = False
         opts.preload_siblings = False      # fewer speculative imports on the main thread
         opts.forbid_holes = True           # keep parents until children are in
+        # budget for prepare_in_main_thread work per update (ms); our mesh
+        # build runs inside it, so this replaces the UI's imports_per_tick
+        opts.main_thread_loading_time_limit = float(self.main_thread_ms)
         opts.enable_lod_transition_period = False
         # No GPU formats -> KTX2 is transcoded to plain RGBA8 we can PNG-encode
         opts.content_options.ktx2_transcode_targets = cs.gltf.Ktx2TranscodeTargets()

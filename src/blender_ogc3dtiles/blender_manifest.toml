@@ -1,0 +1,17 @@
+schema_version = "1.0.0"
+
+id      = "ogc_3dtiles_streaming"
+name    = "OGC 3D Tiles Streaming"
+version = "0.3.0"
+tagline = "Stream OGC 3D Tiles (pure Python or cesium-native) with Cesium LOD"
+maintainer = "Jonathan Chemla <jos.chemla@gmail.com>"
+type = "add-on"
+
+tags = ["Import-Export", "3D View"]
+
+blender_version_min = "4.2.0"
+
+license = ["SPDX:Apache-2.0"]
+
+[permissions]
+network = "Fetch OGC 3D Tiles from remote HTTP/HTTPS endpoints"

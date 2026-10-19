@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.benchmarks/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+dist/
+build/
+*.zip
+*.blend1
+.local/

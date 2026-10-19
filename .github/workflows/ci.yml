@@ -1,0 +1,116 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main]
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  # ── Lint & type-check ────────────────────────────────────────────────────────
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Install lint deps
+        run: uv sync --group dev
+
+      - run: uv run ruff check blender_ogc3dtiles/ tests/
+      - run: uv run mypy blender_ogc3dtiles/ --ignore-missing-imports
+
+  # ── Pure-Python tests (no C++ build) ─────────────────────────────────────────
+  test-python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Install deps (skip cesium)
+        run: uv sync --group dev
+
+      - name: Run Python-backend tests
+        run: uv run pytest tests/ -m "not cesium" -v
+
+  # ── Full tests with cesium-native-python ──────────────────────────────────────
+  test-cesium:
+    name: cesium  •  ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            cmake_extra: ""
+
+          - os: windows-latest
+            cmake_extra: ""
+
+          - os: macos-latest
+            cmake_extra: ""
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── sccache ──────────────────────────────────────────────────────────────
+      - uses: mozilla-actions/sccache-action@v0.0.5
+
+      - name: Configure sccache env
+        shell: bash
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true"             >> "$GITHUB_ENV"
+          echo "CMAKE_C_COMPILER_LAUNCHER=sccache"    >> "$GITHUB_ENV"
+          echo "CMAKE_CXX_COMPILER_LAUNCHER=sccache"  >> "$GITHUB_ENV"
+
+      # ── uv ───────────────────────────────────────────────────────────────────
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true        # caches the uv download cache across runs
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      # ── MSVC (Windows) ───────────────────────────────────────────────────────
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+        with:
+          arch: x64
+
+      # ── System build tools ───────────────────────────────────────────────────
+      - name: Install CMake + Ninja (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y cmake ninja-build
+
+      - name: Install CMake + Ninja (macOS)
+        if: runner.os == 'macOS'
+        run: brew install cmake ninja
+
+      - name: Install Ninja (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ninja --yes --no-progress
+
+      # ── Build + sync all deps ─────────────────────────────────────────────────
+      # uv reads [tool.uv.sources] and clones + builds cesium-native-python.
+      # sccache transparently caches the C++ compilation artefacts.
+      - name: uv sync (builds cesium-python)
+        shell: bash
+        env:
+          CMAKE_GENERATOR: Ninja
+          CMAKE_BUILD_PARALLEL_LEVEL: "4"
+        run: uv sync --group dev --group cesium
+
+      # ── Tests ─────────────────────────────────────────────────────────────────
+      - name: Run all tests
+        run: uv run pytest tests/ -v
+
+      - name: sccache stats
+        run: sccache --show-stats

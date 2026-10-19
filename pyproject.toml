@@ -1,0 +1,52 @@
+[build-system]
+requires      = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name            = "blender-ogc3dtiles"
+version         = "0.2.0"
+description     = "OGC 3D Tiles streaming addon for Blender"
+readme          = "README.md"
+requires-python = ">=3.11"
+license         = { text = "Apache-2.0" }
+authors         = [{ name = "Jonathan Chemla", email = "jos.chemla@gmail.com" }]
+dependencies    = ["numpy>=1.26"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-benchmark",
+    "ruff>=0.4",
+    "mypy>=1.10",
+]
+
+# ── hatch: package lives in addon/ ───────────────────────────────────────────
+[tool.hatch.build.targets.wheel]
+packages = ["src/blender_ogc3dtiles"]
+
+# ── uv ────────────────────────────────────────────────────────────────────────
+[tool.uv.sources]
+cesium-python = { git = "https://github.com/calebbuffa/cesium-native-python.git" }
+
+# ── ruff ──────────────────────────────────────────────────────────────────────
+[tool.ruff]
+line-length    = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["B008"]
+
+# ── mypy ──────────────────────────────────────────────────────────────────────
+[tool.mypy]
+python_version         = "3.11"
+ignore_missing_imports = true
+
+# ── pytest ────────────────────────────────────────────────────────────────────
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts   = "-v --tb=short"
+markers   = [
+    "cesium:    requires cesium-python installed",
+    "benchmark: performance comparison",
+]

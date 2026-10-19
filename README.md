@@ -21,6 +21,15 @@ blender_ogc3dtiles/
 └── ui/__init__.py           # sidebar panel + modal operator (stream_tick)
 ```
 
+### Several tilesets at once
+
+The sidebar holds a list of tilesets (add / remove, enable toggle, per-entry
+URL, ion token and SSE).  Every enabled entry becomes its own stream with its
+own backend instance, download manager, root Empty (`3D Tiles · <name>`) and
+sub-collection (`Tiles · <name>`), all sharing the scene origin and the
+viewport camera.  Moving, rotating or scaling a root Empty is honoured by
+culling and SSE for that tileset only.
+
 ### Streaming loop (both backends)
 
 Every 50 ms the modal operator runs `ui.stream_tick()`:

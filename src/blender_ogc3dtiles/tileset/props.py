@@ -5,9 +5,18 @@ Stored on bpy.types.Scene so they persist with the .blend file.
 import bpy
 from bpy.props import (
     StringProperty, FloatProperty, IntProperty,
-    BoolProperty, FloatVectorProperty, EnumProperty,
+    BoolProperty, FloatVectorProperty, EnumProperty, CollectionProperty,
 )
 from bpy.types import PropertyGroup
+
+
+class TilesetItem(PropertyGroup):
+    """One streamed tileset (list entry in the sidebar)."""
+    name: StringProperty(name="Name", default="tileset")
+    url: StringProperty(name="Tileset URL", description="tileset.json URL or ion asset id", default="")
+    ion_token: StringProperty(name="Ion Token", subtype='PASSWORD', default="")
+    enabled: BoolProperty(name="Enabled", description="Stream this tileset", default=True)
+    max_sse: FloatProperty(name="Max SSE", default=16.0, min=1.0, max=512.0)
 
 
 class TilesSceneProps(PropertyGroup):
@@ -91,6 +100,10 @@ class TilesSceneProps(PropertyGroup):
         default=True,
     )
 
+    # --- Tileset list (several sources at once) ---
+    tilesets: CollectionProperty(type=TilesetItem)
+    active_tileset: IntProperty(default=0)
+
     # --- State (internal) ---
     is_streaming: BoolProperty(
         name="Streaming Active",
@@ -108,6 +121,7 @@ class TilesSceneProps(PropertyGroup):
 
 def register():
     print("[OGC3DTiles] registering TilesSceneProps...")
+    bpy.utils.register_class(TilesetItem)
     bpy.utils.register_class(TilesSceneProps)
     bpy.types.Scene.ogc3dtiles = bpy.props.PointerProperty(type=TilesSceneProps)
     print("[OGC3DTiles] TilesSceneProps registered OK")
@@ -116,3 +130,4 @@ def register():
 def unregister():
     del bpy.types.Scene.ogc3dtiles
     bpy.utils.unregister_class(TilesSceneProps)
+    bpy.utils.unregister_class(TilesetItem)

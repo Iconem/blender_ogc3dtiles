@@ -17,7 +17,7 @@ def _make_bpy_stub():
     btypes = types.ModuleType("bpy.types")
     class _Base:
         def __init_subclass__(cls, **kw): pass
-    for name in ("PropertyGroup", "AddonPreferences", "Operator", "Panel",
+    for name in ("PropertyGroup", "AddonPreferences", "Operator", "Panel", "UIList",
                  "Scene", "Object", "Context"):
         setattr(btypes, name, _Base)
     bpy.types = btypes

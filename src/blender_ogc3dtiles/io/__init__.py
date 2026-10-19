@@ -333,18 +333,27 @@ class TileDownloadManager:
 
 # ── Blender import ───────────────────────────────────────────────────────────
 
-def ensure_collection(scene: bpy.types.Scene) -> bpy.types.Collection:
+def ensure_collection(scene: bpy.types.Scene, sub: Optional[str] = None) -> bpy.types.Collection:
+    """``3D Tiles`` collection, or ``3D Tiles / <sub>`` child collection."""
     coll = bpy.data.collections.get(COLLECTION_NAME)
     if coll is None:
         coll = bpy.data.collections.new(COLLECTION_NAME)
     if scene.collection.children.get(coll.name) is None:
         scene.collection.children.link(coll)
-    return coll
+    if not sub:
+        return coll
+    child = bpy.data.collections.get(sub)
+    if child is None:
+        child = bpy.data.collections.new(sub)
+    if coll.children.get(child.name) is None:
+        coll.children.link(child)
+    return child
 
 
-def ensure_root_empty(scene: bpy.types.Scene, name: str) -> bpy.types.Object:
+def ensure_root_empty(scene: bpy.types.Scene, name: str,
+                      sub: Optional[str] = None) -> bpy.types.Object:
     """One Empty per tileset: move/rotate/scale it to transform the dataset."""
-    coll = ensure_collection(scene)
+    coll = ensure_collection(scene, sub)
     obj = bpy.data.objects.get(name)
     if obj is None or obj.type != "EMPTY":
         obj = bpy.data.objects.new(name, None)
@@ -395,11 +404,14 @@ def tile_world_matrix(tile_transform, rtc, enu_from_ecef):
 
 
 def import_glb_file(path: str, key: str, scene: bpy.types.Scene, root: bpy.types.Object,
-                    matrix_rows, hidden: bool = True) -> Optional[Tuple[str, List[str]]]:
-    """Import one GLB from disk under ``root``. Returns (holder_name, data names)."""
+                    matrix_rows, hidden: bool = True,
+                    coll: Optional[bpy.types.Collection] = None) -> Optional[Tuple[str, List[str]]]:
+    """Import one GLB from disk under ``root`` into ``coll`` (defaults to the
+    root's collection). Returns (holder_name, data names)."""
     from mathutils import Matrix
 
-    coll = ensure_collection(scene)
+    if coll is None:
+        coll = root.users_collection[0] if root.users_collection else ensure_collection(scene)
     before_o = set(bpy.data.objects.keys())
     before_m = set(bpy.data.meshes.keys())
     before_ma = set(bpy.data.materials.keys())

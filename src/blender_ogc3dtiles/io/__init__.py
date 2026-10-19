@@ -612,24 +612,36 @@ def _points_nodegroup():
     radius = iface.new_socket("Radius", in_out="INPUT", socket_type="NodeSocketFloat")
     radius.default_value = 0.04
     radius.min_value = 0.0
+    iface.new_socket("Material", in_out="INPUT", socket_type="NodeSocketMaterial")
     iface.new_socket("Geometry", in_out="OUTPUT", socket_type="NodeSocketGeometry")
     n_in = ng.nodes.new("NodeGroupInput")
     n_out = ng.nodes.new("NodeGroupOutput")
     m2p = ng.nodes.new("GeometryNodeMeshToPoints")
     m2p.mode = "VERTICES"
-    n_in.location = (-400, 0)
-    m2p.location = (-100, 0)
-    n_out.location = (200, 0)
+    setmat = ng.nodes.new("GeometryNodeSetMaterial")   # points do not inherit the mesh material
+    n_in.location = (-500, 0)
+    m2p.location = (-200, 0)
+    setmat.location = (50, 0)
+    n_out.location = (300, 0)
     ng.links.new(n_in.outputs["Geometry"], m2p.inputs["Mesh"])
     ng.links.new(n_in.outputs["Radius"], m2p.inputs["Radius"])
-    ng.links.new(m2p.outputs["Points"], n_out.inputs["Geometry"])
+    ng.links.new(m2p.outputs["Points"], setmat.inputs["Geometry"])
+    ng.links.new(n_in.outputs["Material"], setmat.inputs["Material"])
+    ng.links.new(setmat.outputs["Geometry"], n_out.inputs["Geometry"])
     return ng
 
 
 def _add_points_modifier(obj):
     try:
+        ng = _points_nodegroup()
         mod = obj.modifiers.new("Points", "NODES")
-        mod.node_group = _points_nodegroup()
+        mod.node_group = ng
+        mat = obj.data.materials[0] if obj.data.materials else None
+        if mat is not None:
+            for item in ng.interface.items_tree:
+                if getattr(item, "in_out", "") == "INPUT" and item.name == "Material":
+                    mod[item.identifier] = mat
+                    break
     except Exception as e:                           # noqa: BLE001
         print(f"[3DTiles] points modifier failed: {e}")
 

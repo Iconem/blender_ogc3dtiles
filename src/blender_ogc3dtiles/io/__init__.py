@@ -457,6 +457,183 @@ def import_glb_file(path: str, key: str, scene: bpy.types.Scene, root: bpy.types
     return holder.name, data_names
 
 
+# ── Direct mesh construction (cesium-native payloads) ────────────────────────
+
+def _image_from_payload(ip: dict, key: str):
+    """bpy Image from packed file bytes (same recipe as Blender's glTF importer)."""
+    name = f"{ip.get('name') or 'tex'}_{abs(hash(key)) % 10_000_000}"[:60]
+    img = bpy.data.images.new(name, 8, 8)
+    data = ip["data"]
+    img.pack(data=data, data_len=len(data))
+    img.source = "FILE"
+    img.alpha_mode = "CHANNEL_PACKED"
+    return img
+
+
+def _material_from_payload(mp: dict, img, key: str):
+    mat = bpy.data.materials.new(f"{mp.get('name') or 'mat'}_{abs(hash(key)) % 10_000_000}"[:60])
+    mat.use_nodes = True
+    mat.use_backface_culling = not mp.get("double_sided", True)
+    nt = mat.node_tree
+    bsdf = nt.nodes.get("Principled BSDF")
+    out = nt.nodes.get("Material Output")
+    if bsdf is None or out is None:
+        return mat
+    # photogrammetry: lighting is baked, keep the surface matte
+    for name, val in (("Roughness", 1.0), ("Specular IOR Level", 0.0), ("Metallic", 0.0)):
+        if name in bsdf.inputs:
+            bsdf.inputs[name].default_value = val
+    bc = mp.get("base_color", (0.8, 0.8, 0.8, 1.0))
+    if img is not None:
+        tex = nt.nodes.new("ShaderNodeTexImage")
+        tex.image = img
+        tex.location = (-400, 300)
+        nt.links.new(tex.outputs["Color"], bsdf.inputs["Base Color"])
+        if mp.get("unlit"):
+            nt.links.new(tex.outputs["Color"], bsdf.inputs["Emission Color"])
+            bsdf.inputs["Emission Strength"].default_value = 1.0
+    else:
+        bsdf.inputs["Base Color"].default_value = bc
+    return mat
+
+
+def _wire_point_colors(mat):
+    """Point clouds: unlit vertex colours. Attribute node (not Color Attribute)
+    so it also resolves on the point cloud produced by the Mesh→Points modifier."""
+    nt = mat.node_tree
+    bsdf = nt.nodes.get("Principled BSDF")
+    if bsdf is None:
+        return
+    attr = nt.nodes.new("ShaderNodeAttribute")
+    attr.attribute_name = "Col"
+    attr.attribute_type = "GEOMETRY"
+    attr.location = (-400, 0)
+    bsdf.inputs["Base Color"].default_value = (0.0, 0.0, 0.0, 1.0)
+    nt.links.new(attr.outputs["Color"], bsdf.inputs["Emission Color"])
+    bsdf.inputs["Emission Strength"].default_value = 1.0
+
+
+def build_tile_from_payload(payload: dict, key: str, scene: bpy.types.Scene,
+                            root: bpy.types.Object, matrix_rows, hidden: bool = True,
+                            coll: Optional[bpy.types.Collection] = None,
+                            image_cache: Optional[dict] = None) -> Optional[Tuple[str, List[str]]]:
+    """Create one mesh object from a native_mesh payload (no glTF importer).
+    Returns (object_name, data_names)."""
+    import numpy as np
+    from mathutils import Matrix
+
+    if coll is None:
+        coll = root.users_collection[0] if root.users_collection else ensure_collection(scene)
+    V = np.ascontiguousarray(payload["verts"], dtype=np.float32)
+    F = np.ascontiguousarray(payload["faces"], dtype=np.int32)
+    n_v, n_f = len(V), len(F)
+    me = bpy.data.meshes.new(_short_name(key))
+    me.vertices.add(n_v)
+    me.vertices.foreach_set("co", V.ravel())
+    data_names = [me.name]
+    if n_f:
+        me.loops.add(n_f * 3)
+        me.loops.foreach_set("vertex_index", F.ravel())
+        me.polygons.add(n_f)
+        me.polygons.foreach_set("loop_start", np.arange(0, n_f * 3, 3, dtype=np.int32))
+        fm = payload.get("face_mat")
+        if fm is not None and len(fm) == n_f:
+            me.polygons.foreach_set("material_index", np.ascontiguousarray(fm, dtype=np.int32))
+        me.polygons.foreach_set("use_smooth", np.ones(n_f, dtype=bool))
+        uvs = payload.get("uvs")
+        if uvs is not None and len(uvs) == n_f * 3:
+            uv_layer = me.uv_layers.new(name="UVMap")
+            uv_layer.data.foreach_set("uv", np.ascontiguousarray(uvs, dtype=np.float32).ravel())
+    me.update(calc_edges=True)
+    me.validate(verbose=False)
+    nrm = payload.get("normals")
+    if n_f and nrm is not None and len(nrm) == n_v:
+        try:
+            me.normals_split_custom_set_from_vertices(np.ascontiguousarray(nrm, dtype=np.float32))
+        except Exception:
+            pass
+    cols = payload.get("colors")
+    if cols is not None and len(cols) == n_v:
+        attr = me.color_attributes.new("Col", "FLOAT_COLOR", "POINT")
+        attr.data.foreach_set("color", np.ascontiguousarray(cols, dtype=np.float32).ravel())
+        me.color_attributes.render_color_index = 0
+        me.color_attributes.active_color_index = 0
+
+    # materials (one slot per payload material, textures packed from bytes)
+    image_cache = image_cache if image_cache is not None else {}
+    images = payload.get("images") or {}
+    for mp in payload.get("materials") or []:
+        img = None
+        ii = mp.get("image")
+        if ii is not None and images.get(ii) is not None:
+            ck = (key, ii)
+            img = image_cache.get(ck)
+            if img is None:
+                img = _image_from_payload(images[ii], key)
+                image_cache[ck] = img
+                data_names.append(img.name)
+        mat = _material_from_payload(mp, img, key)
+        if payload.get("points") and cols is not None:
+            _wire_point_colors(mat)
+        me.materials.append(mat)
+        data_names.append(mat.name)
+    if payload.get("points") and not me.materials and cols is not None:
+        mat = _material_from_payload({"name": "points", "double_sided": True}, None, key)
+        _wire_point_colors(mat)
+        me.materials.append(mat)
+        data_names.append(mat.name)
+
+    obj = bpy.data.objects.new(_short_name(key), me)
+    obj["tile_url"] = key
+    coll.objects.link(obj)
+    obj.parent = root
+    obj.matrix_parent_inverse = Matrix.Identity(4)
+    obj.matrix_world = root.matrix_world @ Matrix(matrix_rows)
+    if payload.get("points"):
+        _add_points_modifier(obj)
+    obj.hide_viewport = hidden
+    obj.hide_render = hidden
+    obj.select_set(False)
+    return obj.name, data_names
+
+
+POINTS_NODEGROUP = "OGC3D Points"
+
+
+def _points_nodegroup():
+    """Shared Geometry Nodes group: Mesh → Points so vertex-only tiles render
+    in EEVEE / Cycles (radius exposed as a group input)."""
+    ng = bpy.data.node_groups.get(POINTS_NODEGROUP)
+    if ng is not None:
+        return ng
+    ng = bpy.data.node_groups.new(POINTS_NODEGROUP, "GeometryNodeTree")
+    iface = ng.interface
+    iface.new_socket("Geometry", in_out="INPUT", socket_type="NodeSocketGeometry")
+    radius = iface.new_socket("Radius", in_out="INPUT", socket_type="NodeSocketFloat")
+    radius.default_value = 0.04
+    radius.min_value = 0.0
+    iface.new_socket("Geometry", in_out="OUTPUT", socket_type="NodeSocketGeometry")
+    n_in = ng.nodes.new("NodeGroupInput")
+    n_out = ng.nodes.new("NodeGroupOutput")
+    m2p = ng.nodes.new("GeometryNodeMeshToPoints")
+    m2p.mode = "VERTICES"
+    n_in.location = (-400, 0)
+    m2p.location = (-100, 0)
+    n_out.location = (200, 0)
+    ng.links.new(n_in.outputs["Geometry"], m2p.inputs["Mesh"])
+    ng.links.new(n_in.outputs["Radius"], m2p.inputs["Radius"])
+    ng.links.new(m2p.outputs["Points"], n_out.inputs["Geometry"])
+    return ng
+
+
+def _add_points_modifier(obj):
+    try:
+        mod = obj.modifiers.new("Points", "NODES")
+        mod.node_group = _points_nodegroup()
+    except Exception as e:                           # noqa: BLE001
+        print(f"[3DTiles] points modifier failed: {e}")
+
+
 def set_tile_visible(holder_name: str, visible: bool) -> None:
     holder = bpy.data.objects.get(holder_name)
     if holder is None:

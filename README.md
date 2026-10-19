@@ -67,6 +67,22 @@ the whole dataset can be moved / rotated / scaled, hidden or folded as one.
 - Placement: tile Empty = `ENU_from_ECEF · T_tile · Translate(RTC)`; Blender's
   importer already converts glTF Y-up to Z-up.
 
+### Direct mesh construction (cesium-native, default)
+
+`tileset/native_mesh.py` turns the decoded cesium-native `Model` into numpy
+arrays on the worker thread (positions with node transforms applied and
+converted to Z-up, triangle indices, per-loop UVs, normals, COLOR_0, the
+original JPEG/PNG bytes of the textures or PNG re-encoded from decoded
+pixels for KTX2).  `io.build_tile_from_payload` then creates the mesh with
+`foreach_set`, packs the textures from bytes and builds a matte Principled
+material.  Point clouds (`pnts`, glTF POINTS) become vertex-only meshes with
+a `Col` colour attribute and a shared "OGC3D Points" Geometry Nodes modifier
+(Mesh → Points, radius exposed) so they render in EEVEE / Cycles with unlit
+vertex colours.  Measured main-thread cost per tile: 8–9 ms direct vs 10–13 ms
+through `bpy.ops.import_scene.gltf`; the direct path also needs no temp files
+and works regardless of which glTF extensions Blender's importer knows.
+Toggle: "Direct mesh (cesium-native)" in the sidebar (off = GLB re-import).
+
 ### cesium-native backend (`tileset/native_backend.py`)
 
 Needs the `cesium` module (built from cesium-native-python, Python ≥ 3.12,
@@ -127,6 +143,15 @@ Headless smoke test: see `ui.stream_tick()`; in `blender -b` the operator
 does not start a timer, call `stream_tick(bpy.context)` yourself with a
 monkeypatched `CesiumCameraAdapter.get_view_state`.
 
+## Building the cesium-native wheel
+
+`.github/workflows/cesium-native-wheel.yml` (manual trigger) clones
+calebbuffa/cesium-native-python, applies `third_party/cesium-native-python-windows.patch`,
+builds the wheel for the requested CPython (3.13 for Blender 5.1/5.2) with a
+cached vcpkg tree, and uploads it as an artifact or attaches it to a release.
+Blender extensions can bundle platform wheels (`wheels = [...]` in
+`blender_manifest.toml`), which is the intended distribution path.
+
 ## Development
 
 ```
@@ -141,5 +166,6 @@ PYTHONPATH=src pytest        # traversal + coordinate tests (bpy is stubbed)
 - [x] cesium-native backend against the real binding API
 - [ ] Several tilesets at once (one root Empty each)
 - [ ] Raster overlays (cesium-native) draped on tiles
-- [ ] `pnts` / `i3dm` on the pure Python path (native path handles them)
+- [x] `pnts` point clouds on the native path (Angkor tilesets verified)
+- [ ] `pnts` / `i3dm` on the pure Python path
 - [ ] `3DTILES_metadata` → Blender custom attributes

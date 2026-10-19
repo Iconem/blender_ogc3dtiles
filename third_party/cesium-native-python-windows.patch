@@ -1,0 +1,109 @@
+diff --git a/cmake/Dependencies.cmake b/cmake/Dependencies.cmake
+index 6ff5553..14665d1 100644
+--- a/cmake/Dependencies.cmake
++++ b/cmake/Dependencies.cmake
+@@ -9,6 +9,24 @@ if(NOT EXISTS "${CESIUM_NATIVE_DIR}/CMakeLists.txt")
+     message(FATAL_ERROR "Missing submodule: extern/cesium-native. Run: git submodule update --init --recursive")
+ endif()
+ 
++message(STATUS "Adding cesium-native subdirectory...")
++add_subdirectory(extern/cesium-native EXCLUDE_FROM_ALL)
++
++# --- Windows fix: libzip needs zlib, which only exists once ezvcpkg (run by the
++# cesium-native subdirectory above) has installed it. Build libzip afterwards and
++# point FindZLIB at the vcpkg prefix.
++if(WIN32 AND NOT ZLIB_ROOT)
++    set(_ez_base "$ENV{EZVCPKG_BASEDIR}")
++    if(NOT _ez_base)
++        set(_ez_base "$ENV{USERPROFILE}/.ezvcpkg")
++    endif()
++    file(TO_CMAKE_PATH "${_ez_base}/501db0f17ef6df184fcdbfbe0f87cde2313b6ab1/installed/x64-windows-static-md" _ez_inst)
++    if(EXISTS "${_ez_inst}/include/zlib.h")
++        set(ZLIB_ROOT "${_ez_inst}")
++        set(ZLIB_USE_STATIC_LIBS ON)
++        message(STATUS "libzip: using vcpkg zlib at ${_ez_inst}")
++    endif()
++endif()
+ set(LIBZIP_DIR "${CMAKE_SOURCE_DIR}/extern/libzip")
+ if(NOT EXISTS "${LIBZIP_DIR}/CMakeLists.txt")
+     message(FATAL_ERROR "Missing submodule: extern/libzip. Run: git submodule update --init --recursive")
+@@ -29,8 +47,6 @@ set(ENABLE_LZMA OFF CACHE BOOL "Disable lzma support")
+ set(ENABLE_ZSTD OFF CACHE BOOL "Disable zstd support")
+ add_subdirectory(extern/libzip EXCLUDE_FROM_ALL)
+ 
+-message(STATUS "Adding cesium-native subdirectory...")
+-add_subdirectory(extern/cesium-native EXCLUDE_FROM_ALL)
+ 
+ # glm::glm should be an imported target after cesium-native's ezvcpkg runs.
+ # However, when cmake is invoked without the vcpkg toolchain (e.g., via pip),
+diff --git a/csrc/CesiumNative/GeometryBindings.cpp b/csrc/CesiumNative/GeometryBindings.cpp
+index 08452b1..1bc0f72 100644
+--- a/csrc/CesiumNative/GeometryBindings.cpp
++++ b/csrc/CesiumNative/GeometryBindings.cpp
+@@ -393,8 +393,7 @@ void initGeometryBindings(py::module& m) {
+           [](CesiumGeometry::AvailabilitySubtree& self,
+              const py::iterable& buffers) {
+             setSubtreeBuffersFromPython(self, buffers);
+-          },
+-          py::arg("buffers"));
++          });   // pybind11: no py::arg on properties
+ 
+   py::class_<CesiumGeometry::AvailabilityNode>(m, "AvailabilityNode");
+ 
+@@ -1671,7 +1670,7 @@ void initGeometryBindings(py::module& m) {
+       });
+ 
+   py::class_<CesiumGeometry::UpsampledQuadtreeNode>(m, "UpsampledQuadtreeNode")
+-      .def(py::init<>())
++      // no default ctor: QuadtreeTileID has none
+       .def(
+           py::init<CesiumGeometry::QuadtreeTileID>(),
+           py::arg("tile_id"))
+@@ -1705,6 +1704,7 @@ void initGeometryBindings(py::module& m) {
+            std::to_string(self.tileID.level) +
+            ", x=" + std::to_string(self.tileID.x) +
+            ", y=" + std::to_string(self.tileID.y) + "))";
++          });
+ 
+     py::class_<CesiumGeometry::OctreeTileID>(m, "OctreeTileID")
+         .def(py::init<>())
+diff --git a/csrc/CesiumNative/IonClientBindings.cpp b/csrc/CesiumNative/IonClientBindings.cpp
+index aef0503..29c6766 100644
+--- a/csrc/CesiumNative/IonClientBindings.cpp
++++ b/csrc/CesiumNative/IonClientBindings.cpp
+@@ -246,7 +246,8 @@ void initIonClientBindings(py::module& m) {
+           &CesiumIonClient::GeocoderAttribution::showOnScreen);
+ 
+   py::class_<CesiumIonClient::GeocoderFeature>(m, "GeocoderFeature")
+-      .def(py::init<>())
++      // no default ctor: `destination` is a variant whose first alternative
++      // (GlobeRectangle) is not default constructible
+       .def_readwrite(
+           "display_name",
+           &CesiumIonClient::GeocoderFeature::displayName)
+diff --git a/csrc/CesiumNative/Tiles3dSelectionBindings.cpp b/csrc/CesiumNative/Tiles3dSelectionBindings.cpp
+index 71470e6..9b1dbbe 100644
+--- a/csrc/CesiumNative/Tiles3dSelectionBindings.cpp
++++ b/csrc/CesiumNative/Tiles3dSelectionBindings.cpp
+@@ -57,6 +57,21 @@
+ #include <pybind11/pybind11.h>
+ #include <pybind11/stl.h>
+ 
++// MSVC: TileChildrenResult holds std::vector<Tile>; Tile is move-only, but
++// std::is_copy_constructible<TileChildrenResult> is still true, so pybind11
++// would instantiate (and fail on) the implicit copy constructor. Opt out.
++namespace pybind11 {
++namespace detail {
++template <>
++struct is_copy_constructible<Cesium3DTilesSelection::TileChildrenResult>
++    : std::false_type {};
++template <>
++struct is_copy_assignable<Cesium3DTilesSelection::TileChildrenResult>
++    : std::false_type {};
++} // namespace detail
++} // namespace pybind11
++
++
+ // Force pybind11 to treat BoundingVolume (a std::variant typedef) as a
+ // registered py::class_ instead of using the automatic std::variant caster
+ // from pybind11/stl.h, which can't default-construct the variant.

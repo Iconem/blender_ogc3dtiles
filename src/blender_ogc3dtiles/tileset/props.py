@@ -94,6 +94,12 @@ class TilesSceneProps(PropertyGroup):
         description="GLBs imported per 50 ms timer tick (1 keeps the UI smooth)",
         default=1, min=1, max=16,
     )
+    native_direct_mesh: BoolProperty(
+        name="Direct mesh (native)",
+        description="cesium-native backend: build Blender meshes from numpy arrays "
+                    "instead of re-importing a GLB (faster; off = use the glTF importer)",
+        default=True,
+    )
     use_disk_cache: BoolProperty(
         name="Disk cache",
         description="Keep unwrapped GLBs in %LOCALAPPDATA%/blender_ogc3dtiles/cache",

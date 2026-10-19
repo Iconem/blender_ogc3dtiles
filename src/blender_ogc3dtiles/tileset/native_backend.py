@@ -48,6 +48,7 @@ class ReadyTile(NamedTuple):
     n_primitives: int
     rtc: list = None       # CESIUM_RTC / b3dm RTC_CENTER, tile frame (metres)
     up_axis: int = 1       # glTF up axis of the content: 0=X, 1=Y (default), 2=Z
+    mesh_payload: dict = None   # native_mesh payload (direct mesh path); glb_path unused then
 
 
 class NativeViewResult(NamedTuple):
@@ -145,9 +146,33 @@ class _GlbPreparer:
         req = tlr.completed_request
         url = _val(req.url) if req is not None else None
         try:
+            up_axis = 1
+            try:
+                up_axis = int(tlr.gltf_up_axis)
+            except Exception:
+                pass
+            T = np.asarray(transform, dtype=np.float64).reshape(4, 4).T.tolist()
+            base = "tile_%d" % self._owner._next_id()
+            key = url or base
+            if self._owner.direct_mesh:
+                try:
+                    from . import native_mesh
+                    payload = native_mesh.extract_mesh_payload(cs, model)
+                except Exception as exc:          # noqa: BLE001
+                    payload = None
+                    print("[3DTiles/native] direct mesh failed for %s, using GLB: %r" % (url, exc))
+                if payload is not None:
+                    rtc = None
+                    try:
+                        ext = model.ext_cesium_rtc()
+                        if ext is not None and len(ext.center) == 3:
+                            rtc = [float(v) for v in ext.center]
+                    except Exception:
+                        pass
+                    n_prims = int(len(payload["faces"])) if not payload["points"] else int(len(payload["verts"]))
+                    return ReadyTile(key, "", [], T, n_prims, rtc, up_axis, payload)
             png_files = {}
             tmpdir = self._owner._tmpdir
-            base = "tile_%d" % self._owner._next_id()
             # KTX2 images were transcoded to RGBA8 by cesium-native (we set
             # no GPU targets); write them out as PNG for Blender.
             for i, img in enumerate(model.images):
@@ -178,10 +203,8 @@ class _GlbPreparer:
             with open(path, "wb") as fh:
                 fh.write(glb)
             n_prims = sum(len(m.primitives) for m in model.meshes)
-            key = url or base
             # binding hands glm matrices over column-major (arr[col, row]):
-            # transpose to the usual row-major 4x4 with translation in column 3
-            T = np.asarray(transform, dtype=np.float64).reshape(4, 4).T.tolist()
+            # transposed above into row-major with translation in column 3
             return ReadyTile(key, path, list(png_files.values()), T, n_prims, rtc, up_axis)
         except Exception as exc:  # never let an exception cross into C++
             print("[3DTiles/native] prepare failed for %s: %r" % (url, exc))
@@ -200,6 +223,8 @@ class _GlbPreparer:
             with self._owner._lock:
                 self._owner._freed.append(rt.key)
             for p in [rt.glb_path] + list(rt.aux_files):
+                if not p:
+                    continue
                 try:
                     os.unlink(p)
                 except OSError:
@@ -227,8 +252,9 @@ class CesiumNativeBackend:
 
     def __init__(self, max_sse=16.0, cache_dir=None,
                  max_cached_mb=512, max_simultaneous_loads=20,
-                 max_dist=float("inf"), detail_falloff=600.0, **_ignored):
+                 max_dist=float("inf"), detail_falloff=600.0, direct_mesh=True, **_ignored):
         self._max_sse = max_sse
+        self.direct_mesh = bool(direct_mesh)   # numpy -> bpy mesh instead of GLB re-import
         self._max_dist = max_dist              # cesium-native culls by fog/frustum; kept for parity
         self._detail_falloff = detail_falloff
         self._cache_dir = cache_dir

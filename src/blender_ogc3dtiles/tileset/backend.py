@@ -143,7 +143,8 @@ def make_backend(choice, max_sse: float = 16.0, max_tiles: int = 200,
         print("[3DTiles] Backend: cesium-native-python")
         return CesiumNativeBackend(max_sse=max_sse, cache_dir=cache_dir,
                                    max_cached_mb=kw.get("max_cached_mb", 512),
-                                   max_dist=max_dist, detail_falloff=detail_falloff)
+                                   max_dist=max_dist, detail_falloff=detail_falloff,
+                                   direct_mesh=kw.get("direct_mesh", True))
     print(f"[3DTiles] Backend: Pure Python (cesium-native unavailable: {msg})")
     return PythonBackend(max_sse=max_sse, max_tiles=max_tiles,
                          detail_falloff=detail_falloff, max_dist=max_dist)

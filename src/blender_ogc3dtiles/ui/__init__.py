@@ -31,6 +31,7 @@ from ..io import (
     ensure_collection,
     ensure_root_empty,
     http_get,
+    build_tile_from_payload,
     import_glb_file,
     remove_tile,
     set_tile_visible,
@@ -230,7 +231,8 @@ class OGC3D_OT_StartStream(Operator):
                                max_tiles=props.max_loaded_tiles,
                                detail_falloff=props.detail_falloff,
                                max_dist=props.load_distance,
-                               cache_dir=cache.root if props.use_disk_cache else None)
+                               cache_dir=cache.root if props.use_disk_cache else None,
+                               direct_mesh=props.native_direct_mesh)
         sub = _coll_name(st["name"])
         st["coll"] = ensure_collection(scene, sub).name
         st["root_obj"] = ensure_root_empty(scene, _root_name(st["name"]), sub).name
@@ -498,12 +500,15 @@ def _tick_python(scene, props, st, now) -> bool:
         tile, parts = st["ready"].pop(0)
         key = _tile_key(tile)
         holders, data = [], []
+        t_imp = time.perf_counter()
         for part in parts:
             m = tile_world_matrix(tile.transform, part.get("rtc"), enu)
             r = import_glb_file(part["path"], key, scene, root_obj, m, hidden=True, coll=coll)
             if r:
                 holders.append(r[0])
                 data.extend(r[1])
+        st["import_s"] = st.get("import_s", 0.0) + (time.perf_counter() - t_imp)
+        st["import_n"] = st.get("import_n", 0) + 1
         if holders:
             for i, h in enumerate(holders):
                 tiles[key if i == 0 else f"{key}#{i}"] = _Rec(h, data if i == 0 else [], tile)
@@ -587,7 +592,20 @@ def _tick_native(scene, props, st, now) -> bool:
             continue
         m = blender_matrix_for_tile(rt.transform_ecef, props.origin_lat, props.origin_lon,
                                     props.origin_height, rt.rtc, rt.up_axis)
-        r = import_glb_file(rt.glb_path, rt.key, scene, root_obj, m.tolist(), hidden=True, coll=coll)
+        t_imp = time.perf_counter()
+        if rt.mesh_payload is not None:
+            try:
+                r = build_tile_from_payload(rt.mesh_payload, rt.key, scene, root_obj, m.tolist(),
+                                            hidden=True, coll=coll)
+            except Exception as e:                   # noqa: BLE001
+                import traceback
+                traceback.print_exc()
+                print(f"[3DTiles] direct mesh build failed for {rt.key}: {e}")
+                r = None
+        else:
+            r = import_glb_file(rt.glb_path, rt.key, scene, root_obj, m.tolist(), hidden=True, coll=coll)
+        st["import_s"] = st.get("import_s", 0.0) + (time.perf_counter() - t_imp)
+        st["import_n"] = st.get("import_n", 0) + 1
         if r:
             tiles[rt.key] = _Rec(r[0], r[1])
         imported += 1
@@ -770,6 +788,8 @@ class OGC3D_PT_MainPanel(Panel):
                 sel = st["backend"].last_selection()
                 extra = (f"visited {sel.visited} culled {sel.culled} render {len(sel.render)} "
                          f"load {len(sel.load)}") if sel else ""
+            if st.get("import_n"):
+                extra += f"  import {1000 * st['import_s'] / st['import_n']:.0f} ms/tile"
             layout.label(text=f"{st['name'][:18]}: {running}  {extra}",
                          icon="PLAY" if props.is_streaming else "PAUSE")
 
@@ -796,6 +816,7 @@ class OGC3D_PT_MainPanel(Panel):
         layout.label(text="Streaming", icon="SORTTIME")
         layout.prop(props, "max_concurrent_requests", text="Parallel DL")
         layout.prop(props, "imports_per_tick", text="Imports / tick")
+        layout.prop(props, "native_direct_mesh", text="Direct mesh (cesium-native)")
         row = layout.row(align=True)
         row.prop(props, "use_disk_cache", text="Disk cache")
         row.operator("ogc3dtiles.clear_cache", icon="TRASH", text="")

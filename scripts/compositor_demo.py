@@ -100,47 +100,74 @@ def N(t, x, y, **kw):
     return n
 
 
+def set_in(n, name, value):
+    """Blender 5.x moved most node options into (menu) input sockets."""
+    if name in n.inputs:
+        n.inputs[name].default_value = value
+    elif hasattr(n, name.lower().replace(" ", "_")):
+        setattr(n, name.lower().replace(" ", "_"), value)
+
+
+def mix_rgb(x, y, blend, fac):
+    m = N("ShaderNodeMix", x, y, data_type="RGBA", blend_type=blend)
+    m.inputs["Factor"].default_value = fac
+    return m
+
+
+def math(x, y, op):
+    return N("ShaderNodeMath", x, y, operation=op)
+
+
 # 1. normal-based edges (Sobel on the normal pass) → darken creases
-edge = N("CompositorNodeFilter", -600, -300, filter_type="SOBEL")
-nt.links.new(rl.outputs["Normal"], edge.inputs["Image"])
+edge = N("CompositorNodeFilter", -600, -300)
+set_in(edge, "Type", "Sobel")
+nt.links.new(rl.outputs["Normal" if "Normal" in rl.outputs else "Image"], edge.inputs["Image"])
 edge_bw = N("CompositorNodeRGBToBW", -400, -300)
 nt.links.new(edge.outputs["Image"], edge_bw.inputs["Image"])
-edge_inv = N("CompositorNodeMath", -200, -300, operation="SUBTRACT")
+edge_inv = math(-200, -300, "SUBTRACT")
 edge_inv.inputs[0].default_value = 1.0
 nt.links.new(edge_bw.outputs["Val"], edge_inv.inputs[1])
-edge_gain = N("CompositorNodeMath", 0, -300, operation="POWER")
+edge_gain = math(0, -300, "POWER")
 edge_gain.inputs[1].default_value = 0.6
 nt.links.new(edge_inv.outputs[0], edge_gain.inputs[0])
 
-# 2. ambient occlusion pass multiplied in (EEVEE GTAO)
-ao_mix = N("CompositorNodeMixRGB", 0, 150, blend_type="MULTIPLY")
-ao_mix.inputs["Fac"].default_value = 0.7
-nt.links.new(rl.outputs["Image"], ao_mix.inputs[1])
-nt.links.new(rl.outputs["AO"], ao_mix.inputs[2])
+# 2. ambient occlusion pass multiplied in (when the engine provides it)
+print("COMP passes:", [o.name for o in rl.outputs if o.enabled])
+ao_mix = mix_rgb(0, 150, "MULTIPLY", 0.7)
+nt.links.new(rl.outputs["Image"], ao_mix.inputs[6])
+ao_name = next((n for n in ("Ambient Occlusion", "AO") if n in rl.outputs and rl.outputs[n].enabled), None)
+if ao_name:
+    nt.links.new(rl.outputs[ao_name], ao_mix.inputs[7])
+else:
+    ao_mix.inputs["Factor"].default_value = 0.0   # pass-through
 
 # 3. creases darkening
-crease = N("CompositorNodeMixRGB", 200, 100, blend_type="MULTIPLY")
-crease.inputs["Fac"].default_value = 0.5
-nt.links.new(ao_mix.outputs["Image"], crease.inputs[1])
-nt.links.new(edge_gain.outputs[0], crease.inputs[2])
+crease = mix_rgb(200, 100, "MULTIPLY", 0.5)
+nt.links.new(ao_mix.outputs[2], crease.inputs[6])
+nt.links.new(edge_gain.outputs[0], crease.inputs[7])
 
 # 4. colour grade (contrast + warmth) and mist haze
 cb = N("CompositorNodeColorBalance", 400, 100)
-cb.correction_method = "OFFSET_POWER_SLOPE"
-cb.slope = (1.08, 1.03, 0.95)
-cb.power = (1.1, 1.1, 1.1)
-nt.links.new(crease.outputs["Image"], cb.inputs["Image"])
-haze = N("CompositorNodeMixRGB", 600, 100, blend_type="MIX")
-nt.links.new(rl.outputs["Mist"], haze.inputs["Fac"])
-nt.links.new(cb.outputs["Image"], haze.inputs[1])
-haze.inputs[2].default_value = (0.75, 0.8, 0.9, 1.0)
+set_in(cb, "Type", "Offset/Power/Slope (ASC-CDL)")
+for sock in cb.inputs:
+    if sock.name == "Slope" and sock.bl_idname == "NodeSocketColor":
+        sock.default_value = (1.08, 1.03, 0.95, 1.0)
+    if sock.name == "Power" and sock.bl_idname == "NodeSocketColor":
+        sock.default_value = (1.1, 1.1, 1.1, 1.0)
+nt.links.new(crease.outputs[2], cb.inputs["Image"])
+haze = mix_rgb(600, 100, "MIX", 0.0)
+if "Mist" in rl.outputs and rl.outputs["Mist"].enabled:
+    nt.links.new(rl.outputs["Mist"], haze.inputs["Factor"])
+nt.links.new(cb.outputs["Image"], haze.inputs[6])
+haze.inputs[7].default_value = (0.75, 0.8, 0.9, 1.0)
 
 # 5. soft glare on highlights
-glare = N("CompositorNodeGlare", 750, 100, glare_type="FOG_GLOW")
-glare.threshold = 1.0
-glare.mix = -0.6
-nt.links.new(haze.outputs["Image"], glare.inputs["Image"])
-nt.links.new(glare.outputs["Image"], out.inputs["Image"])
+glare = N("CompositorNodeGlare", 750, 100)
+set_in(glare, "Type", "Fog Glow")
+set_in(glare, "Threshold", 1.0)
+set_in(glare, "Strength", 0.3)
+nt.links.new(haze.outputs[2], glare.inputs["Image"])
+nt.links.new(glare.outputs["Image"], out.inputs[0])
 
 if out_plain:
     sc.render.use_compositing = False

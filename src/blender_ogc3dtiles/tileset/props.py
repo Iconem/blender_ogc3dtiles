@@ -204,9 +204,35 @@ class TilesSceneProps(PropertyGroup):
              "0.6 x the tile's mean point spacing x Point scale: coarse ADD-refined "
              "tiles get bigger points than fine ones"),
             ("UNIFORM", "Uniform", "One radius for every point of every tile"),
+            ("SCREEN", "Screen pixels",
+             "Constant size on screen: radius = pixels x distance to the eye (viewport while "
+             "streaming, scene camera when rendering), clamped to Min / Max metres. "
+             "Like 3DTilesRendererJS' point size with attenuation"),
         ],
         default="AUTO",
         update=_on_point_radius,
+    )
+    point_px: FloatProperty(
+        name="Point size (px)", description="Screen mode: point diameter in pixels",
+        default=3.0, min=0.5, max=64.0, update=_on_point_radius,
+    )
+    point_px_min_m: FloatProperty(
+        name="Min radius (m)", default=0.005, min=0.0, max=10.0, update=_on_point_radius,
+    )
+    point_px_max_m: FloatProperty(
+        name="Max radius (m)", default=2.0, min=0.01, max=100.0, update=_on_point_radius,
+    )
+    comp_edges: EnumProperty(
+        name="Edges",
+        description="Edge darkening in the beauty compositor",
+        items=[
+            ("EDL", "Eye-dome lighting", "From the depth pass: silhouettes and concavities, "
+                                         "ignores flat tile borders"),
+            ("NORMAL", "Normal creases", "Sobel on the normal pass: ink-like creases, also traces "
+                                         "tile borders where per-tile normals disagree"),
+            ("BOTH", "Both", "Multiply both"),
+        ],
+        default="EDL",
     )
     point_radius: FloatProperty(
         name="Point radius (m)", description="Uniform point radius",

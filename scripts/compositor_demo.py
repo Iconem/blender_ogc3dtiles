@@ -87,161 +87,17 @@ sc.render.engine = "BLENDER_EEVEE_NEXT" if "BLENDER_EEVEE_NEXT" in [
     e.identifier for e in sc.render.bl_rna.properties["engine"].enum_items] else "BLENDER_EEVEE"
 sc.render.resolution_x, sc.render.resolution_y = 1280, 720
 
-# ── passes ──────────────────────────────────────────────────────────────────
-vl = bpy.context.view_layer
-vl.use_pass_normal = True
-vl.use_pass_z = True
-vl.use_pass_mist = True
-vl.use_pass_diffuse_color = True
-vl.use_pass_ambient_occlusion = True
-if hasattr(sc.eevee, "use_gtao"):
-    sc.eevee.use_gtao = True
+# ── compositor tree (shared with the add-on's "Compositor" sub-panel) ──────────
+import os as _os
+_src = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "src")
+if _src not in sys.path:
+    sys.path.insert(0, _src)
+from blender_ogc3dtiles.compositor import build_beauty_tree  # noqa: E402
 
-# ── compositor tree ─────────────────────────────────────────────────────────
-# Blender 5.x: the compositor is a node group on scene.compositing_node_group
-# with a Group Output; 4.x: scene.node_tree with a Composite node.
-if hasattr(sc, "compositing_node_group"):
-    nt = bpy.data.node_groups.new("OGC3D Beauty", "CompositorNodeTree")
-    sc.compositing_node_group = nt
-    out = nt.nodes.new("NodeGroupOutput")
-    out.is_active_output = True
-    nt.interface.new_socket(name="Image", in_out="OUTPUT", socket_type="NodeSocketColor")
-else:
-    sc.use_nodes = True
-    nt = sc.node_tree
-    for n in list(nt.nodes):
-        nt.nodes.remove(n)
-    out = nt.nodes.new("CompositorNodeComposite")
-out.location = (900, 0)
-rl = nt.nodes.new("CompositorNodeRLayers")
-rl.location = (-900, 0)
-
-
-def N(t, x, y, **kw):
-    n = nt.nodes.new(t)
-    n.location = (x, y)
-    for k, v in kw.items():
-        setattr(n, k, v)
-    return n
-
-
-def set_in(n, name, value):
-    """Blender 5.x moved most node options into (menu) input sockets."""
-    if name in n.inputs:
-        n.inputs[name].default_value = value
-    elif hasattr(n, name.lower().replace(" ", "_")):
-        setattr(n, name.lower().replace(" ", "_"), value)
-
-
-def mix_rgb(x, y, blend, fac):
-    m = N("ShaderNodeMix", x, y, data_type="RGBA", blend_type=blend)
-    m.inputs["Factor"].default_value = fac
-    return m
-
-
-def mathn(x, y, op):
-    return N("ShaderNodeMath", x, y, operation=op)
-
-
-# 1a. normal-based creases (Sobel on the normal pass)
-def normal_edges():
-    edge = N("CompositorNodeFilter", -600, -300)
-    set_in(edge, "Type", "Sobel")
-    nt.links.new(rl.outputs["Normal" if "Normal" in rl.outputs else "Image"], edge.inputs["Image"])
-    edge_bw = N("CompositorNodeRGBToBW", -400, -300)
-    nt.links.new(edge.outputs["Image"], edge_bw.inputs["Image"])
-    edge_inv = mathn(-200, -300, "SUBTRACT")
-    edge_inv.inputs[0].default_value = 1.0
-    nt.links.new(edge_bw.outputs["Val"], edge_inv.inputs[1])
-    edge_gain = mathn(0, -300, "POWER")
-    edge_gain.inputs[1].default_value = 0.6
-    nt.links.new(edge_inv.outputs[0], edge_gain.inputs[0])
-    return edge_gain.outputs[0]
-
-
-# 1b. eye-dome lighting from the depth pass: a pixel further away than the
-# average of its neighbourhood (log depth − blurred log depth) is darkened;
-# silhouettes and concavities darken, flat tile borders do not.
-def edl_edges(radius_px=3, strength=6.0):
-    zname = "Depth" if "Depth" in rl.outputs else "Z"
-    logz = mathn(-700, -600, "LOGARITHM")
-    logz.inputs[1].default_value = 2.718281828
-    nt.links.new(rl.outputs[zname], logz.inputs[0])
-    blur = N("CompositorNodeBlur", -500, -600)
-    set_in(blur, "Type", "Gaussian")
-    if "Size" in blur.inputs:                       # 5.x: one 2D vector socket
-        try:
-            blur.inputs["Size"].default_value = (radius_px, radius_px)
-        except TypeError:
-            blur.inputs["Size"].default_value = float(radius_px)
-    if hasattr(blur, "size_x"):                     # 4.x
-        blur.size_x = blur.size_y = radius_px
-    nt.links.new(logz.outputs[0], blur.inputs["Image"])
-    diff = mathn(-300, -600, "SUBTRACT")           # log z − blur(log z)  (>0 = behind)
-    nt.links.new(logz.outputs[0], diff.inputs[0])
-    nt.links.new(blur.outputs["Image"], diff.inputs[1])
-    pos = mathn(-100, -600, "MAXIMUM")
-    pos.inputs[1].default_value = 0.0
-    nt.links.new(diff.outputs[0], pos.inputs[0])
-    gain = mathn(100, -600, "MULTIPLY")
-    gain.inputs[1].default_value = -strength
-    nt.links.new(pos.outputs[0], gain.inputs[0])
-    shade = mathn(300, -600, "EXPONENT")           # exp(−strength · max(0, Δ))
-    nt.links.new(gain.outputs[0], shade.inputs[0])
-    return shade.outputs[0]
-
-
-if edges == "normal":
-    edge_out = normal_edges()
-elif edges == "both":
-    a, b = normal_edges(), edl_edges()
-    both = mathn(450, -450, "MULTIPLY")
-    nt.links.new(a, both.inputs[0])
-    nt.links.new(b, both.inputs[1])
-    edge_out = both.outputs[0]
-else:
-    edge_out = edl_edges()
-
-# 2. ambient occlusion pass multiplied in (when the engine provides it)
-print("COMP passes:", [o.name for o in rl.outputs if o.enabled])
-ao_mix = mix_rgb(0, 150, "MULTIPLY", 0.7)
-nt.links.new(rl.outputs["Image"], ao_mix.inputs[6])
-ao_name = next((n for n in ("Ambient Occlusion", "AO") if n in rl.outputs and rl.outputs[n].enabled), None)
-if ao_name:
-    nt.links.new(rl.outputs[ao_name], ao_mix.inputs[7])
-else:
-    ao_mix.inputs["Factor"].default_value = 0.0   # pass-through
-
-# 3. creases darkening
-crease = mix_rgb(200, 100, "MULTIPLY", 0.5)
-nt.links.new(ao_mix.outputs[2], crease.inputs[6])
-nt.links.new(edge_out, crease.inputs[7])
-
-# 4. colour grade (contrast + warmth) and mist haze
-cb = N("CompositorNodeColorBalance", 400, 100)
-set_in(cb, "Type", "Offset/Power/Slope (ASC-CDL)")
-for sock in cb.inputs:
-    if sock.name == "Slope" and sock.bl_idname == "NodeSocketColor":
-        sock.default_value = (1.08, 1.03, 0.95, 1.0)
-    if sock.name == "Power" and sock.bl_idname == "NodeSocketColor":
-        sock.default_value = (1.1, 1.1, 1.1, 1.0)
-nt.links.new(crease.outputs[2], cb.inputs["Image"])
-haze = mix_rgb(600, 100, "MIX", 0.0)
-if "Mist" in rl.outputs and rl.outputs["Mist"].enabled:
-    mist_gain = mathn(450, -150, "MULTIPLY")
-    mist_gain.inputs[1].default_value = 0.35      # keep the haze subtle
-    nt.links.new(rl.outputs["Mist"], mist_gain.inputs[0])
-    nt.links.new(mist_gain.outputs[0], haze.inputs["Factor"])
-nt.links.new(cb.outputs["Image"], haze.inputs[6])
-haze.inputs[7].default_value = (0.75, 0.8, 0.9, 1.0)
-
-# 5. soft glare on highlights
-glare = N("CompositorNodeGlare", 750, 100)
-set_in(glare, "Type", "Fog Glow")
-set_in(glare, "Threshold", 1.0)
-set_in(glare, "Strength", 0.3)
-nt.links.new(haze.outputs[2], glare.inputs["Image"])
-nt.links.new(glare.outputs["Image"], out.inputs[0])
+if objs:
+    sc.world.mist_settings.start = size * 0.3
+    sc.world.mist_settings.depth = size * 1.5
+build_beauty_tree(sc, edges)
 
 if out_plain:
     sc.render.use_compositing = False

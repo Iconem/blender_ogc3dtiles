@@ -682,7 +682,22 @@ def point_radius_for(scene, payload) -> float:
 def apply_point_radius(scene) -> int:
     """Re-apply the radius of every point tile (mode or uniform value changed)."""
     props = scene.ogc3dtiles
-    uniform = getattr(props, "point_radius_mode", "AUTO") == "UNIFORM"
+    mode = getattr(props, "point_radius_mode", "AUTO")
+    uniform = mode == "UNIFORM"
+    for name, mesh_mode in ((POINTS_NODEGROUP, False), (POINTS_MESH_NODEGROUP, True)):
+        ng = bpy.data.node_groups.get(name)
+        if ng is None:
+            continue
+        ng = _points_nodegroup(mesh_mode)          # upgrades an old group in place
+        for node_name, val in ((SCREEN_MODE_NODE, 1.0 if mode == "SCREEN" else 0.0),
+                               (PX_SIZE_NODE, float(props.point_px) * 0.5),   # diameter → radius
+                               (PX_MIN_NODE, float(props.point_px_min_m)),
+                               (PX_MAX_NODE, float(props.point_px_max_m))):
+            node = ng.nodes.get(node_name)
+            if node is not None:
+                node.outputs[0].default_value = val
+    if mode == "SCREEN":
+        ensure_view_proxy(scene)
     n = 0
     for o in bpy.data.objects:
         mod = o.modifiers.get("Points") if o.type == "MESH" else None
@@ -718,25 +733,36 @@ def _points_nodegroup(mesh_mode: bool = False):
     name = POINTS_MESH_NODEGROUP if mesh_mode else POINTS_NODEGROUP
     ng = bpy.data.node_groups.get(name)
     if ng is not None:
-        return ng
-    ng = bpy.data.node_groups.new(name, "GeometryNodeTree")
+        if ng.nodes.get(SCREEN_MODE_NODE) is not None:
+            return ng
+        # group saved by an older version: rebuild the nodes, keep the
+        # interface sockets (modifiers reference them by identifier)
+        for n in list(ng.nodes):
+            ng.nodes.remove(n)
+    else:
+        ng = bpy.data.node_groups.new(name, "GeometryNodeTree")
     iface = ng.interface
-    iface.new_socket("Geometry", in_out="INPUT", socket_type="NodeSocketGeometry")
-    radius = iface.new_socket("Radius", in_out="INPUT", socket_type="NodeSocketFloat")
-    radius.default_value = 0.04
-    radius.min_value = 0.0
-    iface.new_socket("Material", in_out="INPUT", socket_type="NodeSocketMaterial")
-    iface.new_socket("Geometry", in_out="OUTPUT", socket_type="NodeSocketGeometry")
+    have = {it.name for it in iface.items_tree if getattr(it, "item_type", "") == "SOCKET"}
+    if "Geometry" not in have:
+        iface.new_socket("Geometry", in_out="INPUT", socket_type="NodeSocketGeometry")
+        iface.new_socket("Geometry", in_out="OUTPUT", socket_type="NodeSocketGeometry")
+    if "Radius" not in have:
+        radius = iface.new_socket("Radius", in_out="INPUT", socket_type="NodeSocketFloat")
+        radius.default_value = 0.04
+        radius.min_value = 0.0
+    if "Material" not in have:
+        iface.new_socket("Material", in_out="INPUT", socket_type="NodeSocketMaterial")
     N, L = ng.nodes.new, ng.links.new
     n_in = N("NodeGroupInput")
     n_out = N("NodeGroupOutput")
     scale = N("ShaderNodeValue")
     scale.name = scale.label = POINT_SCALE_NODE
     scale.outputs[0].default_value = 1.0
-    mul = N("ShaderNodeMath")
-    mul.operation = "MULTIPLY"
-    L(n_in.outputs["Radius"], mul.inputs[0])
-    L(scale.outputs[0], mul.inputs[1])
+    mul0 = N("ShaderNodeMath")
+    mul0.operation = "MULTIPLY"
+    L(n_in.outputs["Radius"], mul0.inputs[0])
+    L(scale.outputs[0], mul0.inputs[1])
+    mul = _screen_radius_nodes(ng, mul0.outputs[0])     # metres ↔ screen-pixel radius
     m2p = N("GeometryNodeMeshToPoints")
     m2p.mode = "VERTICES"
     L(n_in.outputs["Geometry"], m2p.inputs["Mesh"])
@@ -780,6 +806,122 @@ def _points_nodegroup(mesh_mode: bool = False):
     return ng
 
 
+VIEW_PROXY = "OGC3D View"            # Empty following the eye (viewport / camera)
+SCREEN_MODE_NODE = "Screen Mode"     # 0 = metres (Radius × Point Scale), 1 = screen pixels
+VIEW_SCALE_NODE = "View Scale"       # metres per pixel at distance 1 (perspective)
+VIEW_PERSP_NODE = "View Persp"       # 1 perspective, 0 orthographic
+PX_SIZE_NODE = "Point Pixels"
+PX_MIN_NODE = "Min Radius"
+PX_MAX_NODE = "Max Radius"
+
+
+def _value(ng, name, default):
+    n = ng.nodes.new("ShaderNodeValue")
+    n.name = n.label = name
+    n.outputs[0].default_value = default
+    return n
+
+
+def _screen_radius_nodes(ng, metres_socket):
+    """radius = mix(metres, clamp(px × dist_eff × view_scale, min, max), Screen Mode)
+    with dist_eff = |P_world − eye| in perspective, 1 in orthographic.
+    All parameters are Value nodes shared by every tile (set from the panel
+    / the streaming tick), the eye is the 'OGC3D View' Empty."""
+    N, L = ng.nodes.new, ng.links.new
+    mode = _value(ng, SCREEN_MODE_NODE, 0.0)
+    vscale = _value(ng, VIEW_SCALE_NODE, 0.002)
+    persp = _value(ng, VIEW_PERSP_NODE, 1.0)
+    px = _value(ng, PX_SIZE_NODE, 3.0)
+    rmin = _value(ng, PX_MIN_NODE, 0.005)
+    rmax = _value(ng, PX_MAX_NODE, 2.0)
+    self_obj = N("GeometryNodeSelfObject")
+    info_self = N("GeometryNodeObjectInfo")
+    L(self_obj.outputs[0], info_self.inputs["Object"])
+    pos = N("GeometryNodeInputPosition")
+    world = N("FunctionNodeTransformPoint")
+    L(pos.outputs[0], world.inputs["Vector"])
+    L(info_self.outputs["Transform"], world.inputs["Transform"])
+    info_eye = N("GeometryNodeObjectInfo")
+    info_eye.name = "Eye Info"
+    info_eye.inputs["Object"].default_value = bpy.data.objects.get(VIEW_PROXY)
+    dist = N("ShaderNodeVectorMath")
+    dist.operation = "DISTANCE"
+    L(world.outputs[0], dist.inputs[0])
+    L(info_eye.outputs["Location"], dist.inputs[1])
+    # dist_eff = dist × persp + (1 − persp)
+    d_mul = N("ShaderNodeMath")
+    d_mul.operation = "MULTIPLY_ADD"
+    L(dist.outputs["Value"], d_mul.inputs[0])
+    L(persp.outputs[0], d_mul.inputs[1])
+    one_minus = N("ShaderNodeMath")
+    one_minus.operation = "SUBTRACT"
+    one_minus.inputs[0].default_value = 1.0
+    L(persp.outputs[0], one_minus.inputs[1])
+    L(one_minus.outputs[0], d_mul.inputs[2])
+    r_px = N("ShaderNodeMath")
+    r_px.operation = "MULTIPLY"
+    L(d_mul.outputs[0], r_px.inputs[0])
+    L(vscale.outputs[0], r_px.inputs[1])
+    r_px2 = N("ShaderNodeMath")
+    r_px2.operation = "MULTIPLY"
+    L(r_px.outputs[0], r_px2.inputs[0])
+    L(px.outputs[0], r_px2.inputs[1])
+    clamp = N("ShaderNodeClamp")
+    L(r_px2.outputs[0], clamp.inputs["Value"])
+    L(rmin.outputs[0], clamp.inputs["Min"])
+    L(rmax.outputs[0], clamp.inputs["Max"])
+    mix = N("ShaderNodeMix")
+    mix.data_type = "FLOAT"
+    L(mode.outputs[0], mix.inputs["Factor"])
+    L(metres_socket, mix.inputs[2])
+    L(clamp.outputs[0], mix.inputs[3])
+    return mix
+
+
+def ensure_view_proxy(scene):
+    obj = bpy.data.objects.get(VIEW_PROXY)
+    if obj is None:
+        obj = bpy.data.objects.new(VIEW_PROXY, None)
+        obj.empty_display_type = "SPHERE"
+        obj.empty_display_size = 0.5
+        obj.hide_viewport = True
+        obj.hide_render = True
+        obj.hide_select = True
+        obj["ogc3dtiles_view_proxy"] = True
+        ensure_collection(scene).objects.link(obj)
+    for name in (POINTS_NODEGROUP, POINTS_MESH_NODEGROUP):
+        ng = bpy.data.node_groups.get(name)
+        node = ng.nodes.get("Eye Info") if ng else None
+        if node is not None and node.inputs["Object"].default_value is not obj:
+            node.inputs["Object"].default_value = obj
+    return obj
+
+
+_last_eye = [None]
+
+
+def update_view_proxy(scene, eye_world, p11, height_px, is_persp):
+    """Called every streaming tick (viewport) and on render_pre (camera):
+    radius_m = px × dist × 2 / (p11 × H)   →   View Scale = 2 / (p11 × H)."""
+    key = (tuple(round(v, 3) for v in eye_world), round(p11, 5), height_px, is_persp)
+    if key == _last_eye[0]:
+        return
+    _last_eye[0] = key
+    obj = ensure_view_proxy(scene)
+    obj.location = eye_world
+    vscale = 2.0 / max(abs(p11) * float(height_px), 1e-6)
+    for name in (POINTS_NODEGROUP, POINTS_MESH_NODEGROUP):
+        ng = bpy.data.node_groups.get(name)
+        if ng is None:
+            continue
+        n = ng.nodes.get(VIEW_SCALE_NODE)
+        if n is not None:
+            n.outputs[0].default_value = vscale
+        n = ng.nodes.get(VIEW_PERSP_NODE)
+        if n is not None:
+            n.outputs[0].default_value = 1.0 if is_persp else 0.0
+
+
 def _set_points_inputs(mod, ng, radius, mat):
     for item in ng.interface.items_tree:
         if getattr(item, "in_out", "") != "INPUT":
@@ -792,7 +934,10 @@ def _set_points_inputs(mod, ng, radius, mat):
 
 def _add_points_modifier(obj, radius: float = 0.04, mesh_mode: bool = False):
     try:
+        created = bpy.data.node_groups.get(POINTS_MESH_NODEGROUP if mesh_mode else POINTS_NODEGROUP) is None
         ng = _points_nodegroup(mesh_mode)
+        if created:
+            apply_point_radius(bpy.context.scene)     # push the panel values into the new group
         mod = obj.modifiers.new("Points", "NODES")
         mod.node_group = ng
         obj["point_radius"] = float(radius)
@@ -887,9 +1032,66 @@ def _short_name(url: str) -> str:
     return ("t_" + name)[:60]
 
 
+def _render_pre(scene, _depsgraph=None):
+    """Rendering: the eye is the scene camera, pixels are the render height."""
+    try:
+        cam = scene.camera
+        if cam is None or bpy.data.objects.get(VIEW_PROXY) is None:
+            return
+        if scene.ogc3dtiles.point_radius_mode != "SCREEN":
+            return
+        import math
+        h = max(int(scene.render.resolution_y * scene.render.resolution_percentage / 100), 1)
+        data = cam.data
+        if data.type == "ORTHO":
+            p11 = 2.0 / max(data.ortho_scale, 1e-6)
+            persp = False
+        else:
+            p11 = 1.0 / math.tan(data.angle_y / 2.0)
+            persp = True
+        update_view_proxy(scene, tuple(cam.matrix_world.translation), p11, h, persp)
+    except Exception as e:                           # noqa: BLE001
+        print(f"[3DTiles] render view proxy failed: {e}")
+
+
+def _upgrade_points_groups(_dummy=None):
+    """Files saved with older point groups get the current nodes on load."""
+    try:
+        for name, mesh_mode in ((POINTS_NODEGROUP, False), (POINTS_MESH_NODEGROUP, True)):
+            if bpy.data.node_groups.get(name) is not None:
+                _points_nodegroup(mesh_mode)
+        if bpy.data.objects.get(VIEW_PROXY) is not None:
+            ensure_view_proxy(bpy.context.scene)
+    except Exception as e:                           # noqa: BLE001
+        print(f"[3DTiles] points group upgrade failed: {e}")
+
+
 def register():
+    handlers = getattr(getattr(bpy, "app", None), "handlers", None)
+    if handlers is not None:
+        # @persistent: handlers without it are dropped when a .blend is loaded
+        if not any(getattr(h, "__name__", "") == "_render_pre" for h in handlers.render_pre):
+            handlers.render_pre.append(handlers.persistent(_render_pre))
+        if not any(getattr(h, "__name__", "") == "_upgrade_points_groups" for h in handlers.load_post):
+            handlers.load_post.append(handlers.persistent(_upgrade_points_groups))
+    _register_rest()
+
+
+def _register_rest():
     pass
 
 
 def unregister():
+    handlers = getattr(getattr(bpy, "app", None), "handlers", None)
+    if handlers is not None:
+        for h in list(handlers.render_pre):
+            if getattr(h, "__name__", "") == "_render_pre":
+                handlers.render_pre.remove(h)
+        for h in list(handlers.load_post):
+            if getattr(h, "__name__", "") == "_upgrade_points_groups":
+                handlers.load_post.remove(h)
+    _unregister_rest()
+
+
+def _unregister_rest():
     pass

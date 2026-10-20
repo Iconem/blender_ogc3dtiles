@@ -141,3 +141,15 @@ def register():
 
 def unregister():
     pass
+
+
+def viewport_eye():
+    """(eye_world, p11, viewport_height_px, is_persp) of the first 3D viewport,
+    for screen-space point sizing. None without a window (``-b``)."""
+    r3d, region = find_view3d()
+    if r3d is None:
+        return None
+    inv = r3d.view_matrix.inverted()
+    win = r3d.window_matrix
+    p11 = float(win[1][1]) if abs(win[1][1]) > 1e-9 else 1.0
+    return (tuple(inv.translation), p11, max(int(region.height), 1), bool(r3d.is_perspective))

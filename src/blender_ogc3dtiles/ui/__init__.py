@@ -303,9 +303,9 @@ def _start_stream(scene, props, st, choice, cache) -> None:
     taken = {o["name"] for k, o in _state["streams"].items() if k != st["key"] and o.get("coll")}
     if label in taken:
         n = 2
-        while f"{label} ({n})" in taken:
+        while f"{label} - {n}" in taken:
             n += 1
-        label = f"{label} ({n})"
+        label = f"{label} - {n}"
     st["name"] = label
     sub = _coll_name(label)
     st["coll"] = ensure_collection(scene, sub).name
@@ -377,14 +377,23 @@ class OGC3D_OT_OriginReset(Operator):
         return {"FINISHED"}
 
 
+def _relationship_lines_shown(context) -> bool:
+    sd = getattr(context, "space_data", None)
+    if sd is not None and sd.type == "VIEW_3D":
+        return bool(sd.overlay.show_relationship_lines)
+    for area in context.screen.areas:
+        if area.type == "VIEW_3D":
+            return bool(area.spaces.active.overlay.show_relationship_lines)
+    return True
+
+
 class OGC3D_OT_RelationLines(Operator):
-    """Show / hide the dashed parent-relation lines in every 3D viewport"""
+    """Toggle the dashed parent-relation lines overlay in every 3D viewport"""
     bl_idname = "ogc3dtiles.relation_lines"
-    bl_label = "Relation Lines"
-    show: bpy.props.BoolProperty(default=True)
+    bl_label = "Toggle Relation Lines"
 
     def execute(self, context):
-        _set_relationship_lines(context, self.show)
+        _set_relationship_lines(context, not _relationship_lines_shown(context))
         return {"FINISHED"}
 
 
@@ -521,6 +530,8 @@ def stream_tick(context) -> bool:
     props = scene.ogc3dtiles
     now = time.monotonic()
     changed = _sync_streams(scene, props, now)
+    if props.point_radius_mode == "SCREEN":
+        _update_view_proxy(scene)
     loaded = pending = visible = 0
     parts = []
     for st in _state["streams"].values():
@@ -584,6 +595,18 @@ def _sync_streams(scene, props, now) -> bool:
             st["last_sig"] = None
             changed = True
     return changed
+
+
+def _update_view_proxy(scene):
+    """Screen-space point size: the shared points node group reads the eye
+    position from the 'OGC3D View' Empty and a per-pixel scale from a Value
+    node; both are refreshed here from the 3D viewport (and from the scene
+    camera when rendering, see io.update_view_proxy)."""
+    from ..camera import viewport_eye
+    from ..io import update_view_proxy
+    eye = viewport_eye()
+    if eye is not None:
+        update_view_proxy(scene, *eye)
 
 
 def _view_for(st):
@@ -1069,7 +1092,9 @@ class OGC3D_PT_MainPanel(Panel):
             body.prop(props, "native_direct_mesh", text="Direct mesh (numpy, both backends)")
             row = body.row(align=True)
             row.prop(props, "hide_relation_lines", text="Hide relation lines")
-            row.operator("ogc3dtiles.relation_lines", text="", icon="HIDE_OFF").show = True
+            shown = _relationship_lines_shown(context)
+            row.operator("ogc3dtiles.relation_lines", text="",
+                         icon="HIDE_OFF" if shown else "HIDE_ON", depress=shown)
             row = body.row(align=True)
             row.prop(props, "use_disk_cache", text="Disk cache")
             row.operator("ogc3dtiles.clear_cache", icon="TRASH", text="")
@@ -1082,6 +1107,11 @@ class OGC3D_PT_MainPanel(Panel):
             body.prop(props, "point_radius_mode", text="Radius")
             if props.point_radius_mode == "UNIFORM":
                 body.prop(props, "point_radius", text="Radius m")
+            elif props.point_radius_mode == "SCREEN":
+                row = body.row(align=True)
+                row.prop(props, "point_px", text="Pixels")
+                row.prop(props, "point_px_min_m", text="Min m")
+                row.prop(props, "point_px_max_m", text="Max m")
             else:
                 body.prop(props, "point_scale", text="Point scale")
             if props.point_display == "MESH":
@@ -1095,6 +1125,13 @@ class OGC3D_PT_MainPanel(Panel):
         if body:
             from .. import materials as _materials
             _materials.draw_panel(body, props)
+
+        # Compositor
+        header, body = layout.panel("ogc3d_compositor", default_closed=True)
+        header.label(text="Compositor", icon="NODE_COMPOSITING")
+        if body:
+            from .. import compositor as _compositor
+            _compositor.draw_panel(body, props)
 
 
 class OGC3D_PT_CoordPanel(Panel):

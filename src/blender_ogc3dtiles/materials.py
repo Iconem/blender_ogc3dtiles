@@ -18,10 +18,10 @@ from bpy.types import Operator
 GROUP_NAME = "OGC3D Relight"
 TUNABLES = (
     # (node name, default, min, max, description)
-    ("Shadow Lift", 1.3, 0.5, 3.0, "Gamma on the albedo: >1 lifts baked shadows"),
-    ("Saturation", 1.1, 0.0, 2.0, "Albedo saturation"),
     ("Albedo Strength", 1.0, 0.0, 1.0, "1 = photo albedo, 0 = pure clay (the 'Clay Color' RGB node "
                                        "in the group)"),
+    ("Shadow Lift", 1.3, 0.5, 3.0, "Gamma on the albedo: >1 lifts baked shadows"),
+    ("Saturation", 1.1, 0.0, 2.0, "Albedo saturation"),
     ("Baked Light", 0.5, 0.0, 1.0, "0 = fully lit Principled BSDF, 1 = unlit albedo. Photogrammetry "
                                   "already carries its lighting; higher values also hide "
                                   "shading seams between tiles"),

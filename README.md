@@ -37,9 +37,12 @@ the next tick.  **Max SSE** (LOD sub-panel) is the live renderer setting for
 every stream; tick *Own SSE* on an entry to override it for that tileset.
 Both re-select immediately on both backends.  *Start* discards the tiles a
 previous *Stop* left on screen (they belong to a dead selection).  Two
-entries with the same label get separate collections (`… (2)`).
+entries with the same label get separate collections (`… - 2`).
 
-Python backend load order is CesiumJS-style foveated: shallow tiles first,
+Load order (Python backend): the tree is walked with a stack (depth-first)
+but every requested tile goes into one queue that is sorted before download,
+so the walk order does not matter.  The sort key is depth first (all missing
+ancestors before any deeper tile), then CesiumJS-style foveated: shallow tiles first,
 then by screen-space error weighted towards the view centre (*Foveation
 cone* = fraction of the view half-angle); *Edge SSE relax* > 0 additionally
 lets the periphery stay coarser.  cesium-native orders its own queue the same
@@ -109,7 +112,11 @@ a `Col` colour attribute and a shared Geometry Nodes modifier.  The radius of
 each tile's points is 0.6 × its mean point spacing (estimated from the tile's
 extent and point count) times the *Point scale* slider, or one *Uniform*
 radius for every tile (ADD-refined clouds keep their coarse parents, so
-uniform avoids big parent points among fine children).  Two display modes
+uniform avoids big parent points among fine children), or **Screen pixels**:
+radius = pixels × distance to the eye, clamped to a metre range — the eye is
+the 'OGC3D View' Empty that the streaming tick moves to the viewport eye and
+a `render_pre` handler moves to the scene camera, so points keep a constant
+on-screen size like 3DTilesRendererJS' point size with attenuation.  Two display modes
 (`Point Clouds` sub-panel): **Point cloud** (Mesh → Points; cheapest; unlit
 vertex colours in Material Preview / Rendered, material colour in Solid) and
 **Tiny tetrahedra** (4 vertices per point, realised as a mesh whose active
@@ -144,6 +151,15 @@ cache. Our `IPrepareRendererResources` subclass serialises each decoded
 import step consumes. Placement: Empty = `ENU_from_ECEF · T_tile · Zup→Yup`.
 
 ---
+
+### Compositor
+
+The "Compositor" sub-panel builds the 'OGC3D Beauty' tree on the current
+scene (`compositor.py`: edges, AO, ASC-CDL grade, mist haze, glare) and
+switches every 3D viewport's compositor to *Always*, so Rendered shading
+shows it live; the Compositing workspace shows the nodes.  Edges: eye-dome
+lighting from the depth pass (default), Sobel creases from normals, or both.
+`scripts/compositor_demo.py` reuses the same builder for headless renders.
 
 ## Coordinate System
 

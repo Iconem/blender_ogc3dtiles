@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import math
 import time
+import uuid
 
 import bpy
 from bpy.types import Operator, Panel, UIList
@@ -43,6 +44,7 @@ from ..tileset.traversal import (
     TileState,
     build_ecef_to_enu_matrix,
     ecef_to_geodetic,
+    geodetic_to_ecef,
     graft_external,
     parse_tileset,
 )
@@ -51,6 +53,7 @@ SELECTION_MAX_AGE_S = 0.5
 EVICT_PERIOD_S = 2.0
 EVICT_GRACE_S = 10.0       # never evict something the traversal wanted recently
 RETRY_AFTER_S = 5.0
+START_RETRY_S = 15.0       # re-try a tileset whose start failed (bad URL, offline …)
 
 # ── Cached backend probe ──────────────────────────────────────────────────────
 _cesium_status: tuple = (False, "Not checked yet")
@@ -85,7 +88,8 @@ def _new_stream(key, name, url, token, max_sse) -> dict:
 
 
 def _fresh_state() -> dict:
-    return {"streams": {}, "camera_adapter": None, "origin_set": False}
+    return {"streams": {}, "camera_adapter": None, "origin_set": False,
+            "choice": "AUTO", "cache": None, "start_failed": {}}
 
 
 _state: dict = _fresh_state()
@@ -131,8 +135,28 @@ def _enabled_items(props):
     return items
 
 
-def _stream_key(index, item) -> str:
-    return f"{index}:{item.url.strip()}"
+def _item_key(item) -> str:
+    """Stable per-entry id (survives list reordering / removal)."""
+    if not item.uid:
+        item.uid = uuid.uuid4().hex[:12]
+    return item.uid
+
+
+def _stream_key(index, item) -> str:      # kept for callers using the old signature
+    return _item_key(item)
+
+
+def apply_item_sse(item):
+    """Live SSE edit from the list → running backend."""
+    st = _state["streams"].get(item.uid) if item.uid else None
+    if st is None or st.get("backend") is None:
+        return
+    st["max_sse"] = item.max_sse
+    try:
+        st["backend"].set_max_sse(float(item.max_sse))
+    except Exception as e:                           # noqa: BLE001
+        print(f"[3DTiles] set_max_sse failed: {e}")
+    st["last_sig"] = None                 # force a re-selection on the next tick
 
 
 # ── Operators ─────────────────────────────────────────────────────────────────
@@ -162,7 +186,7 @@ class OGC3D_OT_TilesetRemove(Operator):
         props = context.scene.ogc3dtiles
         i = props.active_tileset
         if 0 <= i < len(props.tilesets):
-            key = _stream_key(i, props.tilesets[i])
+            key = _item_key(props.tilesets[i])
             st = _state["streams"].pop(key, None)
             if st is not None:
                 _teardown_stream(st, remove_objects=True)
@@ -194,27 +218,23 @@ class OGC3D_OT_StartStream(Operator):
         props.tiles_loaded = 0
         props.tiles_pending = 0
         prefs = _get_prefs(context)
-        choice = getattr(prefs, "traversal_backend", "AUTO") or "AUTO"
-        cache = DiskCache(default_cache_dir(), enabled=props.use_disk_cache)
+        _state["choice"] = getattr(prefs, "traversal_backend", "AUTO") or "AUTO"
+        _state["cache"] = DiskCache(default_cache_dir(), enabled=props.use_disk_cache)
         _state["camera_adapter"] = CesiumCameraAdapter(scene)
-        _state["origin_set"] = not props.use_tileset_center
+        # CUSTOM: the user's lat/lon/h is the origin; KEEP: a previously set
+        # origin stays; AUTO: decided per tileset in _decide_origin()
+        if props.origin_mode == "CUSTOM":
+            props.origin_valid = True
+        _state["origin_set"] = props.origin_mode == "CUSTOM" or (
+            props.origin_mode == "KEEP" and props.origin_valid)
 
         started = 0
         for index, item in items:
-            st = _new_stream(_stream_key(index, item), item.name or _short_label(item.url),
-                             item.url.strip(), item.ion_token, item.max_sse)
-            try:
-                ok = self._start_stream(scene, props, st, choice, cache)
-            except Exception as e:                   # noqa: BLE001
-                import traceback
-                traceback.print_exc()
-                ok = False
-                st["error"] = str(e)
-            if ok:
-                _state["streams"][st["key"]] = st
-                started += 1
-            else:
+            st = _start_item(scene, props, item)
+            if st.get("error"):
                 self.report({"WARNING"}, f"{st['name']}: {st['error']}")
+            else:
+                started += 1
         if not started:
             self.report({"ERROR"}, "No tileset could be started")
             return {"CANCELLED"}
@@ -226,45 +246,99 @@ class OGC3D_OT_StartStream(Operator):
             bpy.ops.ogc3dtiles.modal_stream("INVOKE_DEFAULT")
         return {"FINISHED"}
 
-    def _start_stream(self, scene, props, st, choice, cache) -> bool:
-        backend = make_backend(choice, max_sse=st["max_sse"],
-                               max_tiles=props.max_loaded_tiles,
-                               detail_falloff=props.detail_falloff,
-                               max_dist=props.load_distance,
-                               cache_dir=cache.root if props.use_disk_cache else None,
-                               direct_mesh=props.native_direct_mesh)
-        sub = _coll_name(st["name"])
-        st["coll"] = ensure_collection(scene, sub).name
-        st["root_obj"] = ensure_root_empty(scene, _root_name(st["name"]), sub).name
 
-        if isinstance(backend, PythonBackend):
-            headers = {}
-            if st["token"]:
-                headers["Authorization"] = f"Bearer {st['token']}"
-            raw = http_get(st["url"], headers)
-            data = json.loads(raw.decode("utf-8"))
-            root_tile = parse_tileset(data, st["url"])
-            backend.set_root(root_tile)
-            st["root_tile"] = root_tile
-            if not _state["origin_set"]:
-                cx, cy, cz, _r = root_tile.sphere_ecef()
-                _set_origin_from_ecef(props, cx, cy, cz)
-                _state["origin_set"] = True
-            st["download_mgr"] = TileDownloadManager(
-                max_concurrent=props.max_concurrent_requests, token=st["token"], cache=cache)
-            st["mode"] = "python"
-            _add_root_bbox(scene, st)
-        else:
-            headers = {}
-            if st["token"] and not st["url"].isdigit():
-                headers["Authorization"] = f"Bearer {st['token']}"
-            backend.main_thread_ms = max(4.0, 12.0 * props.imports_per_tick)
-            backend.on_main_thread_ready = _make_native_builder(scene, props, st)
-            backend.load_tileset(url=st["url"], ion_token=st["token"],
-                                 options={"request_headers": headers})
-            st["mode"] = "native"
-        st["backend"] = backend
-        return True
+
+def _start_item(scene, props, item) -> dict:
+    """Create and start the stream for one list entry; registers it in
+    ``_state`` (with ``error`` set when the start failed)."""
+    st = _new_stream(_item_key(item), item.name or _short_label(item.url),
+                     item.url.strip(), item.ion_token, item.max_sse)
+    try:
+        _start_stream(scene, props, st, _state["choice"], _state["cache"])
+    except Exception as e:                           # noqa: BLE001
+        import traceback
+        traceback.print_exc()
+        st["error"] = str(e)
+        st["backend"] = None
+        _state["start_failed"][st["key"]] = time.monotonic()
+    _state["streams"][st["key"]] = st
+    return st
+
+
+def _start_stream(scene, props, st, choice, cache) -> None:
+    backend = make_backend(choice, max_sse=st["max_sse"],
+                           max_tiles=props.max_loaded_tiles,
+                           detail_falloff=props.detail_falloff,
+                           max_dist=props.load_distance,
+                           cache_dir=cache.root if props.use_disk_cache else None,
+                           direct_mesh=props.native_direct_mesh)
+    sub = _coll_name(st["name"])
+    st["coll"] = ensure_collection(scene, sub).name
+    st["root_obj"] = ensure_root_empty(scene, _root_name(st["name"]), sub).name
+
+    if isinstance(backend, PythonBackend):
+        headers = {}
+        if st["token"]:
+            headers["Authorization"] = f"Bearer {st['token']}"
+        raw = http_get(st["url"], headers)
+        data = json.loads(raw.decode("utf-8"))
+        root_tile = parse_tileset(data, st["url"])
+        backend.set_root(root_tile)
+        st["root_tile"] = root_tile
+        cx, cy, cz, _r = root_tile.sphere_ecef()
+        _decide_origin(props, (cx, cy, cz))
+        st["download_mgr"] = TileDownloadManager(
+            max_concurrent=props.max_concurrent_requests, token=st["token"], cache=cache)
+        st["mode"] = "python"
+        _add_root_bbox(scene, st)
+    else:
+        headers = {}
+        if st["token"] and not st["url"].isdigit():
+            headers["Authorization"] = f"Bearer {st['token']}"
+        backend.main_thread_ms = max(4.0, 12.0 * props.imports_per_tick)
+        backend.on_main_thread_ready = _make_native_builder(scene, props, st)
+        backend.load_tileset(url=st["url"], ion_token=st["token"],
+                             options={"request_headers": headers})
+        st["mode"] = "native"
+    st["backend"] = backend
+
+
+def _decide_origin(props, center_ecef) -> None:
+    """Scene-origin policy, evaluated when a tileset's centre becomes known.
+    Only the first tileset of a session can move the origin; afterwards every
+    stream shares it."""
+    if _state["origin_set"]:
+        return
+    cx, cy, cz = center_ecef
+    if props.origin_mode == "AUTO" and props.origin_valid:
+        ox, oy, oz = geodetic_to_ecef(props.origin_lat, props.origin_lon, props.origin_height)
+        d_km = math.dist((cx, cy, cz), (ox, oy, oz)) / 1000.0
+        if d_km <= props.origin_reuse_km:
+            print(f"[3DTiles] Scene origin kept (tileset centre {d_km:.1f} km away)")
+            _state["origin_set"] = True
+            for other in _state["streams"].values():
+                other["last_sig"] = None
+            return
+        print(f"[3DTiles] Scene origin re-centred: tileset centre {d_km:.1f} km "
+              f"> {props.origin_reuse_km:g} km")
+    _set_origin_from_ecef(props, cx, cy, cz)
+    props.origin_valid = True
+    _state["origin_set"] = True
+    for other in _state["streams"].values():
+        other["last_sig"] = None
+
+
+class OGC3D_OT_OriginReset(Operator):
+    """Forget the stored origin so the next Start re-centres on the first tileset"""
+    bl_idname = "ogc3dtiles.origin_reset"
+    bl_label = "Reset Origin"
+
+    def execute(self, context):
+        props = context.scene.ogc3dtiles
+        props.origin_valid = False
+        _state["origin_set"] = False
+        self.report({"INFO"}, "Origin will be re-centred on the next Start")
+        return {"FINISHED"}
 
 
 class OGC3D_OT_StopStream(Operator):
@@ -394,11 +468,15 @@ def stream_tick(context) -> bool:
     scene = context.scene
     props = scene.ogc3dtiles
     now = time.monotonic()
-    changed = False
+    changed = _sync_streams(scene, props, now)
     loaded = pending = visible = 0
     parts = []
     for st in _state["streams"].values():
         if st["backend"] is None:
+            continue
+        if st.get("paused"):
+            parts.append(f"{st['name'][:14]} paused {len(st['tiles'])}")
+            loaded += len(st["tiles"])
             continue
         if st["mode"] == "native":
             changed |= _tick_native(scene, props, st, now)
@@ -411,6 +489,48 @@ def stream_tick(context) -> bool:
     props.tiles_loaded = loaded
     props.tiles_pending = pending
     props.status_text = f"Visible {visible}  Loaded {loaded}  Queue {pending}  |  " + "  ".join(parts)
+    return changed
+
+
+def _sync_streams(scene, props, now) -> bool:
+    """Reconcile the tileset list with the running streams: start entries
+    that were added or ticked while streaming, pause unticked ones, tear
+    down removed ones."""
+    changed = False
+    by_key = {}
+    for item in props.tilesets:
+        by_key[_item_key(item)] = item
+    for key in list(_state["streams"].keys()):
+        if key not in by_key:
+            st = _state["streams"].pop(key)
+            _teardown_stream(st, remove_objects=True)
+            changed = True
+    for key, item in by_key.items():
+        st = _state["streams"].get(key)
+        want = bool(item.enabled and item.url.strip())
+        if st is None:
+            if not want:
+                continue
+            last_fail = _state["start_failed"].get(key)
+            if last_fail is not None and now - last_fail < START_RETRY_S:
+                continue
+            st = _start_item(scene, props, item)
+            changed = True
+        elif st["backend"] is None:
+            # failed earlier: retry when the entry changed or after a delay
+            if want and (st["url"] != item.url.strip()
+                         or now - _state["start_failed"].get(key, 0) > START_RETRY_S):
+                _state["streams"].pop(key, None)
+                st = _start_item(scene, props, item)
+                changed = True
+            continue
+        paused = not item.enabled
+        if paused != bool(st.get("paused")):
+            st["paused"] = paused
+            if paused and st.get("download_mgr"):
+                st["download_mgr"].cancel_all()
+            st["last_sig"] = None
+            changed = True
     return changed
 
 
@@ -605,10 +725,7 @@ def _tick_native(scene, props, st, now) -> bool:
         if c is None:
             st["pending"] = 0
             return False
-        _set_origin_from_ecef(props, *c)
-        _state["origin_set"] = True
-        for other in _state["streams"].values():
-            other["last_sig"] = None
+        _decide_origin(props, c)
 
     for key in backend.pop_freed():
         rec = tiles.pop(key, None)
@@ -732,15 +849,33 @@ def _set_origin_from_ecef(props, ex, ey, ez):
 
 # ── Panels ────────────────────────────────────────────────────────────────────
 
+def _layer_collection(lc, name):
+    if lc.collection.name == name:
+        return lc
+    for child in lc.children:
+        r = _layer_collection(child, name)
+        if r is not None:
+            return r
+    return None
+
+
 class OGC3D_UL_Tilesets(UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
         row = layout.row(align=True)
         row.prop(item, "enabled", text="")
         row.prop(item, "name", text="", emboss=False)
-        st = _state["streams"].get(_stream_key(index, item))
+        st = _state["streams"].get(item.uid) if item.uid else None
         if st is not None and st["backend"] is not None:
             tag = "N" if st["mode"] == "native" else "P"
-            row.label(text=f"{tag} {len(st['render_keys'])}/{len(st['tiles'])}")
+            if st.get("paused"):
+                row.label(text=f"{tag} {len(st['tiles'])}", icon="PAUSE")
+            else:
+                row.label(text=f"{tag} {len(st['render_keys'])}/{len(st['tiles'])}")
+        elif st is not None and st.get("error"):
+            row.label(text="", icon="ERROR")
+        lc = _layer_collection(context.view_layer.layer_collection, st["coll"])             if st and st.get("coll") else None
+        if lc is not None:       # same eye as the outliner (per view layer)
+            row.prop(lc, "hide_viewport", text="", emboss=False)
 
 
 class OGC3D_PT_MainPanel(Panel):
@@ -764,8 +899,6 @@ class OGC3D_PT_MainPanel(Panel):
         box.label(text=props.status_text, icon=icon)
 
         # Tilesets
-        layout.separator()
-        layout.label(text="Tilesets", icon="WORLD")
         row = layout.row()
         row.template_list("OGC3D_UL_Tilesets", "", props, "tilesets", props, "active_tileset", rows=3)
         col = row.column(align=True)
@@ -777,7 +910,7 @@ class OGC3D_PT_MainPanel(Panel):
             b.prop(it, "url", text="URL")
             b.prop(it, "ion_token", text="Ion Token")
             b.prop(it, "max_sse", text="Max SSE")
-            st = _state["streams"].get(_stream_key(props.active_tileset, it))
+            st = _state["streams"].get(it.uid) if it.uid else None
             if st is not None:
                 root = bpy.data.objects.get(st["root_obj"] or "")
                 if root is not None:
@@ -788,73 +921,95 @@ class OGC3D_PT_MainPanel(Panel):
             layout.prop(props, "tileset_url", text="URL")
             layout.prop(props, "cesium_ion_token", text="Ion Token")
 
-        # Backend
-        layout.separator()
-        layout.label(text="Backend", icon="MOD_DYNAMICPAINT")
-        prefs = _get_prefs(context)
-        if hasattr(prefs, "bl_rna"):
-            row = layout.row()
-            row.enabled = not props.is_streaming
-            row.prop(prefs, "traversal_backend", text="")
-        ok, status = _cesium_status
-        layout.label(text=f"cesium-native-python: {status}", icon="CHECKMARK" if ok else "INFO")
-        for st in _state["streams"].values():
-            if st["backend"] is None:
-                continue
-            running = "cesium-native" if st["mode"] == "native" else "Pure Python"
-            if st["mode"] == "native":
-                s = st.get("stats") or {}
-                extra = (f"visited {s.get('tiles_visited', 0)} culled {s.get('tiles_culled', 0)} "
-                         f"{s.get('bytes', 0) / 1e6:.0f} MB")
-            else:
-                sel = st["backend"].last_selection()
-                extra = (f"visited {sel.visited} culled {sel.culled} render {len(sel.render)} "
-                         f"load {len(sel.load)}") if sel else ""
-            if st.get("import_n"):
-                extra += f"  import {1000 * st['import_s'] / st['import_n']:.0f} ms/tile"
-            layout.label(text=f"{st['name'][:18]}: {running}  {extra}",
-                         icon="PLAY" if props.is_streaming else "PAUSE")
-
-        # Origin
-        layout.separator()
-        layout.label(text="Scene Origin", icon="ORIENTATION_GLOBAL")
-        layout.prop(props, "use_tileset_center")
-        col = layout.column()
-        col.enabled = not props.use_tileset_center
-        col.prop(props, "origin_lat", text="Latitude °")
-        col.prop(props, "origin_lon", text="Longitude °")
-        col.prop(props, "origin_height", text="Height m")
-
-        # LOD
-        layout.separator()
-        layout.label(text="LOD", icon="DRIVER_DISTANCE")
-        layout.prop(props, "max_screen_space_error", text="Default SSE")
-        layout.prop(props, "detail_falloff", text="Detail Falloff m")
-        layout.prop(props, "load_distance", text="Max Distance m")
-        layout.prop(props, "max_loaded_tiles", text="Max Tiles / tileset")
-
-        # Streaming
-        layout.separator()
-        layout.label(text="Streaming", icon="SORTTIME")
-        layout.prop(props, "max_concurrent_requests", text="Parallel DL")
-        layout.prop(props, "imports_per_tick", text="Imports / tick")
-        layout.prop(props, "native_direct_mesh", text="Direct mesh (cesium-native)")
-        row = layout.row(align=True)
-        row.prop(props, "use_disk_cache", text="Disk cache")
-        row.operator("ogc3dtiles.clear_cache", icon="TRASH", text="")
-
-        # Materials
-        layout.separator()
-        from .. import materials as _materials
-        _materials.draw_panel(layout, props)
-
-        layout.separator()
         row = layout.row(align=True)
         if not props.is_streaming:
             row.operator("ogc3dtiles.start_stream", icon="PLAY", text="Start")
         else:
             row.operator("ogc3dtiles.stop_stream", icon="PAUSE", text="Stop")
-        layout.operator("ogc3dtiles.clear_tiles", icon="TRASH", text="Clear All Tiles")
+        row.operator("ogc3dtiles.clear_tiles", icon="TRASH", text="Clear All Tiles")
+
+        # Backend
+        header, body = layout.panel("ogc3d_backend", default_closed=False)
+        header.label(text="Backend", icon="MOD_DYNAMICPAINT")
+        if body:
+            prefs = _get_prefs(context)
+            if hasattr(prefs, "bl_rna"):
+                row = body.row()
+                row.enabled = not props.is_streaming
+                row.prop(prefs, "traversal_backend", text="")
+            ok, status = _cesium_status
+            body.label(text=f"cesium-native-python: {status}", icon="CHECKMARK" if ok else "INFO")
+            for st in _state["streams"].values():
+                if st["backend"] is None:
+                    continue
+                running = "cesium-native" if st["mode"] == "native" else "Pure Python"
+                if st["mode"] == "native":
+                    s = st.get("stats") or {}
+                    extra = (f"visited {s.get('tiles_visited', 0)} culled {s.get('tiles_culled', 0)} "
+                             f"{s.get('bytes', 0) / 1e6:.0f} MB")
+                else:
+                    sel = st["backend"].last_selection()
+                    extra = (f"visited {sel.visited} culled {sel.culled} render {len(sel.render)} "
+                             f"load {len(sel.load)}") if sel else ""
+                if st.get("import_n"):
+                    extra += f"  import {1000 * st['import_s'] / st['import_n']:.0f} ms/tile"
+                icon = "PAUSE" if (st.get("paused") or not props.is_streaming) else "PLAY"
+                body.label(text=f"{st['name'][:18]}: {running}  {extra}", icon=icon)
+
+        # Origin
+        header, body = layout.panel("ogc3d_origin", default_closed=True)
+        header.label(text="Scene Origin", icon="ORIENTATION_GLOBAL")
+        if body:
+            body.prop(props, "origin_mode", text="Mode")
+            if props.origin_mode == "AUTO":
+                body.prop(props, "origin_reuse_km")
+            col = body.column()
+            col.enabled = props.origin_mode == "CUSTOM"
+            col.prop(props, "origin_lat", text="Latitude °")
+            col.prop(props, "origin_lon", text="Longitude °")
+            col.prop(props, "origin_height", text="Height m")
+            row = body.row()
+            row.label(text="Origin set" if props.origin_valid else "Origin not set yet",
+                      icon="CHECKMARK" if props.origin_valid else "INFO")
+            row.operator("ogc3dtiles.origin_reset", text="", icon="FILE_REFRESH")
+
+        # LOD
+        header, body = layout.panel("ogc3d_lod", default_closed=False)
+        header.label(text="LOD", icon="DRIVER_DISTANCE")
+        if body:
+            body.prop(props, "max_screen_space_error", text="SSE for new tilesets")
+            body.prop(props, "detail_falloff", text="Detail Falloff m")
+            body.prop(props, "load_distance", text="Max Distance m")
+            body.prop(props, "max_loaded_tiles", text="Max Tiles / tileset")
+
+        # Streaming
+        header, body = layout.panel("ogc3d_streaming", default_closed=True)
+        header.label(text="Streaming", icon="SORTTIME")
+        if body:
+            body.prop(props, "max_concurrent_requests", text="Parallel DL")
+            body.prop(props, "imports_per_tick", text="Imports / tick")
+            body.prop(props, "native_direct_mesh", text="Direct mesh (cesium-native)")
+            row = body.row(align=True)
+            row.prop(props, "use_disk_cache", text="Disk cache")
+            row.operator("ogc3dtiles.clear_cache", icon="TRASH", text="")
+
+        # Points
+        header, body = layout.panel("ogc3d_points", default_closed=True)
+        header.label(text="Point Clouds", icon="OUTLINER_DATA_POINTCLOUD")
+        if body:
+            body.prop(props, "point_display", text="Display")
+            body.prop(props, "point_scale", text="Point scale")
+            if props.point_display == "MESH":
+                body.label(text="Solid mode: Shading → Color → Attribute", icon="INFO")
+            else:
+                body.label(text="Colours in Material Preview / Rendered", icon="INFO")
+
+        # Materials
+        header, body = layout.panel("ogc3d_materials", default_closed=True)
+        header.label(text="Materials", icon="MATERIAL")
+        if body:
+            from .. import materials as _materials
+            _materials.draw_panel(body, props)
 
 
 class OGC3D_PT_CoordPanel(Panel):
@@ -895,6 +1050,7 @@ _classes = [
     OGC3D_OT_TilesetRemove,
     OGC3D_OT_StartStream,
     OGC3D_OT_StopStream,
+    OGC3D_OT_OriginReset,
     OGC3D_OT_ClearTiles,
     OGC3D_OT_ClearCache,
     OGC3D_OT_ModalStream,

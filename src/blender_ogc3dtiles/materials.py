@@ -215,10 +215,23 @@ def remove_relight(mat) -> bool:
     return True
 
 
+def _is_tile_object(o) -> bool:
+    """Direct-mesh tiles carry ``tile_url`` themselves; glTF-imported tiles are
+    meshes parented under an Empty holder that carries it."""
+    p = o
+    for _ in range(4):
+        if p is None:
+            return False
+        if "tile_url" in p:
+            return True
+        p = p.parent
+    return False
+
+
 def tile_materials():
     seen = set()
     for o in bpy.data.objects:
-        if "tile_url" in o and o.type == "MESH" and o.data is not None:
+        if o.type == "MESH" and o.data is not None and _is_tile_object(o):
             for m in o.data.materials:
                 if m is not None and m.name not in seen:
                     seen.add(m.name)
@@ -250,7 +263,7 @@ class OGC3D_OT_RelightRemove(Operator):
 
 
 def draw_panel(layout, props):
-    layout.label(text="Materials", icon="MATERIAL")
+    """Body of the collapsible "Materials" sub-panel."""
     row = layout.row(align=True)
     row.operator("ogc3dtiles.relight_apply", icon="SHADING_RENDERED", text="Apply Relight")
     row.operator("ogc3dtiles.relight_remove", icon="X", text="")

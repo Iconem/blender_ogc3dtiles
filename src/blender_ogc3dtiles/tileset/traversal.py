@@ -506,6 +506,11 @@ def _geodetic_to_ecef(lat_deg: float, lon_deg: float, height_m: float) -> tuple:
     return (x, y, z)
 
 
+def geodetic_to_ecef(lat_deg: float, lon_deg: float, height_m: float) -> tuple:
+    """Public alias of _geodetic_to_ecef."""
+    return _geodetic_to_ecef(lat_deg, lon_deg, height_m)
+
+
 def ecef_to_geodetic(x: float, y: float, z: float) -> tuple:
     """ECEF → (lat_deg, lon_deg, height_m), iterative."""
     a = 6378137.0

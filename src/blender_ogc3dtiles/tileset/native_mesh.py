@@ -265,6 +265,12 @@ def extract_mesh_payload(cs, model):
         return None
     V = np.concatenate(verts)
     F = np.concatenate(faces).astype(np.int32) if faces else np.zeros((0, 3), np.int32)
+    point_spacing = 0.0
+    if all_points and len(V) > 1:
+        # mean spacing of a surface-like cloud: sqrt(area / N) over the two
+        # largest extents; drives the display radius of this tile's points
+        ext = np.sort(V.max(axis=0) - V.min(axis=0))[::-1]
+        point_spacing = float(np.sqrt(max(ext[0] * ext[1], 1e-9) / len(V)))
 
     images = {}
     materials = []
@@ -298,6 +304,7 @@ def extract_mesh_payload(cs, model):
         "faces": F,
         "uvs": np.concatenate(uvs) if (have_uvs and uvs and not all_points) else None,
         "colors": np.concatenate(colors) if (have_colors and colors) else None,
+        "point_spacing": point_spacing,
         "face_mat": np.concatenate(face_mat) if face_mat else np.zeros(0, np.int32),
         "points": all_points,
         "materials": materials,

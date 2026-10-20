@@ -417,12 +417,19 @@ def import_glb_file(path: str, key: str, scene: bpy.types.Scene, root: bpy.types
     before_ma = set(bpy.data.materials.keys())
     before_i = set(bpy.data.images.keys())
     with _SelectionGuard():
+        # The importer derives its log level from bpy.app.debug_value (0 → INFO,
+        # three console lines per tile); raise it to WARNING while we import.
+        old_dbg = bpy.app.debug_value
+        if old_dbg == 0:
+            bpy.app.debug_value = 1
         try:
             result = bpy.ops.import_scene.gltf(filepath=path, import_pack_images=True,
                                                merge_vertices=False)
         except Exception as e:                      # noqa: BLE001
             print(f"[3DTiles] glTF import failed for {key}: {e}")
             return None
+        finally:
+            bpy.app.debug_value = old_dbg
         if "FINISHED" not in result:
             return None
         new_objs = [bpy.data.objects[n] for n in bpy.data.objects.keys() if n not in before_o]
@@ -595,7 +602,10 @@ def build_tile_from_payload(payload: dict, key: str, scene: bpy.types.Scene,
     obj.matrix_parent_inverse = Matrix.Identity(4)
     obj.matrix_world = root.matrix_world @ Matrix(matrix_rows)
     if payload.get("points"):
-        _add_points_modifier(obj)
+        spacing = float(payload.get("point_spacing") or 0.0)
+        radius = min(max(0.6 * spacing, 0.01), 5.0) if spacing > 0 else 0.05
+        mesh_mode = getattr(scene.ogc3dtiles, "point_display", "POINTS") == "MESH"
+        _add_points_modifier(obj, radius, mesh_mode)
     elif getattr(scene.ogc3dtiles, "auto_relight", False):
         from ..materials import apply_relight
         for m in me.materials:
@@ -607,15 +617,30 @@ def build_tile_from_payload(payload: dict, key: str, scene: bpy.types.Scene,
 
 
 POINTS_NODEGROUP = "OGC3D Points"
+POINTS_MESH_NODEGROUP = "OGC3D Points (Mesh)"
+POINT_SCALE_NODE = "Point Scale"
 
 
-def _points_nodegroup():
-    """Shared Geometry Nodes group: Mesh → Points so vertex-only tiles render
-    in EEVEE / Cycles (radius exposed as a group input)."""
-    ng = bpy.data.node_groups.get(POINTS_NODEGROUP)
+def _points_nodegroup(mesh_mode: bool = False):
+    """Shared Geometry Nodes group for vertex-only tiles.
+
+    POINTS mode: Mesh → Points.  Cheapest; coloured in Material Preview /
+    Rendered (the material reads the ``Col`` attribute) but Solid mode draws
+    point clouds with the material colour only.
+
+    MESH mode: each point becomes a tiny tetrahedron (4 verts) and the result
+    is realised as a mesh whose active colour attribute is ``Col``, so Solid
+    mode with Color → Attribute shows the point colours too.  The input mesh
+    is joined first (that is what carries the active-colour name through
+    Blender's realise step) and its loose vertices are deleted afterwards.
+
+    Both groups take Geometry / Radius / Material and multiply the radius by
+    a Value node named "Point Scale" that the sidebar exposes."""
+    name = POINTS_MESH_NODEGROUP if mesh_mode else POINTS_NODEGROUP
+    ng = bpy.data.node_groups.get(name)
     if ng is not None:
         return ng
-    ng = bpy.data.node_groups.new(POINTS_NODEGROUP, "GeometryNodeTree")
+    ng = bpy.data.node_groups.new(name, "GeometryNodeTree")
     iface = ng.interface
     iface.new_socket("Geometry", in_out="INPUT", socket_type="NodeSocketGeometry")
     radius = iface.new_socket("Radius", in_out="INPUT", socket_type="NodeSocketFloat")
@@ -623,36 +648,104 @@ def _points_nodegroup():
     radius.min_value = 0.0
     iface.new_socket("Material", in_out="INPUT", socket_type="NodeSocketMaterial")
     iface.new_socket("Geometry", in_out="OUTPUT", socket_type="NodeSocketGeometry")
-    n_in = ng.nodes.new("NodeGroupInput")
-    n_out = ng.nodes.new("NodeGroupOutput")
-    m2p = ng.nodes.new("GeometryNodeMeshToPoints")
+    N, L = ng.nodes.new, ng.links.new
+    n_in = N("NodeGroupInput")
+    n_out = N("NodeGroupOutput")
+    scale = N("ShaderNodeValue")
+    scale.name = scale.label = POINT_SCALE_NODE
+    scale.outputs[0].default_value = 1.0
+    mul = N("ShaderNodeMath")
+    mul.operation = "MULTIPLY"
+    L(n_in.outputs["Radius"], mul.inputs[0])
+    L(scale.outputs[0], mul.inputs[1])
+    m2p = N("GeometryNodeMeshToPoints")
     m2p.mode = "VERTICES"
-    setmat = ng.nodes.new("GeometryNodeSetMaterial")   # points do not inherit the mesh material
-    n_in.location = (-500, 0)
-    m2p.location = (-200, 0)
-    setmat.location = (50, 0)
-    n_out.location = (300, 0)
-    ng.links.new(n_in.outputs["Geometry"], m2p.inputs["Mesh"])
-    ng.links.new(n_in.outputs["Radius"], m2p.inputs["Radius"])
-    ng.links.new(m2p.outputs["Points"], setmat.inputs["Geometry"])
-    ng.links.new(n_in.outputs["Material"], setmat.inputs["Material"])
-    ng.links.new(setmat.outputs["Geometry"], n_out.inputs["Geometry"])
+    L(n_in.outputs["Geometry"], m2p.inputs["Mesh"])
+    setmat = N("GeometryNodeSetMaterial")   # points do not inherit the mesh material
+    n_in.location, scale.location, mul.location = (-700, 0), (-700, -200), (-500, -150)
+    m2p.location, setmat.location, n_out.location = (-300, 0), (500, 0), (750, 0)
+    if not mesh_mode:
+        L(mul.outputs[0], m2p.inputs["Radius"])
+        L(m2p.outputs["Points"], setmat.inputs["Geometry"])
+    else:
+        cone = N("GeometryNodeMeshCone")            # 3 side vertices → tetrahedron
+        cone.inputs["Vertices"].default_value = 3
+        cone.inputs["Radius Bottom"].default_value = 1.0
+        cone.inputs["Depth"].default_value = 1.6
+        iop = N("GeometryNodeInstanceOnPoints")
+        L(m2p.outputs["Points"], iop.inputs["Points"])
+        L(cone.outputs["Mesh"], iop.inputs["Instance"])
+        L(mul.outputs[0], iop.inputs["Scale"])
+        real = N("GeometryNodeRealizeInstances")
+        L(iop.outputs["Instances"], real.inputs["Geometry"])
+        tag = N("GeometryNodeStoreNamedAttribute")
+        tag.domain, tag.data_type = "POINT", "BOOLEAN"
+        tag.inputs["Name"].default_value = "ogc3d_orig"
+        tag.inputs["Value"].default_value = True
+        L(n_in.outputs["Geometry"], tag.inputs["Geometry"])
+        join = N("GeometryNodeJoinGeometry")
+        L(real.outputs["Geometry"], join.inputs[0])
+        L(tag.outputs["Geometry"], join.inputs[0])     # linked last = first input
+        dele = N("GeometryNodeDeleteGeometry")
+        dele.domain, dele.mode = "POINT", "ALL"
+        named = N("GeometryNodeInputNamedAttribute")
+        named.data_type = "BOOLEAN"
+        named.inputs["Name"].default_value = "ogc3d_orig"
+        L(join.outputs["Geometry"], dele.inputs["Geometry"])
+        L(named.outputs["Attribute"], dele.inputs["Selection"])
+        L(dele.outputs["Geometry"], setmat.inputs["Geometry"])
+        cone.location, iop.location, real.location = (-300, -300), (-100, 0), (100, 0)
+        tag.location, join.location, dele.location = (-100, 250), (300, 0), (400, -150)
+    L(n_in.outputs["Material"], setmat.inputs["Material"])
+    L(setmat.outputs["Geometry"], n_out.inputs["Geometry"])
     return ng
 
 
-def _add_points_modifier(obj):
+def _set_points_inputs(mod, ng, radius, mat):
+    for item in ng.interface.items_tree:
+        if getattr(item, "in_out", "") != "INPUT":
+            continue
+        if item.name == "Material" and mat is not None:
+            mod[item.identifier] = mat
+        elif item.name == "Radius":
+            mod[item.identifier] = float(radius)
+
+
+def _add_points_modifier(obj, radius: float = 0.04, mesh_mode: bool = False):
     try:
-        ng = _points_nodegroup()
+        ng = _points_nodegroup(mesh_mode)
         mod = obj.modifiers.new("Points", "NODES")
         mod.node_group = ng
+        obj["point_radius"] = float(radius)
         mat = obj.data.materials[0] if obj.data.materials else None
-        if mat is not None:
-            for item in ng.interface.items_tree:
-                if getattr(item, "in_out", "") == "INPUT" and item.name == "Material":
-                    mod[item.identifier] = mat
-                    break
+        _set_points_inputs(mod, ng, radius, mat)
     except Exception as e:                           # noqa: BLE001
         print(f"[3DTiles] points modifier failed: {e}")
+
+
+def apply_point_display(mode: str) -> int:
+    """Switch every point tile between the two node groups."""
+    mesh_mode = mode == "MESH"
+    ng = _points_nodegroup(mesh_mode)
+    n = 0
+    for o in bpy.data.objects:
+        mod = o.modifiers.get("Points") if o.type == "MESH" else None
+        if mod is None or mod.type != "NODES" or mod.node_group is ng:
+            continue
+        mod.node_group = ng
+        mat = o.data.materials[0] if o.data.materials else None
+        _set_points_inputs(mod, ng, o.get("point_radius", 0.04), mat)
+        o.update_tag()
+        n += 1
+    return n
+
+
+def apply_point_scale(scale: float) -> None:
+    for name in (POINTS_NODEGROUP, POINTS_MESH_NODEGROUP):
+        ng = bpy.data.node_groups.get(name)
+        node = ng.nodes.get(POINT_SCALE_NODE) if ng else None
+        if node is not None:
+            node.outputs[0].default_value = float(scale)
 
 
 def set_tile_visible(holder_name: str, visible: bool) -> None:

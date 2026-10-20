@@ -23,12 +23,31 @@ blender_ogc3dtiles/
 
 ### Several tilesets at once
 
-The sidebar holds a list of tilesets (add / remove, enable toggle, per-entry
-URL, ion token and SSE).  Every enabled entry becomes its own stream with its
-own backend instance, download manager, root Empty (`3D Tiles · <name>`) and
-sub-collection (`Tiles · <name>`), all sharing the scene origin and the
-viewport camera.  Moving, rotating or scaling a root Empty is honoured by
-culling and SSE for that tileset only.
+The sidebar holds a list of tilesets (add / remove, per-entry URL, ion token
+and SSE).  Every entry becomes its own stream with its own backend instance,
+download manager, root Empty (`3D Tiles · <name>`) and sub-collection
+(`Tiles · <name>`), all sharing the scene origin and the viewport camera.
+Moving, rotating or scaling a root Empty is honoured by culling and SSE for
+that tileset only.
+
+Per row: the checkbox **pauses** the stream (nothing is loaded or evicted,
+loaded tiles stay as they are), the eye hides its sub-collection (same as the
+outliner).  Entries added, ticked or removed while streaming are picked up on
+the next tick.  The per-entry **Max SSE** is live: editing it re-selects
+immediately on both backends (the global "SSE for new tilesets" only seeds new
+entries).
+
+### Scene origin
+
+All streams share one ENU origin (`Scene Origin` sub-panel):
+
+- **Auto** — centre on the first tileset.  On a later Start the current origin
+  is kept when the new tileset's centre lies within *Reuse within* km of it
+  (default 10 km, CloudCompare-style), otherwise the scene is re-centred.
+- **Keep current** — never move it once set.
+- **Custom** — use the typed latitude / longitude / height.
+
+The origin is stored in the .blend; *Reset Origin* forgets it.
 
 ### Streaming loop (both backends)
 
@@ -76,9 +95,14 @@ original JPEG/PNG bytes of the textures or PNG re-encoded from decoded
 pixels for KTX2).  `io.build_tile_from_payload` then creates the mesh with
 `foreach_set`, packs the textures from bytes and builds a matte Principled
 material.  Point clouds (`pnts`, glTF POINTS) become vertex-only meshes with
-a `Col` colour attribute and a shared "OGC3D Points" Geometry Nodes modifier
-(Mesh → Points, radius exposed) so they render in EEVEE / Cycles with unlit
-vertex colours.  Measured main-thread cost per tile: 8–9 ms direct vs 10–13 ms
+a `Col` colour attribute and a shared Geometry Nodes modifier.  The radius of
+each tile's points is 0.6 × its mean point spacing (estimated from the tile's
+extent and point count) times the *Point scale* slider.  Two display modes
+(`Point Clouds` sub-panel): **Point cloud** (Mesh → Points; cheapest; unlit
+vertex colours in Material Preview / Rendered, material colour in Solid) and
+**Tiny tetrahedra** (4 vertices per point, realised as a mesh whose active
+colour attribute is `Col`, so Solid mode with Color → Attribute shows the
+colours as well).  Measured main-thread cost per tile: 8–9 ms direct vs 10–13 ms
 through `bpy.ops.import_scene.gltf`; the direct path also needs no temp files
 and works regardless of which glTF extensions Blender's importer knows.
 Toggle: "Direct mesh (cesium-native)" in the sidebar (off = GLB re-import).
@@ -133,11 +157,15 @@ in the add-on preferences. The pure Python path is used otherwise.
 
 ## Quick Start
 
-1. Paste a `tileset.json` URL (Cesium Ion, Google Maps 3D Tiles, local server…)
+1. Add a tileset entry (+) and paste a `tileset.json` URL (Cesium Ion, Google
+   Maps 3D Tiles, local server, share link…)
 2. For Cesium Ion: paste your access token
-3. Enable "Auto-center from Tileset" (reads origin from bounding volume)
+3. Leave the origin mode on *Auto* (first tileset centres the scene)
 4. Hit **Start**
 5. Navigate the 3D viewport — tiles load as you move the camera
+
+The glTF importer (Python backend, or "Direct mesh" off) is silenced to
+WARNING while tiles import; the direct mesh path prints nothing per tile.
 
 Headless smoke test: see `ui.stream_tick()`; in `blender -b` the operator
 does not start a timer, call `stream_tick(bpy.context)` yourself with a

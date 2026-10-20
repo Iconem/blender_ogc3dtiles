@@ -339,7 +339,13 @@ def draw_panel(layout, props):
 _classes = [OGC3D_OT_RelightApply, OGC3D_OT_RelightRemove]
 
 
-@bpy.app.handlers.persistent
+def _persistent(fn):
+    """bpy.app.handlers.persistent, tolerant of the test stub without bpy.app."""
+    app = getattr(bpy, "app", None)
+    return app.handlers.persistent(fn) if app is not None else fn
+
+
+@_persistent
 def _upgrade_group_on_load(_dummy=None):
     """Files saved with an older "OGC3D Relight" group get the current nodes
     (materials keep pointing at the same group datablock)."""
@@ -353,12 +359,14 @@ def _upgrade_group_on_load(_dummy=None):
 def register():
     for c in _classes:
         bpy.utils.register_class(c)
-    if _upgrade_group_on_load not in bpy.app.handlers.load_post:
-        bpy.app.handlers.load_post.append(_upgrade_group_on_load)
+    handlers = getattr(getattr(bpy, "app", None), "handlers", None)
+    if handlers is not None and _upgrade_group_on_load not in handlers.load_post:
+        handlers.load_post.append(_upgrade_group_on_load)
 
 
 def unregister():
-    if _upgrade_group_on_load in bpy.app.handlers.load_post:
-        bpy.app.handlers.load_post.remove(_upgrade_group_on_load)
+    handlers = getattr(getattr(bpy, "app", None), "handlers", None)
+    if handlers is not None and _upgrade_group_on_load in handlers.load_post:
+        handlers.load_post.remove(_upgrade_group_on_load)
     for c in reversed(_classes):
         bpy.utils.unregister_class(c)

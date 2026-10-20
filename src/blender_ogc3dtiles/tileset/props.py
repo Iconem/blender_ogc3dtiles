@@ -5,7 +5,7 @@ Stored on bpy.types.Scene so they persist with the .blend file.
 import bpy
 from bpy.props import (
     StringProperty, FloatProperty, IntProperty,
-    BoolProperty, FloatVectorProperty, EnumProperty, CollectionProperty,
+    BoolProperty, EnumProperty, CollectionProperty,
 )
 from bpy.types import PropertyGroup
 

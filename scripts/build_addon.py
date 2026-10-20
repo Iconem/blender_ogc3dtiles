@@ -24,10 +24,7 @@ Structure inside the zip:
         ui/
 """
 
-import os
-import sys
 import zipfile
-import shutil
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -59,9 +56,9 @@ def build():
             print(f"  + {arcname}")
 
     print(f"\nBuilt: {zip_path}  ({zip_path.stat().st_size // 1024} KB)")
-    print(f"\nInstall in Blender:")
+    print("\nInstall in Blender:")
     print(f"  Edit → Preferences → Add-ons → Install → select {zip_path.name}")
-    print(f"\nOr junction for live dev editing:")
+    print("\nOr junction for live dev editing:")
     print(f"  Windows: mklink /J <blender_ext_dir>\\blender_ogc3dtiles {ADDON_SRC}")
     print(f"  macOS/Linux: ln -s {ADDON_SRC} <blender_ext_dir>/blender_ogc3dtiles")
 

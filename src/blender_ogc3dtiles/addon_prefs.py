@@ -15,7 +15,7 @@ import bpy
 from bpy.types import AddonPreferences, Operator
 from bpy.props import BoolProperty, EnumProperty, FloatProperty, IntProperty, StringProperty
 
-from .tileset.backend import get_available_backends, probe_cesium, BackendChoice
+from .tileset.backend import get_available_backends, probe_cesium
 
 
 # ── Prefs class ───────────────────────────────────────────────────────────────
@@ -163,7 +163,7 @@ class OGC3D_OT_InstallCesium(Operator):
     bl_label  = "Install / Rebuild cesium-native-python"
 
     def execute(self, context):
-        import subprocess, sys, os, shutil
+        import subprocess, sys, os
         prefs = _get_prefs(context)
         if prefs is None:
             self.report({"ERROR"}, "Could not find addon preferences")
@@ -214,7 +214,6 @@ class OGC3D_OT_ReloadCesium(Operator):
         for k in removed:
             del sys.modules[k]
         ok, msg = probe_cesium()
-        icon = "CHECKMARK" if ok else "ERROR"
         self.report({"INFO"} if ok else {"WARNING"}, f"cesium: {msg}")
         return {"FINISHED"}
 

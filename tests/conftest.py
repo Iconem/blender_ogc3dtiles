@@ -3,7 +3,7 @@ tests/conftest.py
 Stub bpy so addon submodules can be imported without Blender.
 The package (blender_ogc3dtiles) is installed from addon/ via hatch sources.
 """
-import sys, os, types, pytest
+import sys, types, pytest
 
 def _make_bpy_stub():
     bpy = types.ModuleType("bpy")

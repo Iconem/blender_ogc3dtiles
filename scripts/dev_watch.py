@@ -17,13 +17,14 @@ import bpy
 
 ADDON_IDS = ("bl_ext.user_default.blender_ogc3dtiles", "blender_ogc3dtiles")
 POLL_S = 1.0
+QUIET_S = 2.0        # reload only after the tree has been unchanged this long
 
 
 def _addon_id():
     for aid in ADDON_IDS:
         if aid in bpy.context.preferences.addons:
             return aid
-    return None
+    return _state.get("last_aid")
 
 
 def _src_dir():
@@ -64,13 +65,14 @@ def _reload(aid):
             a.tag_redraw()
 
 
-_state = {"snap": None, "root": None}
+_state = {"snap": None, "root": None, "dirty_since": None, "pending": []}
 
 
 def _tick():
     aid = _addon_id()
     if aid is None:
         return POLL_S
+    _state["last_aid"] = aid
     root = _state["root"] or _src_dir()
     _state["root"] = root
     snap = _snapshot(root)
@@ -81,7 +83,13 @@ def _tick():
     if snap != _state["snap"]:
         changed = [os.path.relpath(p, root) for p in snap if _state["snap"].get(p) != snap[p]]
         _state["snap"] = snap
-        print(f"[dev_watch] changed: {changed} → reloading {aid}")
+        _state["pending"].extend(changed)
+        _state["dirty_since"] = time.monotonic()      # debounce multi-file edits
+        return POLL_S
+    if _state["dirty_since"] is not None and time.monotonic() - _state["dirty_since"] >= QUIET_S:
+        print(f"[dev_watch] changed: {sorted(set(_state['pending']))} → reloading {aid}")
+        _state["dirty_since"] = None
+        _state["pending"] = []
         try:
             _reload(aid)
             print("[dev_watch] reloaded OK")
@@ -89,6 +97,14 @@ def _tick():
             import traceback
             traceback.print_exc()
             print(f"[dev_watch] reload FAILED: {e}")
+        # a failed register leaves the add-on disabled (and the sidebar tab
+        # gone): keep trying every poll until it is back
+        if aid not in bpy.context.preferences.addons:
+            try:
+                bpy.ops.preferences.addon_enable(module=aid)
+                print("[dev_watch] re-enabled add-on")
+            except Exception as e:                    # noqa: BLE001
+                print(f"[dev_watch] re-enable failed: {e}")
     return POLL_S
 
 

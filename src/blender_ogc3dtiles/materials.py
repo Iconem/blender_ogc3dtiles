@@ -18,8 +18,11 @@ from bpy.types import Operator
 GROUP_NAME = "OGC3D Relight"
 TUNABLES = (
     # (node name, default, min, max, description)
-    ("Shadow Lift", 1.0, 0.5, 3.0, "Gamma on the albedo: >1 lifts baked shadows"),
-    ("Saturation", 1.0, 0.0, 2.0, "Albedo saturation"),
+    ("Shadow Lift", 1.3, 0.5, 3.0, "Gamma on the albedo: >1 lifts baked shadows"),
+    ("Saturation", 1.1, 0.0, 2.0, "Albedo saturation"),
+    ("Baked Light", 0.5, 0.0, 1.0, "0 = fully lit Principled BSDF, 1 = unlit albedo. Photogrammetry "
+                                  "already carries its lighting; higher values also hide "
+                                  "shading seams between tiles"),
     ("Roughness Dark", 0.95, 0.0, 1.0, "Roughness for dark albedo"),
     ("Roughness Bright", 0.55, 0.0, 1.0, "Roughness for bright albedo"),
     ("Gold Hue", 0.11, 0.0, 1.0, "Hue centre of the metal mask (0.11 ≈ gold)"),
@@ -30,6 +33,8 @@ TUNABLES = (
     ("Gold Boost", 0.35, 0.0, 2.0, "Extra brightness inside the mask"),
     ("Specular", 0.3, 0.0, 1.0, "Specular IOR level outside the mask"),
 )
+HIDDEN_TUNABLES = (("Gold Enable", 1.0),)     # driven by scene props, not sliders
+GROUP_VERSION_NODE = "Gold Enable"            # presence marks an up-to-date group
 
 
 def _value_node(ng, name, default):
@@ -42,12 +47,28 @@ def _value_node(ng, name, default):
 def ensure_relight_group():
     ng = bpy.data.node_groups.get(GROUP_NAME)
     if ng is not None:
-        return ng
-    ng = bpy.data.node_groups.new(GROUP_NAME, "ShaderNodeTree")
+        if ng.nodes.get(GROUP_VERSION_NODE) is not None:
+            return ng
+        # older group from a previous version: rebuild the nodes in place.
+        # The interface sockets are kept (removing them would drop the links
+        # of every material using the group → black tiles).
+        for n in list(ng.nodes):
+            ng.nodes.remove(n)
+    else:
+        ng = bpy.data.node_groups.new(GROUP_NAME, "ShaderNodeTree")
+    _build_relight_group(ng)
+    return ng
+
+
+def _build_relight_group(ng):
     iface = ng.interface
-    iface.new_socket("Albedo", in_out="INPUT", socket_type="NodeSocketColor")
-    iface.new_socket("Alpha", in_out="INPUT", socket_type="NodeSocketFloat").default_value = 1.0
-    iface.new_socket("BSDF", in_out="OUTPUT", socket_type="NodeSocketShader")
+    have = {it.name for it in iface.items_tree if getattr(it, "item_type", "") == "SOCKET"}
+    if "Albedo" not in have:
+        iface.new_socket("Albedo", in_out="INPUT", socket_type="NodeSocketColor")
+    if "Alpha" not in have:
+        iface.new_socket("Alpha", in_out="INPUT", socket_type="NodeSocketFloat").default_value = 1.0
+    if "BSDF" not in have:
+        iface.new_socket("BSDF", in_out="OUTPUT", socket_type="NodeSocketShader")
     nodes, links = ng.nodes, ng.links
     n_in = nodes.new("NodeGroupInput")
     n_out = nodes.new("NodeGroupOutput")
@@ -55,7 +76,7 @@ def ensure_relight_group():
     n_out.location = (900, 0)
 
     vals = {}
-    for i, (name, default, *_rest) in enumerate(TUNABLES):
+    for i, (name, default, *_rest) in enumerate(TUNABLES + HIDDEN_TUNABLES):
         v = _value_node(ng, name, default)
         v.location = (-1400, -250 - 110 * i)
         vals[name] = v
@@ -110,12 +131,18 @@ def ensure_relight_group():
     sat_mask.location = (-350, -550)
     links.new(sep.outputs["Green"], sat_mask.inputs[0])
     links.new(vals["Gold Min Saturation"].outputs[0], sat_mask.inputs[1])
-    mask = nodes.new("ShaderNodeMath")
+    mask0 = nodes.new("ShaderNodeMath")
+    mask0.operation = "MULTIPLY"
+    mask0.label = "gold mask"
+    mask0.location = (0, -400)
+    links.new(hue_mask.outputs["Result"], mask0.inputs[0])
+    links.new(sat_mask.outputs[0], mask0.inputs[1])
+    mask = nodes.new("ShaderNodeMath")          # × Gold Enable (0/1 from the panel toggle)
     mask.operation = "MULTIPLY"
-    mask.label = "gold mask"
-    mask.location = (0, -400)
-    links.new(hue_mask.outputs["Result"], mask.inputs[0])
-    links.new(sat_mask.outputs[0], mask.inputs[1])
+    mask.label = "gold mask (enabled)"
+    mask.location = (100, -500)
+    links.new(mask0.outputs[0], mask.inputs[0])
+    links.new(vals["Gold Enable"].outputs[0], mask.inputs[1])
 
     # metallic / roughness / specular / colour from the mask
     metallic = nodes.new("ShaderNodeMath")
@@ -151,8 +178,33 @@ def ensure_relight_group():
     if "Specular IOR Level" in bsdf.inputs:
         links.new(vals["Specular"].outputs[0], bsdf.inputs["Specular IOR Level"])
     links.new(n_in.outputs["Alpha"], bsdf.inputs["Alpha"])
-    links.new(bsdf.outputs["BSDF"], n_out.inputs["BSDF"])
+    # baked-light mix: unlit albedo (emission) vs the lit BSDF
+    emis = nodes.new("ShaderNodeEmission")
+    emis.location = (650, -350)
+    links.new(color.outputs[2], emis.inputs["Color"])
+    emis.inputs["Strength"].default_value = 1.0
+    transp = nodes.new("ShaderNodeBsdfTransparent")
+    transp.location = (650, -500)
+    emis_a = nodes.new("ShaderNodeMixShader")     # alpha for the unlit branch
+    emis_a.location = (850, -400)
+    links.new(n_in.outputs["Alpha"], emis_a.inputs["Fac"])
+    links.new(transp.outputs[0], emis_a.inputs[1])
+    links.new(emis.outputs[0], emis_a.inputs[2])
+    mixsh = nodes.new("ShaderNodeMixShader")
+    mixsh.location = (1050, 0)
+    links.new(vals["Baked Light"].outputs[0], mixsh.inputs["Fac"])
+    links.new(bsdf.outputs["BSDF"], mixsh.inputs[1])
+    links.new(emis_a.outputs[0], mixsh.inputs[2])
+    n_out.location = (1250, 0)
+    links.new(mixsh.outputs[0], n_out.inputs["BSDF"])
     return ng
+
+
+def set_gold_enabled(enabled: bool) -> None:
+    ng = bpy.data.node_groups.get(GROUP_NAME)
+    node = ng.nodes.get("Gold Enable") if ng else None
+    if node is not None:
+        node.outputs[0].default_value = 1.0 if enabled else 0.0
 
 
 def _albedo_socket(mat):
@@ -245,6 +297,7 @@ class OGC3D_OT_RelightApply(Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
+        ensure_relight_group()                 # also upgrades a group from an older version
         n = sum(1 for m in tile_materials() if apply_relight(m))
         self.report({"INFO"}, f"Relight applied to {n} materials")
         return {"FINISHED"}
@@ -272,6 +325,11 @@ def draw_panel(layout, props):
     if ng is not None:
         col = layout.column(align=True)
         for name, *_rest in TUNABLES:
+            if name == "Gold Hue":
+                col.separator()
+                col.prop(props, "relight_gold", text="Gold transfer", toggle=True)
+            if name.startswith("Gold") and not props.relight_gold:
+                continue
             n = ng.nodes.get(name)
             if n is not None:
                 col.prop(n.outputs[0], "default_value", text=name)
@@ -281,11 +339,26 @@ def draw_panel(layout, props):
 _classes = [OGC3D_OT_RelightApply, OGC3D_OT_RelightRemove]
 
 
+@bpy.app.handlers.persistent
+def _upgrade_group_on_load(_dummy=None):
+    """Files saved with an older "OGC3D Relight" group get the current nodes
+    (materials keep pointing at the same group datablock)."""
+    try:
+        if bpy.data.node_groups.get(GROUP_NAME) is not None:
+            ensure_relight_group()
+    except Exception as e:                        # noqa: BLE001
+        print(f"[3DTiles] relight group upgrade failed: {e}")
+
+
 def register():
     for c in _classes:
         bpy.utils.register_class(c)
+    if _upgrade_group_on_load not in bpy.app.handlers.load_post:
+        bpy.app.handlers.load_post.append(_upgrade_group_on_load)
 
 
 def unregister():
+    if _upgrade_group_on_load in bpy.app.handlers.load_post:
+        bpy.app.handlers.load_post.remove(_upgrade_group_on_load)
     for c in reversed(_classes):
         bpy.utils.unregister_class(c)

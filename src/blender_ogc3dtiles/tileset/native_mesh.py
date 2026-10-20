@@ -265,12 +265,6 @@ def extract_mesh_payload(cs, model):
         return None
     V = np.concatenate(verts)
     F = np.concatenate(faces).astype(np.int32) if faces else np.zeros((0, 3), np.int32)
-    point_spacing = 0.0
-    if all_points and len(V) > 1:
-        # mean spacing of a surface-like cloud: sqrt(area / N) over the two
-        # largest extents; drives the display radius of this tile's points
-        ext = np.sort(V.max(axis=0) - V.min(axis=0))[::-1]
-        point_spacing = float(np.sqrt(max(ext[0] * ext[1], 1e-9) / len(V)))
 
     images = {}
     materials = []
@@ -298,15 +292,39 @@ def extract_mesh_payload(cs, model):
                         m["image"] = src if images[src] is not None else None
         materials.append(m)
 
-    return {
+    return finalize_payload({
         "verts": V,
         "normals": np.concatenate(normals) if (have_normals and normals) else None,
         "faces": F,
         "uvs": np.concatenate(uvs) if (have_uvs and uvs and not all_points) else None,
         "colors": np.concatenate(colors) if (have_colors and colors) else None,
-        "point_spacing": point_spacing,
         "face_mat": np.concatenate(face_mat) if face_mat else np.zeros(0, np.int32),
         "points": all_points,
         "materials": materials,
         "images": images,          # image index → payload (or None)
-    }
+    })
+
+
+def finalize_payload(payload):
+    """Shared tail for both payload producers.
+
+    * ``offset``: the float64 centroid of the vertices. It is subtracted here
+      and re-applied on the tile's object matrix (in float64, see
+      ``io.apply_payload_offset``) so vertex coordinates stay small. Blender
+      meshes and GPU buffers are float32: content whose node transforms or
+      positions carry ECEF / projected-CRS magnitudes (1e6 m) would otherwise
+      be quantised to ~0.1 m and wobble as the view matrix changes.
+    * ``point_spacing``: mean spacing of a surface-like cloud,
+      sqrt(area / N) over the two largest extents (display radius of points).
+    """
+    V = np.asarray(payload["verts"], dtype=np.float64)
+    offset = V.mean(axis=0) if len(V) else np.zeros(3)
+    V = V - offset
+    payload["verts"] = V.astype(np.float32)
+    payload["offset"] = [float(v) for v in offset]
+    spacing = 0.0
+    if payload.get("points") and len(V) > 1:
+        ext = np.sort(V.max(axis=0) - V.min(axis=0))[::-1]
+        spacing = float(np.sqrt(max(ext[0] * ext[1], 1e-9) / len(V)))
+    payload["point_spacing"] = spacing
+    return payload

@@ -19,6 +19,24 @@ def _on_item_sse(self, context):
         pass
 
 
+def _on_global_sse(self, context):
+    try:
+        from ..ui import apply_global_sse
+        apply_global_sse(self)
+    except Exception:          # noqa: BLE001
+        pass
+
+
+def _on_point_radius(self, context):
+    from ..io import apply_point_radius
+    apply_point_radius(context.scene)
+
+
+def _on_relight_gold(self, context):
+    from .. import materials
+    materials.set_gold_enabled(self.relight_gold)
+
+
 def _on_point_display(self, context):
     from ..io import apply_point_display
     apply_point_display(self.point_display)
@@ -39,8 +57,11 @@ class TilesetItem(PropertyGroup):
         description="Stream this tileset. Unticked = paused: nothing is loaded or evicted "
                     "(use the eye to hide the loaded tiles)",
         default=True)
-    max_sse: FloatProperty(name="Max SSE", description="Screen-space error threshold (px); "
-                           "lower = finer tiles. Takes effect while streaming",
+    use_own_sse: BoolProperty(
+        name="Own SSE", description="Override the global Max SSE for this tileset",
+        default=False, update=_on_item_sse)
+    max_sse: FloatProperty(name="Max SSE", description="Screen-space error threshold (px) for "
+                           "this tileset when 'Own SSE' is ticked; lower = finer tiles. Live",
                            default=16.0, min=1.0, max=512.0, update=_on_item_sse)
     uid: StringProperty(default="", options={'HIDDEN'})
 
@@ -102,10 +123,11 @@ class TilesSceneProps(PropertyGroup):
 
     # --- LOD / traversal ---
     max_screen_space_error: FloatProperty(
-        name="SSE for new tilesets",
-        description="Default screen-space error for tilesets added to the list "
-                    "(edit the per-tileset Max SSE to change a running stream)",
+        name="Max SSE",
+        description="Screen-space error threshold in pixels for every tileset without "
+                    "'Own SSE'; lower = finer tiles. Live while streaming",
         default=16.0, min=1.0, max=512.0,
+        update=_on_global_sse,
     )
     max_concurrent_requests: IntProperty(
         name="Max Concurrent Downloads",
@@ -154,6 +176,27 @@ class TilesSceneProps(PropertyGroup):
         ],
         default="POINTS",
         update=_on_point_display,
+    )
+    point_radius_mode: EnumProperty(
+        name="Point radius",
+        description="How the display radius of points is chosen",
+        items=[
+            ("AUTO", "Per tile (spacing)",
+             "0.6 x the tile's mean point spacing x Point scale: coarse ADD-refined "
+             "tiles get bigger points than fine ones"),
+            ("UNIFORM", "Uniform", "One radius for every point of every tile"),
+        ],
+        default="AUTO",
+        update=_on_point_radius,
+    )
+    point_radius: FloatProperty(
+        name="Point radius (m)", description="Uniform point radius",
+        default=0.08, min=0.001, max=50.0, update=_on_point_radius,
+    )
+    relight_gold: BoolProperty(
+        name="Gold transfer",
+        description="Relight: metallic / glossy treatment of yellow, saturated albedo",
+        default=True, update=_on_relight_gold,
     )
     point_scale: FloatProperty(
         name="Point scale",

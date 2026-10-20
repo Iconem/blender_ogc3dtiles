@@ -33,9 +33,10 @@ that tileset only.
 Per row: the checkbox **pauses** the stream (nothing is loaded or evicted,
 loaded tiles stay as they are), the eye hides its sub-collection (same as the
 outliner).  Entries added, ticked or removed while streaming are picked up on
-the next tick.  The per-entry **Max SSE** is live: editing it re-selects
-immediately on both backends (the global "SSE for new tilesets" only seeds new
-entries).
+the next tick.  **Max SSE** (LOD sub-panel) is the live renderer setting for
+every stream; tick *Own SSE* on an entry to override it for that tileset.
+Both re-select immediately on both backends.  *Start* discards the tiles a
+previous *Stop* left on screen (they belong to a dead selection).
 
 ### Scene origin
 
@@ -97,7 +98,9 @@ pixels for KTX2).  `io.build_tile_from_payload` then creates the mesh with
 material.  Point clouds (`pnts`, glTF POINTS) become vertex-only meshes with
 a `Col` colour attribute and a shared Geometry Nodes modifier.  The radius of
 each tile's points is 0.6 × its mean point spacing (estimated from the tile's
-extent and point count) times the *Point scale* slider.  Two display modes
+extent and point count) times the *Point scale* slider, or one *Uniform*
+radius for every tile (ADD-refined clouds keep their coarse parents, so
+uniform avoids big parent points among fine children).  Two display modes
 (`Point Clouds` sub-panel): **Point cloud** (Mesh → Points; cheapest; unlit
 vertex colours in Material Preview / Rendered, material colour in Solid) and
 **Tiny tetrahedra** (4 vertices per point, realised as a mesh whose active
@@ -105,7 +108,18 @@ colour attribute is `Col`, so Solid mode with Color → Attribute shows the
 colours as well).  Measured main-thread cost per tile: 8–9 ms direct vs 10–13 ms
 through `bpy.ops.import_scene.gltf`; the direct path also needs no temp files
 and works regardless of which glTF extensions Blender's importer knows.
-Toggle: "Direct mesh (cesium-native)" in the sidebar (off = GLB re-import).
+Toggle: "Direct mesh" in the sidebar (off = GLB re-import).
+
+The Python backend uses the same route: `tileset/gltf_payload.py` is a pure
+numpy GLB reader (any accessor type incl. KHR_mesh_quantization, interleaved
+views, strips/fans/points, embedded JPEG/PNG) that runs on the download
+workers (~2 ms per tile) and feeds `build_tile_from_payload`; Draco, meshopt,
+KTX2 or external buffers fall back to Blender's importer.  Both producers
+recentre the vertices on their float64 centroid and move the offset into the
+object matrix, so content with projected-CRS or ECEF magnitudes in its node
+transforms never gets quantised to float32 (0.1 m steps, view-dependent
+wobble).  HTTP uses one keep-alive `requests.Session` per worker thread (TLS
+handshake once per thread, not once per tile).
 
 ### cesium-native backend (`tileset/native_backend.py`)
 

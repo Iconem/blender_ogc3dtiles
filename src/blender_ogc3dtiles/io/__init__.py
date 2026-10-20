@@ -115,15 +115,46 @@ class DiskCache:
 
 # ── HTTP ─────────────────────────────────────────────────────────────────────
 
+_tls = threading.local()
+
+
+def _session():
+    """One keep-alive ``requests.Session`` per thread (Blender bundles
+    requests/urllib3): the TCP + TLS handshake is paid once per worker, not
+    once per tile. Falls back to urllib when requests is unavailable."""
+    sess = getattr(_tls, "session", None)
+    if sess is None:
+        try:
+            import requests  # noqa: PLC0415
+            sess = requests.Session()
+            sess.headers["User-Agent"] = USER_AGENT
+        except Exception:                           # noqa: BLE001
+            sess = False
+        _tls.session = sess
+    return sess or None
+
+
+class _HTTPError(Exception):
+    def __init__(self, code, reason):
+        super().__init__(f"HTTP {code} {reason}")
+        self.code, self.reason = code, reason
+
+
 def http_get(url: str, headers: Optional[dict] = None) -> bytes:
     h = {"User-Agent": USER_AGENT, "Accept-Encoding": "gzip, deflate", "Accept": "*/*"}
     if headers:
         h.update(headers)
-    req = urllib.request.Request(url, headers=h)
-    with urllib.request.urlopen(req, timeout=TIMEOUT_S) as resp:
-        data = resp.read()
-        enc = (resp.headers.get("Content-Encoding") or "").lower()
-    if "gzip" in enc or data[:2] == b"\x1f\x8b":
+    sess = _session()
+    if sess is not None:
+        resp = sess.get(url, headers=h, timeout=TIMEOUT_S)
+        if resp.status_code >= 400:
+            raise _HTTPError(resp.status_code, resp.reason)
+        data = resp.content                     # requests already un-gzips
+    else:
+        req = urllib.request.Request(url, headers=h)
+        with urllib.request.urlopen(req, timeout=TIMEOUT_S) as resp:
+            data = resp.read()
+    if data[:2] == b"\x1f\x8b":                # pre-gzipped files served raw
         try:
             data = gzip.decompress(data)
         except Exception:
@@ -228,6 +259,7 @@ class FetchResult:
     url: str
     kind: str = ""
     parts: List[dict] = field(default_factory=list)   # [{"path", "rtc"}]
+    payloads: List[Optional[dict]] = field(default_factory=list)   # per part, direct mesh
     raw_json: Optional[bytes] = None                  # for tileset.json
     error: Optional[str] = None
     from_cache: bool = False
@@ -238,9 +270,11 @@ class TileDownloadManager:
     thread with ``tick()``. Nothing here touches bpy."""
 
     def __init__(self, max_concurrent: int = 6, token: str = "",
-                 cache: Optional[DiskCache] = None, extra_headers: Optional[dict] = None):
+                 cache: Optional[DiskCache] = None, extra_headers: Optional[dict] = None,
+                 direct_mesh: bool = True):
         self.max_concurrent = max(1, int(max_concurrent))
         self.token = token
+        self.direct_mesh = bool(direct_mesh)   # parse GLBs to numpy payloads on the worker
         self.cache = cache or DiskCache(default_cache_dir())
         self.extra_headers = dict(extra_headers or {})
         self._pool = ThreadPoolExecutor(max_workers=self.max_concurrent,
@@ -296,7 +330,16 @@ class TileDownloadManager:
                     res.parts = meta["parts"]
                 else:
                     res.error = f"unsupported or empty content ({kind})"
-        except urllib.error.HTTPError as e:
+            if self.direct_mesh and res.parts and not res.error:
+                from ..tileset.gltf_payload import glb_to_payload  # noqa: PLC0415
+                for part in res.parts:
+                    try:
+                        with open(part["path"], "rb") as fh:
+                            res.payloads.append(glb_to_payload(fh.read()))
+                    except Exception as exc:        # noqa: BLE001
+                        print(f"[3DTiles] GLB parse failed ({url}): {exc!r}")
+                        res.payloads.append(None)
+        except (urllib.error.HTTPError, _HTTPError) as e:
             res.error = f"HTTP {e.code} {e.reason}"
         except Exception as e:                      # noqa: BLE001
             res.error = f"{type(e).__name__}: {e}"
@@ -600,12 +643,12 @@ def build_tile_from_payload(payload: dict, key: str, scene: bpy.types.Scene,
     coll.objects.link(obj)
     obj.parent = root
     obj.matrix_parent_inverse = Matrix.Identity(4)
-    obj.matrix_world = root.matrix_world @ Matrix(matrix_rows)
+    obj.matrix_world = root.matrix_world @ Matrix(apply_payload_offset(matrix_rows, payload))
     if payload.get("points"):
         spacing = float(payload.get("point_spacing") or 0.0)
-        radius = min(max(0.6 * spacing, 0.01), 5.0) if spacing > 0 else 0.05
+        obj["point_radius_auto"] = min(max(0.6 * spacing, 0.01), 5.0) if spacing > 0 else 0.05
         mesh_mode = getattr(scene.ogc3dtiles, "point_display", "POINTS") == "MESH"
-        _add_points_modifier(obj, radius, mesh_mode)
+        _add_points_modifier(obj, point_radius_for(scene, payload), mesh_mode)
     elif getattr(scene.ogc3dtiles, "auto_relight", False):
         from ..materials import apply_relight
         for m in me.materials:
@@ -614,6 +657,42 @@ def build_tile_from_payload(payload: dict, key: str, scene: bpy.types.Scene,
     obj.hide_render = hidden
     obj.select_set(False)
     return obj.name, data_names
+
+
+def apply_payload_offset(matrix_rows, payload):
+    """matrix · Translate(payload["offset"]) in float64 → row-major list."""
+    import numpy as np
+    off = payload.get("offset")
+    if not off:
+        return matrix_rows
+    M = np.asarray(matrix_rows, dtype=np.float64).reshape(4, 4)
+    T = np.eye(4)
+    T[:3, 3] = off
+    return (M @ T).tolist()
+
+
+def point_radius_for(scene, payload) -> float:
+    props = scene.ogc3dtiles
+    if getattr(props, "point_radius_mode", "AUTO") == "UNIFORM":
+        return float(props.point_radius)
+    spacing = float(payload.get("point_spacing") or 0.0)
+    return min(max(0.6 * spacing, 0.01), 5.0) if spacing > 0 else 0.05
+
+
+def apply_point_radius(scene) -> int:
+    """Re-apply the radius of every point tile (mode or uniform value changed)."""
+    props = scene.ogc3dtiles
+    uniform = getattr(props, "point_radius_mode", "AUTO") == "UNIFORM"
+    n = 0
+    for o in bpy.data.objects:
+        mod = o.modifiers.get("Points") if o.type == "MESH" else None
+        if mod is None or mod.type != "NODES" or mod.node_group is None:
+            continue
+        r = float(props.point_radius) if uniform else float(o.get("point_radius_auto", o.get("point_radius", 0.05)))
+        _set_points_inputs(mod, mod.node_group, r, None)
+        o.update_tag()
+        n += 1
+    return n
 
 
 POINTS_NODEGROUP = "OGC3D Points"
@@ -734,7 +813,7 @@ def apply_point_display(mode: str) -> int:
             continue
         mod.node_group = ng
         mat = o.data.materials[0] if o.data.materials else None
-        _set_points_inputs(mod, ng, o.get("point_radius", 0.04), mat)
+        _set_points_inputs(mod, ng, o.get("point_radius", 0.05), mat)
         o.update_tag()
         n += 1
     return n

@@ -146,17 +146,34 @@ def _stream_key(index, item) -> str:      # kept for callers using the old signa
     return _item_key(item)
 
 
-def apply_item_sse(item):
-    """Live SSE edit from the list → running backend."""
-    st = _state["streams"].get(item.uid) if item.uid else None
+def effective_sse(props, item) -> float:
+    """Global Max SSE is the live renderer setting; a tileset can override it."""
+    return float(item.max_sse) if item.use_own_sse else float(props.max_screen_space_error)
+
+
+def _push_sse(st, value):
     if st is None or st.get("backend") is None:
         return
-    st["max_sse"] = item.max_sse
+    st["max_sse"] = value
     try:
-        st["backend"].set_max_sse(float(item.max_sse))
+        st["backend"].set_max_sse(float(value))
     except Exception as e:                           # noqa: BLE001
         print(f"[3DTiles] set_max_sse failed: {e}")
     st["last_sig"] = None                 # force a re-selection on the next tick
+
+
+def apply_item_sse(item):
+    """Live per-tileset SSE edit → its running backend."""
+    props = bpy.context.scene.ogc3dtiles
+    st = _state["streams"].get(item.uid) if item.uid else None
+    _push_sse(st, effective_sse(props, item))
+
+
+def apply_global_sse(props):
+    """Live global SSE edit → every stream that does not override it."""
+    for item in props.tilesets:
+        if not item.use_own_sse and item.uid:
+            _push_sse(_state["streams"].get(item.uid), float(props.max_screen_space_error))
 
 
 # ── Operators ─────────────────────────────────────────────────────────────────
@@ -213,6 +230,10 @@ class OGC3D_OT_StartStream(Operator):
             self.report({"ERROR"}, "No tileset URL")
             return {"CANCELLED"}
 
+        # tiles left on screen by Stop belong to a dead selection: drop them so
+        # a restart never keeps stale geometry around
+        for st in list(_state["streams"].values()):
+            _teardown_stream(st, remove_objects=True)
         _state = _fresh_state()
         props.status_text = "Connecting…"
         props.tiles_loaded = 0
@@ -252,7 +273,7 @@ def _start_item(scene, props, item) -> dict:
     """Create and start the stream for one list entry; registers it in
     ``_state`` (with ``error`` set when the start failed)."""
     st = _new_stream(_item_key(item), item.name or _short_label(item.url),
-                     item.url.strip(), item.ion_token, item.max_sse)
+                     item.url.strip(), item.ion_token, effective_sse(props, item))
     try:
         _start_stream(scene, props, st, _state["choice"], _state["cache"])
     except Exception as e:                           # noqa: BLE001
@@ -288,7 +309,8 @@ def _start_stream(scene, props, st, choice, cache) -> None:
         cx, cy, cz, _r = root_tile.sphere_ecef()
         _decide_origin(props, (cx, cy, cz))
         st["download_mgr"] = TileDownloadManager(
-            max_concurrent=props.max_concurrent_requests, token=st["token"], cache=cache)
+            max_concurrent=props.max_concurrent_requests, token=st["token"], cache=cache,
+            direct_mesh=props.native_direct_mesh)
         st["mode"] = "python"
         _add_root_bbox(scene, st)
     else:
@@ -611,7 +633,7 @@ def _tick_python(scene, props, st, now) -> bool:
                 print(f"[3DTiles] external tileset parse failed {res.url}: {e}")
             changed = True
             continue
-        st["ready"].append((tile, res.parts))
+        st["ready"].append((tile, res.parts, res.payloads))
         changed = True
 
     # 2. budgeted imports
@@ -619,13 +641,17 @@ def _tick_python(scene, props, st, now) -> bool:
     enu = _enu_from_ecef(props)
     root_obj, coll = _root_and_coll(scene, st)
     while st["ready"] and imported < max(1, props.imports_per_tick):
-        tile, parts = st["ready"].pop(0)
+        tile, parts, payloads = st["ready"].pop(0)
         key = _tile_key(tile)
         holders, data = [], []
         t_imp = time.perf_counter()
-        for part in parts:
+        for i, part in enumerate(parts):
             m = tile_world_matrix(tile.transform, part.get("rtc"), enu)
-            r = import_glb_file(part["path"], key, scene, root_obj, m, hidden=True, coll=coll)
+            payload = payloads[i] if i < len(payloads) else None
+            if payload is not None:
+                r = build_tile_from_payload(payload, key, scene, root_obj, m, hidden=True, coll=coll)
+            else:
+                r = import_glb_file(part["path"], key, scene, root_obj, m, hidden=True, coll=coll)
             if r:
                 holders.append(r[0])
                 data.extend(r[1])
@@ -691,6 +717,7 @@ def _build_native_tile(scene, props, st, rt) -> bool:
                                 props.origin_height, rt.rtc, rt.up_axis)
     t_imp = time.perf_counter()
     if rt.mesh_payload is not None:
+        # build_tile_from_payload folds payload["offset"] into the matrix (float64)
         r = build_tile_from_payload(rt.mesh_payload, rt.key, scene, root_obj, m.tolist(),
                                     hidden=True, coll=coll)
     else:
@@ -909,7 +936,11 @@ class OGC3D_PT_MainPanel(Panel):
             b = layout.box()
             b.prop(it, "url", text="URL")
             b.prop(it, "ion_token", text="Ion Token")
-            b.prop(it, "max_sse", text="Max SSE")
+            row = b.row(align=True)
+            row.prop(it, "use_own_sse", text="")
+            sub = row.row(align=True)
+            sub.enabled = it.use_own_sse
+            sub.prop(it, "max_sse", text="Own SSE")
             st = _state["streams"].get(it.uid) if it.uid else None
             if st is not None:
                 root = bpy.data.objects.get(st["root_obj"] or "")
@@ -977,7 +1008,7 @@ class OGC3D_PT_MainPanel(Panel):
         header, body = layout.panel("ogc3d_lod", default_closed=False)
         header.label(text="LOD", icon="DRIVER_DISTANCE")
         if body:
-            body.prop(props, "max_screen_space_error", text="SSE for new tilesets")
+            body.prop(props, "max_screen_space_error", text="Max SSE (live)")
             body.prop(props, "detail_falloff", text="Detail Falloff m")
             body.prop(props, "load_distance", text="Max Distance m")
             body.prop(props, "max_loaded_tiles", text="Max Tiles / tileset")
@@ -998,7 +1029,11 @@ class OGC3D_PT_MainPanel(Panel):
         header.label(text="Point Clouds", icon="OUTLINER_DATA_POINTCLOUD")
         if body:
             body.prop(props, "point_display", text="Display")
-            body.prop(props, "point_scale", text="Point scale")
+            body.prop(props, "point_radius_mode", text="Radius")
+            if props.point_radius_mode == "UNIFORM":
+                body.prop(props, "point_radius", text="Radius m")
+            else:
+                body.prop(props, "point_scale", text="Point scale")
             if props.point_display == "MESH":
                 body.label(text="Solid mode: Shading → Color → Attribute", icon="INFO")
             else:

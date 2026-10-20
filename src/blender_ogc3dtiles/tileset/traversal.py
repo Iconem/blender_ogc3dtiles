@@ -303,13 +303,37 @@ def select(root: Tile, view: ViewState, max_sse: float,
            is_ready: Callable[[Tile], bool],
            detail_falloff: float = 600.0,
            max_dist: float = float("inf"),
-           max_depth: int = MAX_DEPTH) -> Selection:
-    """SSE traversal with frustum + distance culling, dynamic SSE and REPLACE
-    gating. ``is_ready(tile)`` must say whether the tile's content is imported
-    (external-tileset nodes count as ready once grafted)."""
+           max_depth: int = MAX_DEPTH,
+           foveated_cone: float = 0.3,
+           foveated_relaxation: float = 0.0) -> Selection:
+    """SSE traversal with frustum + distance culling, dynamic SSE, REPLACE
+    gating and CesiumJS-style foveation. ``is_ready(tile)`` must say whether
+    the tile's content is imported (external-tileset nodes count as ready
+    once grafted).
+
+    Foveation: ``centre(node)`` is 1 for a tile on the view axis and falls to
+    0 at ``foveated_cone`` × the view half-angle.  Loads are ordered by
+    (shallow first, then SSE × (1 + centre)), so the middle of the screen and
+    nearby tiles arrive first; with ``foveated_relaxation`` > 0 the SSE
+    threshold outside the cone grows up to (1 + relaxation)×, i.e. the
+    periphery stays coarser (CesiumJS foveatedMinimumScreenSpaceErrorRelaxation)."""
     sel = Selection()
     queued: set = set()
     px, py, pz = view.position
+    dx, dy, dz = view.direction
+    # half-angle of the view (diagonal-ish): tan = 1/p11 vertically
+    half_tan = 1.0 / max(abs(view.p11), 1e-6)
+    cone_tan = max(foveated_cone, 1e-3) * half_tan
+
+    def centre(cx: float, cy: float, cz: float, dist: float) -> float:
+        """1 on the view axis → 0 at the edge of the foveation cone."""
+        vx, vy, vz = cx - px, cy - py, cz - pz
+        along = vx * dx + vy * dy + vz * dz
+        if along <= 1e-6:
+            return 0.0
+        perp = math.sqrt(max(vx * vx + vy * vy + vz * vz - along * along, 0.0))
+        t = perp / (along * cone_tan)
+        return max(0.0, 1.0 - t)
 
     def want(node: Tile, prio: float, depth: int = 0) -> None:
         """Queue a load. Ancestors go first (CesiumJS does the same): while a
@@ -320,7 +344,7 @@ def select(root: Tile, view: ViewState, max_sse: float,
             sel.load.append((prio - depth * 1e5, node))
 
     def visible(node: Tile):
-        """→ (dist, err) or None when culled."""
+        """→ (dist, err, centre_weight) or None when culled."""
         cx, cy, cz, r = node.sphere_ecef()
         if not sphere_in_frustum(cx, cy, cz, r, view.frustum_planes):
             return None
@@ -328,10 +352,12 @@ def select(root: Tile, view: ViewState, max_sse: float,
         if dist > max_dist:
             return None
         dist = max(dist, 1.0)
-        return dist, _sse(node.geometric_error, dist, view)
+        w = centre(cx, cy, cz, dist) if (foveated_cone > 0.0) else 1.0
+        return dist, _sse(node.geometric_error, dist, view), w
 
-    def wants_children(node: Tile, dist: float, err: float) -> bool:
+    def wants_children(node: Tile, dist: float, err: float, w: float = 1.0) -> bool:
         thr = max_sse * (1.0 + dist / max(detail_falloff, 1.0))
+        thr *= 1.0 + foveated_relaxation * (1.0 - w)
         return (err > thr or not node.has_drawable) and bool(node.children)
 
     def child_ready(node: Tile, depth: int) -> bool:
@@ -365,9 +391,10 @@ def select(root: Tile, view: ViewState, max_sse: float,
         if v is None:
             sel.culled += 1
             continue
-        dist, err = v
+        dist, err, w = v
+        err = err * (1.0 + w)                # load priority: centre of view first
         sel.keep.add(id(node))
-        wc = wants_children(node, dist, err) and depth < max_depth
+        wc = wants_children(node, dist, err / (1.0 + w), w) and depth < max_depth
 
         if node.is_external_tileset and not node.grafted:
             want(node, err + 1e7, depth)     # tileset.json first, always
@@ -428,9 +455,12 @@ class TilesetTraversal:
     (no culling); ``update_view_state(view, is_ready)`` is the full one."""
 
     def __init__(self, root: Tile = None, max_sse: float = 16.0, max_tiles: int = 200,
+                 foveated_cone: float = 0.3, foveated_relaxation: float = 0.0,
                  detail_falloff: float = 600.0, max_dist: float = float("inf")):
         self.root = root
         self.max_sse = max_sse
+        self.foveated_cone = foveated_cone
+        self.foveated_relaxation = foveated_relaxation
         self.max_tiles = max_tiles
         self.detail_falloff = detail_falloff
         self.max_dist = max_dist
@@ -445,6 +475,8 @@ class TilesetTraversal:
             def is_ready(t):   # noqa: E306
                 return t.state in (TileState.LOADED, TileState.RENDERED)
         sel = select(self.root, view, self.max_sse, is_ready,
+                     foveated_cone=self.foveated_cone,
+                     foveated_relaxation=self.foveated_relaxation,
                      detail_falloff=self.detail_falloff, max_dist=self.max_dist)
         self.last_selection = sel
         new_render = {id(t): t for t in sel.render}

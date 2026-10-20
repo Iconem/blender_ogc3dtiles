@@ -144,6 +144,25 @@ class TilesSceneProps(PropertyGroup):
         description="Tiles beyond this distance from the camera are culled",
         default=20000.0, min=100.0,
     )
+    foveated_cone: FloatProperty(
+        name="Foveation cone",
+        description="Fraction of the view half-angle around the view centre that gets "
+                    "priority: tiles there load first and keep the full SSE (CesiumJS "
+                    "foveatedConeSize). Python backend; cesium-native has its own",
+        default=0.3, min=0.0, max=1.0,
+    )
+    foveated_relaxation: FloatProperty(
+        name="Edge SSE relaxation",
+        description="Python backend: how much the SSE threshold grows for tiles outside "
+                    "the cone (0 = same detail everywhere, 2 = up to 3x coarser at the edges)",
+        default=0.0, min=0.0, max=8.0,
+    )
+    hide_relation_lines: BoolProperty(
+        name="Hide relation lines",
+        description="Turn off the dashed object→parent lines overlay in every 3D viewport "
+                    "when streaming starts (it is a per-viewport overlay, not per object)",
+        default=True,
+    )
     detail_falloff: FloatProperty(
         name="Detail Falloff (m)",
         description=(

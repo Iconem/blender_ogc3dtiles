@@ -261,6 +261,8 @@ class OGC3D_OT_StartStream(Operator):
             return {"CANCELLED"}
 
         _orient_viewport(context, props)
+        if props.hide_relation_lines:
+            _set_relationship_lines(context, False)
         if bpy.app.background:
             props.is_streaming = True      # drive with ui.stream_tick() yourself
         else:
@@ -292,10 +294,22 @@ def _start_stream(scene, props, st, choice, cache) -> None:
                            detail_falloff=props.detail_falloff,
                            max_dist=props.load_distance,
                            cache_dir=cache.root if props.use_disk_cache else None,
-                           direct_mesh=props.native_direct_mesh)
-    sub = _coll_name(st["name"])
+                           direct_mesh=props.native_direct_mesh,
+                           foveated_cone=props.foveated_cone,
+                           foveated_relaxation=props.foveated_relaxation)
+    # two entries can share a label (same share-link token, user-typed names):
+    # give the second one its own collection + root Empty
+    label = st["name"]
+    taken = {o["name"] for k, o in _state["streams"].items() if k != st["key"] and o.get("coll")}
+    if label in taken:
+        n = 2
+        while f"{label} ({n})" in taken:
+            n += 1
+        label = f"{label} ({n})"
+    st["name"] = label
+    sub = _coll_name(label)
     st["coll"] = ensure_collection(scene, sub).name
-    st["root_obj"] = ensure_root_empty(scene, _root_name(st["name"]), sub).name
+    st["root_obj"] = ensure_root_empty(scene, _root_name(label), sub).name
 
     if isinstance(backend, PythonBackend):
         headers = {}
@@ -360,6 +374,17 @@ class OGC3D_OT_OriginReset(Operator):
         props.origin_valid = False
         _state["origin_set"] = False
         self.report({"INFO"}, "Origin will be re-centred on the next Start")
+        return {"FINISHED"}
+
+
+class OGC3D_OT_RelationLines(Operator):
+    """Show / hide the dashed parent-relation lines in every 3D viewport"""
+    bl_idname = "ogc3dtiles.relation_lines"
+    bl_label = "Relation Lines"
+    show: bpy.props.BoolProperty(default=True)
+
+    def execute(self, context):
+        _set_relationship_lines(context, self.show)
         return {"FINISHED"}
 
 
@@ -445,6 +470,9 @@ class OGC3D_OT_ClearCache(Operator):
 
 # ── Modal operator ────────────────────────────────────────────────────────────
 
+MODAL_RUNNING = [False]     # scripts/dev_watch.py waits for this before a reload
+
+
 class OGC3D_OT_ModalStream(Operator):
     bl_idname = "ogc3dtiles.modal_stream"
     bl_label = "3D Tiles Modal Stream"
@@ -476,9 +504,11 @@ class OGC3D_OT_ModalStream(Operator):
         props.status_text = "Streaming…"
         self._timer = context.window_manager.event_timer_add(self.INTERVAL, window=context.window)
         context.window_manager.modal_handler_add(self)
+        MODAL_RUNNING[0] = True
         return {"RUNNING_MODAL"}
 
     def _finish(self, context):
+        MODAL_RUNNING[0] = False
         if self._timer:
             context.window_manager.event_timer_remove(self._timer)
             self._timer = None
@@ -843,6 +873,20 @@ def _add_root_bbox(scene, st):
         print(f"[3DTiles] BBox failed: {e}")
 
 
+def _set_relationship_lines(context, show: bool):
+    """Blender draws a dashed line from every tile to its parent Empty; the
+    overlay toggle is per 3D viewport, not per object."""
+    try:
+        for window in context.window_manager.windows:
+            for area in window.screen.areas:
+                if area.type == "VIEW_3D":
+                    for space in area.spaces:
+                        if space.type == "VIEW_3D":
+                            space.overlay.show_relationship_lines = show
+    except Exception as e:                           # noqa: BLE001
+        print(f"[3DTiles] overlay toggle failed: {e}")
+
+
 def _orient_viewport(context, props):
     """Only when the view is clearly unset: look at the origin from above."""
     try:
@@ -1012,6 +1056,9 @@ class OGC3D_PT_MainPanel(Panel):
             body.prop(props, "detail_falloff", text="Detail Falloff m")
             body.prop(props, "load_distance", text="Max Distance m")
             body.prop(props, "max_loaded_tiles", text="Max Tiles / tileset")
+            row = body.row(align=True)
+            row.prop(props, "foveated_cone", text="Foveation cone")
+            row.prop(props, "foveated_relaxation", text="Edge SSE relax")
 
         # Streaming
         header, body = layout.panel("ogc3d_streaming", default_closed=True)
@@ -1019,7 +1066,10 @@ class OGC3D_PT_MainPanel(Panel):
         if body:
             body.prop(props, "max_concurrent_requests", text="Parallel DL")
             body.prop(props, "imports_per_tick", text="Imports / tick")
-            body.prop(props, "native_direct_mesh", text="Direct mesh (cesium-native)")
+            body.prop(props, "native_direct_mesh", text="Direct mesh (numpy, both backends)")
+            row = body.row(align=True)
+            row.prop(props, "hide_relation_lines", text="Hide relation lines")
+            row.operator("ogc3dtiles.relation_lines", text="", icon="HIDE_OFF").show = True
             row = body.row(align=True)
             row.prop(props, "use_disk_cache", text="Disk cache")
             row.operator("ogc3dtiles.clear_cache", icon="TRASH", text="")
@@ -1086,6 +1136,7 @@ _classes = [
     OGC3D_OT_StartStream,
     OGC3D_OT_StopStream,
     OGC3D_OT_OriginReset,
+    OGC3D_OT_RelationLines,
     OGC3D_OT_ClearTiles,
     OGC3D_OT_ClearCache,
     OGC3D_OT_ModalStream,

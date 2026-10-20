@@ -20,6 +20,8 @@ TUNABLES = (
     # (node name, default, min, max, description)
     ("Shadow Lift", 1.3, 0.5, 3.0, "Gamma on the albedo: >1 lifts baked shadows"),
     ("Saturation", 1.1, 0.0, 2.0, "Albedo saturation"),
+    ("Albedo Strength", 1.0, 0.0, 1.0, "1 = photo albedo, 0 = pure clay (the 'Clay Color' RGB node "
+                                       "in the group)"),
     ("Baked Light", 0.5, 0.0, 1.0, "0 = fully lit Principled BSDF, 1 = unlit albedo. Photogrammetry "
                                   "already carries its lighting; higher values also hide "
                                   "shading seams between tiles"),
@@ -34,7 +36,7 @@ TUNABLES = (
     ("Specular", 0.3, 0.0, 1.0, "Specular IOR level outside the mask"),
 )
 HIDDEN_TUNABLES = (("Gold Enable", 1.0),)     # driven by scene props, not sliders
-GROUP_VERSION_NODE = "Gold Enable"            # presence marks an up-to-date group
+GROUP_VERSION_NODE = "Clay Color"             # presence marks an up-to-date group
 
 
 def _value_node(ng, name, default):
@@ -91,10 +93,25 @@ def _build_relight_group(ng):
     links.new(gamma.outputs["Color"], hsv.inputs["Color"])
     links.new(vals["Saturation"].outputs[0], hsv.inputs["Saturation"])
 
+    # albedo ↔ clay
+    clay = nodes.new("ShaderNodeRGB")
+    clay.name = clay.label = "Clay Color"
+    clay.location = (-900, 350)
+    clay.outputs[0].default_value = (0.55, 0.52, 0.48, 1.0)
+    albedo_mix = nodes.new("ShaderNodeMix")
+    albedo_mix.data_type = "RGBA"
+    albedo_mix.blend_type = "MIX"
+    albedo_mix.label = "albedo strength"
+    albedo_mix.location = (-750, 200)
+    links.new(vals["Albedo Strength"].outputs[0], albedo_mix.inputs["Factor"])
+    links.new(clay.outputs[0], albedo_mix.inputs[6])           # A: clay
+    links.new(hsv.outputs["Color"], albedo_mix.inputs[7])      # B: processed albedo
+    hsv_out = albedo_mix.outputs[2]
+
     # luminance → roughness ramp
     bw = nodes.new("ShaderNodeRGBToBW")
     bw.location = (-700, -100)
-    links.new(hsv.outputs["Color"], bw.inputs["Color"])
+    links.new(hsv_out, bw.inputs["Color"])
     rough = nodes.new("ShaderNodeMapRange")
     rough.location = (-450, -100)
     rough.label = "Roughness from luminance"
@@ -167,7 +184,7 @@ def _build_relight_group(ng):
     color.blend_type = "MULTIPLY"
     color.location = (400, 100)
     color.inputs["Factor"].default_value = 1.0
-    links.new(hsv.outputs["Color"], color.inputs[6])            # A (color)
+    links.new(hsv_out, color.inputs[6])                         # A (color)
     links.new(boost.outputs[0], color.inputs[7])                 # B (color from float)
 
     bsdf = nodes.new("ShaderNodeBsdfPrincipled")

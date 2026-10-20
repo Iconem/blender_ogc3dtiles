@@ -48,9 +48,12 @@ class PythonBackend:
     name = "Pure Python"
 
     def __init__(self, max_sse: float = 16.0, max_tiles: int = 200,
-                 detail_falloff: float = 600.0, max_dist: float = float("inf"), **_ignored):
+                 detail_falloff: float = 600.0, max_dist: float = float("inf"),
+                 foveated_cone: float = 0.3, foveated_relaxation: float = 0.0, **_ignored):
         self._traversal = TilesetTraversal(max_sse=max_sse, max_tiles=max_tiles,
-                                           detail_falloff=detail_falloff, max_dist=max_dist)
+                                           detail_falloff=detail_falloff, max_dist=max_dist,
+                                           foveated_cone=foveated_cone,
+                                           foveated_relaxation=foveated_relaxation)
         self._root = None
 
     def load_tileset(self, url: str, ion_token: str, options: dict) -> None:
@@ -134,7 +137,7 @@ def make_backend(choice, max_sse: float = 16.0, max_tiles: int = 200,
     if choice == BackendChoice.PYTHON:
         print("[3DTiles] Backend: Pure Python")
         return PythonBackend(max_sse=max_sse, max_tiles=max_tiles,
-                             detail_falloff=detail_falloff, max_dist=max_dist)
+                             detail_falloff=detail_falloff, max_dist=max_dist, **kw)
 
     ok, msg = probe_cesium()
     if choice == BackendChoice.CESIUM and not ok:
@@ -147,7 +150,7 @@ def make_backend(choice, max_sse: float = 16.0, max_tiles: int = 200,
                                    direct_mesh=kw.get("direct_mesh", True))
     print(f"[3DTiles] Backend: Pure Python (cesium-native unavailable: {msg})")
     return PythonBackend(max_sse=max_sse, max_tiles=max_tiles,
-                         detail_falloff=detail_falloff, max_dist=max_dist)
+                         detail_falloff=detail_falloff, max_dist=max_dist, **kw)
 
 
 def get_available_backends() -> list:

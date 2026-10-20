@@ -50,12 +50,22 @@ def _snapshot(root):
     return snap
 
 
+def _modal_running(aid):
+    ui = sys.modules.get(aid + ".ui")
+    flag = getattr(ui, "MODAL_RUNNING", None)
+    return bool(flag and flag[0])
+
+
 def _reload(aid):
+    """Returns False when the streaming modal operator is still winding down
+    ("Cannot reload with running modal operators"): the caller retries."""
     try:
         if getattr(bpy.context.scene, "ogc3dtiles", None) and bpy.context.scene.ogc3dtiles.is_streaming:
             bpy.ops.ogc3dtiles.stop_stream()
     except Exception:
         pass
+    if _modal_running(aid):
+        return False            # the modal finishes on its next timer event
     bpy.ops.preferences.addon_disable(module=aid)
     for name in [m for m in sys.modules if m == aid or m.startswith(aid + ".")]:
         del sys.modules[name]
@@ -63,6 +73,7 @@ def _reload(aid):
     for w in bpy.context.window_manager.windows:
         for a in w.screen.areas:
             a.tag_redraw()
+    return True
 
 
 _state = {"snap": None, "root": None, "dirty_since": None, "pending": []}
@@ -88,15 +99,17 @@ def _tick():
         return POLL_S
     if _state["dirty_since"] is not None and time.monotonic() - _state["dirty_since"] >= QUIET_S:
         print(f"[dev_watch] changed: {sorted(set(_state['pending']))} → reloading {aid}")
-        _state["dirty_since"] = None
-        _state["pending"] = []
         try:
-            _reload(aid)
+            if not _reload(aid):
+                print("[dev_watch] waiting for the streaming modal to stop…")
+                return POLL_S                       # dirty state kept: retried next poll
             print("[dev_watch] reloaded OK")
         except Exception as e:                        # noqa: BLE001
             import traceback
             traceback.print_exc()
             print(f"[dev_watch] reload FAILED: {e}")
+        _state["dirty_since"] = None
+        _state["pending"] = []
         # a failed register leaves the add-on disabled (and the sidebar tab
         # gone): keep trying every poll until it is back
         if aid not in bpy.context.preferences.addons:

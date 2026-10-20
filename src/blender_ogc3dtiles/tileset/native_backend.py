@@ -259,6 +259,56 @@ class _GlbPreparer:
         pass
 
 
+_SHARED = {}          # cache_dir → (task_processor, async_system, accessor)
+_LOCK_HANDLE = []     # keeps the cache lock file open for the process lifetime
+
+
+def _cache_db_path(cache_dir):
+    """One sqlite file per *process*: cesium-native's SqliteCache has no busy
+    timeout, so a second Blender on the same file logs 'database is locked'
+    for every request. Hold a lock file; if another process already holds it,
+    use a pid-suffixed database instead."""
+    os.makedirs(cache_dir, exist_ok=True)
+    lock_path = os.path.join(cache_dir, "http-cache.lock")
+    try:
+        fh = open(lock_path, "a+")
+        if os.name == "nt":
+            import msvcrt  # noqa: PLC0415
+            msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl  # noqa: PLC0415
+            fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        _LOCK_HANDLE.append(fh)
+        return os.path.join(cache_dir, "http-cache.sqlite")
+    except OSError:
+        print("[3DTiles/native] HTTP cache in use by another process, using a private one")
+        return os.path.join(cache_dir, "http-cache-%d.sqlite" % os.getpid())
+
+
+def _shared_externals(cs, cache_dir, max_loads):
+    """Task processor, AsyncSystem and (caching) accessor shared by every
+    tileset of this process: several CachingAssetAccessors on one sqlite file
+    lock each other out ('database is locked' on every request)."""
+    key = cache_dir or ""
+    ent = _SHARED.get(key)
+    if ent is not None:
+        return ent
+    tp = cs.async_.NativeTaskProcessor()
+    asys = cs.async_.AsyncSystem(tp)
+    copts = cs.curl.CurlAssetAccessorOptions()
+    copts.user_agent = "blender-ogc3dtiles/0.3 cesium-native-python"
+    inner = cs.curl.CurlAssetAccessor(copts)
+    # some hosts serve pre-gzipped .json/.b3dm without Content-Encoding
+    inner = cs.async_.GunzipAssetAccessor(inner)
+    if cache_dir:
+        accessor = cs.async_.CachingAssetAccessor(inner, _cache_db_path(cache_dir))
+    else:
+        accessor = inner
+    ent = (tp, asys, accessor)
+    _SHARED[key] = ent
+    return ent
+
+
 class CesiumNativeBackend:
     name = "cesium-native-python"
 
@@ -321,19 +371,7 @@ class CesiumNativeBackend:
     def load_tileset(self, url, ion_token, options):
         cs = self._import_cesium()
         sel = cs.tiles.selection
-        self._tp = cs.async_.NativeTaskProcessor()
-        self._asys = cs.async_.AsyncSystem(self._tp)
-        copts = cs.curl.CurlAssetAccessorOptions()
-        copts.user_agent = "blender-ogc3dtiles/0.3 cesium-native-python"
-        inner = cs.curl.CurlAssetAccessor(copts)
-        # some hosts serve pre-gzipped .json/.b3dm without Content-Encoding
-        inner = cs.async_.GunzipAssetAccessor(inner)
-        if self._cache_dir:
-            os.makedirs(self._cache_dir, exist_ok=True)
-            self._accessor = cs.async_.CachingAssetAccessor(
-                inner, os.path.join(self._cache_dir, "http-cache.sqlite"))
-        else:
-            self._accessor = inner
+        self._tp, self._asys, self._accessor = _shared_externals(cs, self._cache_dir, self._max_loads)
         self._prr = self._make_preparer()
         ext = sel.TilesetExternals(self._accessor, self._prr, self._asys)
 
@@ -477,12 +515,9 @@ class CesiumNativeBackend:
         self._tileset = None
         for _ in range(3):
             self.tick()
+        # task processor / async system / accessor are shared (see
+        # _shared_externals) and stay alive for the next stream
         self._asys = None
-        if self._tp is not None:
-            try:
-                self._tp.shutdown()
-            except Exception:
-                pass
         self._tp = None
         self._accessor = None
         self._prr = None

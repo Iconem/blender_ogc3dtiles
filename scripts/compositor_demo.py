@@ -16,6 +16,14 @@ from mathutils import Vector
 argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 # usage A: out_plain.png out_comp.png [elev_deg]
 # usage B: --views <prefix> name:az:elev:dist[:ox:oy:oz] ...   (offsets = bbox fractions)
+# optional: --edges edl|normal|both   (default edl: eye-dome lighting from the
+# depth pass; "normal" is the Sobel-on-normals crease pass, which also traces
+# tile borders where per-tile normals disagree)
+edges = "edl"
+if "--edges" in argv:
+    i = argv.index("--edges")
+    edges = argv[i + 1]
+    del argv[i:i + 2]
 multi = bool(argv) and argv[0] == "--views"
 out_plain = argv[0] if argv and not multi else ""
 out_comp = argv[1] if len(argv) > 1 and not multi else ""
@@ -135,18 +143,64 @@ def mathn(x, y, op):
     return N("ShaderNodeMath", x, y, operation=op)
 
 
-# 1. normal-based edges (Sobel on the normal pass) → darken creases
-edge = N("CompositorNodeFilter", -600, -300)
-set_in(edge, "Type", "Sobel")
-nt.links.new(rl.outputs["Normal" if "Normal" in rl.outputs else "Image"], edge.inputs["Image"])
-edge_bw = N("CompositorNodeRGBToBW", -400, -300)
-nt.links.new(edge.outputs["Image"], edge_bw.inputs["Image"])
-edge_inv = mathn(-200, -300, "SUBTRACT")
-edge_inv.inputs[0].default_value = 1.0
-nt.links.new(edge_bw.outputs["Val"], edge_inv.inputs[1])
-edge_gain = mathn(0, -300, "POWER")
-edge_gain.inputs[1].default_value = 0.6
-nt.links.new(edge_inv.outputs[0], edge_gain.inputs[0])
+# 1a. normal-based creases (Sobel on the normal pass)
+def normal_edges():
+    edge = N("CompositorNodeFilter", -600, -300)
+    set_in(edge, "Type", "Sobel")
+    nt.links.new(rl.outputs["Normal" if "Normal" in rl.outputs else "Image"], edge.inputs["Image"])
+    edge_bw = N("CompositorNodeRGBToBW", -400, -300)
+    nt.links.new(edge.outputs["Image"], edge_bw.inputs["Image"])
+    edge_inv = mathn(-200, -300, "SUBTRACT")
+    edge_inv.inputs[0].default_value = 1.0
+    nt.links.new(edge_bw.outputs["Val"], edge_inv.inputs[1])
+    edge_gain = mathn(0, -300, "POWER")
+    edge_gain.inputs[1].default_value = 0.6
+    nt.links.new(edge_inv.outputs[0], edge_gain.inputs[0])
+    return edge_gain.outputs[0]
+
+
+# 1b. eye-dome lighting from the depth pass: a pixel further away than the
+# average of its neighbourhood (log depth − blurred log depth) is darkened;
+# silhouettes and concavities darken, flat tile borders do not.
+def edl_edges(radius_px=3, strength=6.0):
+    zname = "Depth" if "Depth" in rl.outputs else "Z"
+    logz = mathn(-700, -600, "LOGARITHM")
+    logz.inputs[1].default_value = 2.718281828
+    nt.links.new(rl.outputs[zname], logz.inputs[0])
+    blur = N("CompositorNodeBlur", -500, -600)
+    set_in(blur, "Type", "Gaussian")
+    if "Size" in blur.inputs:                       # 5.x: one 2D vector socket
+        try:
+            blur.inputs["Size"].default_value = (radius_px, radius_px)
+        except TypeError:
+            blur.inputs["Size"].default_value = float(radius_px)
+    if hasattr(blur, "size_x"):                     # 4.x
+        blur.size_x = blur.size_y = radius_px
+    nt.links.new(logz.outputs[0], blur.inputs["Image"])
+    diff = mathn(-300, -600, "SUBTRACT")           # log z − blur(log z)  (>0 = behind)
+    nt.links.new(logz.outputs[0], diff.inputs[0])
+    nt.links.new(blur.outputs["Image"], diff.inputs[1])
+    pos = mathn(-100, -600, "MAXIMUM")
+    pos.inputs[1].default_value = 0.0
+    nt.links.new(diff.outputs[0], pos.inputs[0])
+    gain = mathn(100, -600, "MULTIPLY")
+    gain.inputs[1].default_value = -strength
+    nt.links.new(pos.outputs[0], gain.inputs[0])
+    shade = mathn(300, -600, "EXPONENT")           # exp(−strength · max(0, Δ))
+    nt.links.new(gain.outputs[0], shade.inputs[0])
+    return shade.outputs[0]
+
+
+if edges == "normal":
+    edge_out = normal_edges()
+elif edges == "both":
+    a, b = normal_edges(), edl_edges()
+    both = mathn(450, -450, "MULTIPLY")
+    nt.links.new(a, both.inputs[0])
+    nt.links.new(b, both.inputs[1])
+    edge_out = both.outputs[0]
+else:
+    edge_out = edl_edges()
 
 # 2. ambient occlusion pass multiplied in (when the engine provides it)
 print("COMP passes:", [o.name for o in rl.outputs if o.enabled])
@@ -161,7 +215,7 @@ else:
 # 3. creases darkening
 crease = mix_rgb(200, 100, "MULTIPLY", 0.5)
 nt.links.new(ao_mix.outputs[2], crease.inputs[6])
-nt.links.new(edge_gain.outputs[0], crease.inputs[7])
+nt.links.new(edge_out, crease.inputs[7])
 
 # 4. colour grade (contrast + warmth) and mist haze
 cb = N("CompositorNodeColorBalance", 400, 100)

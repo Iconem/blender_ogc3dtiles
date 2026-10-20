@@ -36,7 +36,16 @@ outliner).  Entries added, ticked or removed while streaming are picked up on
 the next tick.  **Max SSE** (LOD sub-panel) is the live renderer setting for
 every stream; tick *Own SSE* on an entry to override it for that tileset.
 Both re-select immediately on both backends.  *Start* discards the tiles a
-previous *Stop* left on screen (they belong to a dead selection).
+previous *Stop* left on screen (they belong to a dead selection).  Two
+entries with the same label get separate collections (`… (2)`).
+
+Python backend load order is CesiumJS-style foveated: shallow tiles first,
+then by screen-space error weighted towards the view centre (*Foveation
+cone* = fraction of the view half-angle); *Edge SSE relax* > 0 additionally
+lets the periphery stay coarser.  cesium-native orders its own queue the same
+way internally.  "Hide relation lines" (Streaming sub-panel) switches off the
+dashed object→parent overlay in every 3D viewport on Start — it is a
+per-viewport overlay, Blender has no per-object switch.
 
 ### Scene origin
 

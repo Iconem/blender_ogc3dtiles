@@ -37,7 +37,11 @@ the next tick.  **Max SSE** (LOD sub-panel) is the live renderer setting for
 every stream; tick *Own SSE* on an entry to override it for that tileset.
 Both re-select immediately on both backends.  *Start* discards the tiles a
 previous *Stop* left on screen (they belong to a dead selection).  Two
-entries with the same label get separate collections (`… - 2`).
+entries with the same label get separate collections (`… - 2`; the list
+entry is renamed to match).  Editing the URL of a running entry restarts
+that stream with the new URL.  **+** adds an empty entry (or one prefilled
+from the URL field when that URL is not in the list yet); share links
+(`/s/<token>/<asset>.json`) are labelled by the asset, never by the token.
 
 Load order (Python backend): the tree is walked with a stack (depth-first)
 but every requested tile goes into one queue that is sorted before download,
@@ -108,15 +112,19 @@ original JPEG/PNG bytes of the textures or PNG re-encoded from decoded
 pixels for KTX2).  `io.build_tile_from_payload` then creates the mesh with
 `foreach_set`, packs the textures from bytes and builds a matte Principled
 material.  Point clouds (`pnts`, glTF POINTS) become vertex-only meshes with
-a `Col` colour attribute and a shared Geometry Nodes modifier.  The radius of
-each tile's points is 0.6 × its mean point spacing (estimated from the tile's
-extent and point count) times the *Point scale* slider, or one *Uniform*
-radius for every tile (ADD-refined clouds keep their coarse parents, so
-uniform avoids big parent points among fine children), or **Screen pixels**:
-radius = pixels × distance to the eye, clamped to a metre range — the eye is
-the 'OGC3D View' Empty that the streaming tick moves to the viewport eye and
-a `render_pre` handler moves to the scene camera, so points keep a constant
-on-screen size like 3DTilesRendererJS' point size with attenuation.  Two display modes
+a `Col` colour attribute (COLOR_0 decoded straight from the buffer, ubyte /
+ushort / float) and a shared Geometry Nodes modifier.  Four radius modes:
+**Adaptive** (default): 0.6 × the tile's mean point spacing (5th–95th
+percentile extent / point count, ignored below 64 points) × *Point scale*,
+then clamped to a *Min / Max pixels* range on screen, so coarse ADD parents
+get bigger points than fine children, far points never vanish and near ones
+never bloat (Potree's adaptive size); **Per tile** is the same without the
+pixel clamp; **Uniform** is one radius for every tile; **Screen pixels** is
+radius = pixels × distance to the eye, clamped to a metre range (constant
+on-screen size like 3DTilesRendererJS' point size with attenuation).  The
+eye is the 'OGC3D View' Empty that the streaming tick (or, when nothing
+streams, a 0.15 s timer) moves to the viewport eye and a `render_pre`
+handler moves to the scene camera.  Two display modes
 (`Point Clouds` sub-panel): **Point cloud** (Mesh → Points; cheapest; unlit
 vertex colours in Material Preview / Rendered, material colour in Solid) and
 **Tiny tetrahedra** (4 vertices per point, realised as a mesh whose active
@@ -155,10 +163,19 @@ import step consumes. Placement: Empty = `ENU_from_ECEF · T_tile · Zup→Yup`.
 ### Compositor
 
 The "Compositor" sub-panel builds the 'OGC3D Beauty' tree on the current
-scene (`compositor.py`: edges, AO, ASC-CDL grade, mist haze, glare) and
+scene (`compositor.py`: edges, AO, ASC-CDL grade, depth haze, glare) and
 switches every 3D viewport's compositor to *Always*, so Rendered shading
-shows it live; the Compositing workspace shows the nodes.  Edges: eye-dome
-lighting from the depth pass (default), Sobel creases from normals, or both.
+shows it live; the Compositing workspace shows the nodes.  The tree holds
+both edge branches; *Edges* (eye-dome lighting from depth, Sobel creases
+from normals, or both), *EDL strength*, *Crease strength*, *AO* and *Haze*
+drive Value nodes of the existing tree, so they update live without a
+rebuild (*Rebuild* only re-derives the haze range from the loaded extent).
+Viewport quirks handled: the viewport compositor's Depth pass is 0 / NaN
+where nothing is drawn (sanitised to "far"), its Mist and AO passes are 1
+everywhere (haze is a ramp on Depth instead), and Rendered shading lights
+the scene with the world only — *Build* brightens Blender's default
+dark-grey world once when the scene has no sun lamp, otherwise the tiles
+look black next to Material Preview's studio HDRI.
 `scripts/compositor_demo.py` reuses the same builder for headless renders.
 
 ## Coordinate System

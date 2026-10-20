@@ -125,13 +125,16 @@ def _enabled_items(props):
     """Tileset list entries to stream; falls back to the single URL field."""
     items = [(i, it) for i, it in enumerate(props.tilesets) if it.enabled and it.url.strip()]
     if not items and props.tileset_url.strip():
-        it = props.tilesets.add()
+        empty = next((x for x in props.tilesets if not x.url.strip()), None)
+        it = empty if empty is not None else props.tilesets.add()
         it.name = _short_label(props.tileset_url)
         it.url = props.tileset_url.strip()
         it.ion_token = props.cesium_ion_token
         it.max_sse = props.max_screen_space_error
-        props.active_tileset = len(props.tilesets) - 1
-        items = [(len(props.tilesets) - 1, it)]
+        it.enabled = True
+        idx = next(i for i, x in enumerate(props.tilesets) if x == it)
+        props.active_tileset = idx
+        items = [(idx, it)]
     return items
 
 
@@ -185,12 +188,16 @@ class OGC3D_OT_TilesetAdd(Operator):
 
     def execute(self, context):
         props = context.scene.ogc3dtiles
+        url = props.tileset_url.strip()
+        if any(x.url.strip() == url for x in props.tilesets):
+            url = ""                    # already in the list: new, empty entry
         it = props.tilesets.add()
-        it.url = props.tileset_url.strip()
+        it.url = url
         it.ion_token = props.cesium_ion_token
         it.max_sse = props.max_screen_space_error
         it.name = _short_label(it.url) if it.url else f"tileset {len(props.tilesets)}"
         props.active_tileset = len(props.tilesets) - 1
+        props.tileset_url = ""
         return {"FINISHED"}
 
 
@@ -278,6 +285,8 @@ def _start_item(scene, props, item) -> dict:
                      item.url.strip(), item.ion_token, effective_sse(props, item))
     try:
         _start_stream(scene, props, st, _state["choice"], _state["cache"])
+        if st["name"] != item.name:
+            item.name = st["name"]
     except Exception as e:                           # noqa: BLE001
         import traceback
         traceback.print_exc()
@@ -530,7 +539,7 @@ def stream_tick(context) -> bool:
     props = scene.ogc3dtiles
     now = time.monotonic()
     changed = _sync_streams(scene, props, now)
-    if props.point_radius_mode == "SCREEN":
+    if props.point_radius_mode in ("SCREEN", "ADAPTIVE"):
         _update_view_proxy(scene)
     loaded = pending = visible = 0
     parts = []
@@ -586,6 +595,13 @@ def _sync_streams(scene, props, now) -> bool:
                 _state["streams"].pop(key, None)
                 st = _start_item(scene, props, item)
                 changed = True
+            continue
+        if st["url"] != item.url.strip():
+            _state["streams"].pop(key, None)
+            _teardown_stream(st, remove_objects=True)
+            if want:
+                _start_item(scene, props, item)
+            changed = True
             continue
         paused = not item.enabled
         if paused != bool(st.get("paused")):
@@ -854,6 +870,8 @@ def _short_label(url: str) -> str:
     base = url.split("?", 1)[0].rstrip("/")
     parts = [p for p in base.split("/") if p]
     if parts and parts[-1].lower().endswith(".json") and len(parts) >= 2:
+        if len(parts) >= 3 and parts[-3] == "s":        # /s/<token>/<asset>.json
+            return parts[-1][:-5][:40]
         return parts[-2][:40]
     return (parts[-1] if parts else "tileset")[:40]
 
@@ -1107,6 +1125,11 @@ class OGC3D_PT_MainPanel(Panel):
             body.prop(props, "point_radius_mode", text="Radius")
             if props.point_radius_mode == "UNIFORM":
                 body.prop(props, "point_radius", text="Radius m")
+            elif props.point_radius_mode == "ADAPTIVE":
+                body.prop(props, "point_scale", text="Point scale")
+                row = body.row(align=True)
+                row.prop(props, "point_adapt_min_px", text="Min px")
+                row.prop(props, "point_adapt_max_px", text="Max px")
             elif props.point_radius_mode == "SCREEN":
                 row = body.row(align=True)
                 row.prop(props, "point_px", text="Pixels")
@@ -1183,13 +1206,39 @@ _classes = [
 ]
 
 
+EYE_TIMER_S = 0.15
+
+
+def _eye_tick():
+    """Screen / adaptive point sizes depend on the eye position: while a
+    stream runs the tick refreshes it, otherwise this timer does (navigating a
+    stopped scene, or a .blend reopened later)."""
+    try:
+        if bpy.app.background:
+            return None
+        scene = bpy.context.scene
+        props = getattr(scene, "ogc3dtiles", None)
+        if (props is None or props.is_streaming
+                or props.point_radius_mode not in ("SCREEN", "ADAPTIVE")
+                or bpy.data.objects.get("OGC3D View") is None):
+            return EYE_TIMER_S
+        _update_view_proxy(scene)
+    except Exception:          # noqa: BLE001 — no window / context during file load
+        pass
+    return EYE_TIMER_S
+
+
 def register():
     _refresh_cesium_status()
     for cls in _classes:
         bpy.utils.register_class(cls)
+    if not bpy.app.background and not bpy.app.timers.is_registered(_eye_tick):
+        bpy.app.timers.register(_eye_tick, first_interval=1.0, persistent=True)
 
 
 def unregister():
+    if bpy.app.timers.is_registered(_eye_tick):
+        bpy.app.timers.unregister(_eye_tick)
     for st in _state["streams"].values():
         dm = st.get("download_mgr")
         if dm:

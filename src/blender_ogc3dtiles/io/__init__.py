@@ -676,7 +676,7 @@ def point_radius_for(scene, payload) -> float:
     if getattr(props, "point_radius_mode", "AUTO") == "UNIFORM":
         return float(props.point_radius)
     spacing = float(payload.get("point_spacing") or 0.0)
-    return min(max(0.6 * spacing, 0.01), 5.0) if spacing > 0 else 0.05
+    return min(max(0.6 * spacing, 0.01), 2.0) if spacing > 0 else 0.05
 
 
 def apply_point_radius(scene) -> int:
@@ -690,13 +690,16 @@ def apply_point_radius(scene) -> int:
             continue
         ng = _points_nodegroup(mesh_mode)          # upgrades an old group in place
         for node_name, val in ((SCREEN_MODE_NODE, 1.0 if mode == "SCREEN" else 0.0),
+                               (ADAPT_MODE_NODE, 1.0 if mode == "ADAPTIVE" else 0.0),
                                (PX_SIZE_NODE, float(props.point_px) * 0.5),   # diameter → radius
                                (PX_MIN_NODE, float(props.point_px_min_m)),
-                               (PX_MAX_NODE, float(props.point_px_max_m))):
+                               (PX_MAX_NODE, float(props.point_px_max_m)),
+                               (ADAPT_MIN_NODE, float(props.point_adapt_min_px) * 0.5),
+                               (ADAPT_MAX_NODE, float(props.point_adapt_max_px) * 0.5)):
             node = ng.nodes.get(node_name)
             if node is not None:
                 node.outputs[0].default_value = val
-    if mode == "SCREEN":
+    if mode in EYE_MODES:
         ensure_view_proxy(scene)
     n = 0
     for o in bpy.data.objects:
@@ -733,7 +736,7 @@ def _points_nodegroup(mesh_mode: bool = False):
     name = POINTS_MESH_NODEGROUP if mesh_mode else POINTS_NODEGROUP
     ng = bpy.data.node_groups.get(name)
     if ng is not None:
-        if ng.nodes.get(SCREEN_MODE_NODE) is not None:
+        if ng.nodes.get(ADAPT_MODE_NODE) is not None:
             return ng
         # group saved by an older version: rebuild the nodes, keep the
         # interface sockets (modifiers reference them by identifier)
@@ -813,6 +816,10 @@ VIEW_PERSP_NODE = "View Persp"       # 1 perspective, 0 orthographic
 PX_SIZE_NODE = "Point Pixels"
 PX_MIN_NODE = "Min Radius"
 PX_MAX_NODE = "Max Radius"
+ADAPT_MODE_NODE = "Adaptive Mode"   # 1 = metres radius clamped to [Adapt Min Px, Adapt Max Px]
+ADAPT_MIN_NODE = "Adapt Min Px"
+ADAPT_MAX_NODE = "Adapt Max Px"
+EYE_MODES = ("SCREEN", "ADAPTIVE")  # modes that need the eye proxy / view scale
 
 
 def _value(ng, name, default):
@@ -823,12 +830,17 @@ def _value(ng, name, default):
 
 
 def _screen_radius_nodes(ng, metres_socket):
-    """radius = mix(metres, clamp(px × dist_eff × view_scale, min, max), Screen Mode)
-    with dist_eff = |P_world − eye| in perspective, 1 in orthographic.
-    All parameters are Value nodes shared by every tile (set from the panel
-    / the streaming tick), the eye is the 'OGC3D View' Empty."""
+    """Screen mode:   radius = clamp(px × dist_eff × view_scale, min_m, max_m)
+    Adaptive mode: radius = clamp(metres, min_px × m_per_px, max_px × m_per_px)
+    with m_per_px = dist_eff × view_scale, dist_eff = |P_world − eye| in
+    perspective, 1 in orthographic.  All parameters are Value nodes shared by
+    every tile (set from the panel / the streaming tick), the eye is the
+    'OGC3D View' Empty."""
     N, L = ng.nodes.new, ng.links.new
     mode = _value(ng, SCREEN_MODE_NODE, 0.0)
+    amode = _value(ng, ADAPT_MODE_NODE, 0.0)
+    amin = _value(ng, ADAPT_MIN_NODE, 1.0)
+    amax = _value(ng, ADAPT_MAX_NODE, 6.0)
     vscale = _value(ng, VIEW_SCALE_NODE, 0.002)
     persp = _value(ng, VIEW_PERSP_NODE, 1.0)
     px = _value(ng, PX_SIZE_NODE, 3.0)
@@ -870,10 +882,28 @@ def _screen_radius_nodes(ng, metres_socket):
     L(r_px2.outputs[0], clamp.inputs["Value"])
     L(rmin.outputs[0], clamp.inputs["Min"])
     L(rmax.outputs[0], clamp.inputs["Max"])
+    # adaptive: the metres radius, clamped to a pixel range at this distance
+    lo = N("ShaderNodeMath")
+    lo.operation = "MULTIPLY"
+    L(r_px.outputs[0], lo.inputs[0])
+    L(amin.outputs[0], lo.inputs[1])
+    hi = N("ShaderNodeMath")
+    hi.operation = "MULTIPLY"
+    L(r_px.outputs[0], hi.inputs[0])
+    L(amax.outputs[0], hi.inputs[1])
+    aclamp = N("ShaderNodeClamp")
+    L(metres_socket, aclamp.inputs["Value"])
+    L(lo.outputs[0], aclamp.inputs["Min"])
+    L(hi.outputs[0], aclamp.inputs["Max"])
+    amix = N("ShaderNodeMix")
+    amix.data_type = "FLOAT"
+    L(amode.outputs[0], amix.inputs["Factor"])
+    L(metres_socket, amix.inputs[2])
+    L(aclamp.outputs[0], amix.inputs[3])
     mix = N("ShaderNodeMix")
     mix.data_type = "FLOAT"
     L(mode.outputs[0], mix.inputs["Factor"])
-    L(metres_socket, mix.inputs[2])
+    L(amix.outputs[0], mix.inputs[2])
     L(clamp.outputs[0], mix.inputs[3])
     return mix
 
@@ -1038,7 +1068,7 @@ def _render_pre(scene, _depsgraph=None):
         cam = scene.camera
         if cam is None or bpy.data.objects.get(VIEW_PROXY) is None:
             return
-        if scene.ogc3dtiles.point_radius_mode != "SCREEN":
+        if scene.ogc3dtiles.point_radius_mode not in EYE_MODES:
             return
         import math
         h = max(int(scene.render.resolution_y * scene.render.resolution_percentage / 100), 1)

@@ -47,6 +47,15 @@ def _on_point_scale(self, context):
     apply_point_scale(self.point_scale)
 
 
+def _on_comp(self, context):
+    """Compositor sliders drive Value nodes of the existing tree (no rebuild)."""
+    try:
+        from .. import compositor
+        compositor.apply_settings(context.scene)
+    except Exception:          # noqa: BLE001
+        pass
+
+
 class TilesetItem(PropertyGroup):
     """One streamed tileset (list entry in the sidebar)."""
     name: StringProperty(name="Name", default="tileset")
@@ -62,7 +71,7 @@ class TilesetItem(PropertyGroup):
         default=False, update=_on_item_sse)
     max_sse: FloatProperty(name="Max SSE", description="Screen-space error threshold (px) for "
                            "this tileset when 'Own SSE' is ticked; lower = finer tiles. Live",
-                           default=16.0, min=1.0, max=512.0, update=_on_item_sse)
+                           default=8.0, min=1.0, max=512.0, update=_on_item_sse)
     uid: StringProperty(default="", options={'HIDDEN'})
 
 
@@ -126,7 +135,7 @@ class TilesSceneProps(PropertyGroup):
         name="Max SSE",
         description="Screen-space error threshold in pixels for every tileset without "
                     "'Own SSE'; lower = finer tiles. Live while streaming",
-        default=16.0, min=1.0, max=512.0,
+        default=8.0, min=1.0, max=512.0,
         update=_on_global_sse,
     )
     max_concurrent_requests: IntProperty(
@@ -200,6 +209,10 @@ class TilesSceneProps(PropertyGroup):
         name="Point radius",
         description="How the display radius of points is chosen",
         items=[
+            ("ADAPTIVE", "Adaptive (spacing, px clamp)",
+             "Per-tile spacing x Point scale, then clamped between Min / Max pixels on "
+             "screen: coarse tiles get bigger points, far points never vanish, near points "
+             "never bloat (Potree-style adaptive size)"),
             ("AUTO", "Per tile (spacing)",
              "0.6 x the tile's mean point spacing x Point scale: coarse ADD-refined "
              "tiles get bigger points than fine ones"),
@@ -209,8 +222,16 @@ class TilesSceneProps(PropertyGroup):
              "streaming, scene camera when rendering), clamped to Min / Max metres. "
              "Like 3DTilesRendererJS' point size with attenuation"),
         ],
-        default="AUTO",
+        default="ADAPTIVE",
         update=_on_point_radius,
+    )
+    point_adapt_min_px: FloatProperty(
+        name="Min size (px)", description="Adaptive mode: points never smaller than this on screen",
+        default=2.0, min=0.0, max=64.0, update=_on_point_radius,
+    )
+    point_adapt_max_px: FloatProperty(
+        name="Max size (px)", description="Adaptive mode: points never larger than this on screen",
+        default=12.0, min=0.5, max=256.0, update=_on_point_radius,
     )
     point_px: FloatProperty(
         name="Point size (px)", description="Screen mode: point diameter in pixels",
@@ -233,6 +254,24 @@ class TilesSceneProps(PropertyGroup):
             ("BOTH", "Both", "Multiply both"),
         ],
         default="EDL",
+        update=_on_comp,
+    )
+    comp_edl_strength: FloatProperty(
+        name="EDL strength", description="Eye-dome lighting: how dark a pixel behind its "
+                                         "neighbourhood gets (0 = off)",
+        default=4.0, min=0.0, max=30.0, update=_on_comp,
+    )
+    comp_crease_strength: FloatProperty(
+        name="Crease strength", description="Normal-pass Sobel creases: ink darkness (0 = off)",
+        default=1.0, min=0.0, max=5.0, update=_on_comp,
+    )
+    comp_ao: FloatProperty(
+        name="AO", description="Ambient-occlusion pass multiply (0 = off)",
+        default=0.5, min=0.0, max=1.0, update=_on_comp,
+    )
+    comp_haze: FloatProperty(
+        name="Haze", description="Mist-pass haze towards a pale sky colour (0 = off)",
+        default=0.35, min=0.0, max=1.0, update=_on_comp,
     )
     point_radius: FloatProperty(
         name="Point radius (m)", description="Uniform point radius",

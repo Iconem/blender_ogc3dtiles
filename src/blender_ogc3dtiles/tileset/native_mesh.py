@@ -123,26 +123,75 @@ def _iter_primitives(model):
             stack.append((c, T))
 
 
+_CT_DTYPE = {5120: np.int8, 5121: np.uint8, 5122: np.int16, 5123: np.uint16,
+             5125: np.uint32, 5126: np.float32}
+_TYPE_N = {"SCALAR": 1, "VEC2": 2, "VEC3": 3, "VEC4": 4}
+
+
+def _enum_int(v):
+    for attr in ("value", "real"):
+        try:
+            return int(getattr(v, attr))
+        except Exception:
+            pass
+    try:
+        return int(v)
+    except Exception:
+        return None
+
+
+def _raw_accessor(model, ai):
+    """Accessor data straight from the buffer as float32 (N, ncomp), honouring
+    the component type, byte stride and KHR normalisation.  The binding's
+    typed AccessorViews are float-only, so ubyte/ushort colours (the usual
+    COLOR_0 encoding of point clouds) must be decoded here."""
+    acc = model.accessors[ai]
+    ct = _enum_int(acc.component_type)
+    dtype = _CT_DTYPE.get(ct)
+    ncomp = _TYPE_N.get(str(acc.type).rsplit(".", 1)[-1].upper())
+    if dtype is None or ncomp is None or acc.buffer_view is None or acc.buffer_view < 0:
+        return None
+    bv = model.buffer_views[acc.buffer_view]
+    buf = np.asarray(model.buffers[bv.buffer].cesium.data, dtype=np.uint8)
+    item = np.dtype(dtype).itemsize * ncomp
+    stride = bv.byte_stride if bv.byte_stride and bv.byte_stride > 0 else item
+    start = int(bv.byte_offset) + int(acc.byte_offset)
+    n = int(acc.count)
+    if start + (n - 1) * stride + item > len(buf):
+        return None
+    if stride == item:
+        arr = buf[start:start + n * item].view(dtype).reshape(n, ncomp)
+    else:
+        rows = np.lib.stride_tricks.as_strided(buf[start:], shape=(n, item), strides=(stride, 1))
+        arr = np.ascontiguousarray(rows).view(dtype).reshape(n, ncomp)
+    out = arr.astype(np.float32)
+    if dtype is not np.float32 and (acc.normalized or ct in (5121, 5123)):
+        out = out / float(np.iinfo(dtype).max)
+    return out
+
+
 def _color_array(cs, model, prim):
     """COLOR_0 as (N,4) float32 in [0,1], or None."""
     ai = prim.attributes.get("COLOR_0")
     if ai is None:
         return None
     try:
-        acc = model.accessors[ai]
-        t = acc.type
-        if t == "VEC4":
-            arr = _as_array(cs.gltf.AccessorViewVec4(model, ai), np.float32)
-        elif t == "VEC3":
-            arr = _as_array(cs.gltf.AccessorViewVec3(model, ai), np.float32)
-            if arr is not None:
-                arr = np.concatenate([arr, np.ones((len(arr), 1), np.float32)], axis=1)
-        else:
-            return None
+        arr = _raw_accessor(model, ai)
         if arr is None:
+            acc = model.accessors[ai]
+            t = str(acc.type).rsplit(".", 1)[-1].upper()
+            if t == "VEC4":
+                arr = _as_array(cs.gltf.AccessorViewVec4(model, ai), np.float32)
+            elif t == "VEC3":
+                arr = _as_array(cs.gltf.AccessorViewVec3(model, ai), np.float32)
+            if arr is None:
+                return None
+            if arr.max() > 1.0001:
+                arr = arr / 255.0
+        if arr.shape[1] == 3:
+            arr = np.concatenate([arr, np.ones((len(arr), 1), np.float32)], axis=1)
+        elif arr.shape[1] != 4:
             return None
-        if acc.normalized is False and acc.component_type != cs.gltf.Accessor.ComponentType.FLOAT:
-            arr = arr / 255.0
         return np.clip(arr, 0.0, 1.0).astype(np.float32)
     except Exception:
         return None
@@ -323,8 +372,13 @@ def finalize_payload(payload):
     payload["verts"] = V.astype(np.float32)
     payload["offset"] = [float(v) for v in offset]
     spacing = 0.0
-    if payload.get("points") and len(V) > 1:
-        ext = np.sort(V.max(axis=0) - V.min(axis=0))[::-1]
-        spacing = float(np.sqrt(max(ext[0] * ext[1], 1e-9) / len(V)))
+    # fewer than 64 points: the area / N estimate is meaningless (a 1-point
+    # root tile would get a 5 m blob) → 0 = "unknown", default radius
+    if payload.get("points") and len(V) >= 64:
+        # 5th..95th percentile extents: a few stray points must not inflate
+        # the tile's footprint (and every point's radius) tenfold
+        lo, hi = np.percentile(V, [5.0, 95.0], axis=0)
+        ext = np.sort(hi - lo)[::-1]
+        spacing = float(np.sqrt(max(ext[0] * ext[1], 1e-9) / (0.9 * len(V))))
     payload["point_spacing"] = spacing
     return payload

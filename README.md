@@ -21,6 +21,113 @@ blender_ogc3dtiles/
 └── ui/__init__.py           # sidebar panel + modal operator (stream_tick)
 ```
 
+### Pipeline at a glance
+
+Both backends share the same contract: every streaming tick, the add-on
+reads the viewport from `bpy`, hands a `ViewState` to a *backend* that
+decides which tiles to draw and which to load, and turns the content that
+arrives into Blender objects.  Only the middle differs.
+
+```mermaid
+flowchart LR
+    classDef bpy fill:#e8f1ff,stroke:#4a78c2,color:#111
+    classDef addon fill:#fff6e0,stroke:#c99a2e,color:#111
+    classDef native fill:#eaf7ea,stroke:#4f9d55,color:#111
+    classDef net fill:#f4e8ff,stroke:#8a5ac2,color:#111
+
+    subgraph BPY["Blender (bpy)"]
+        direction TB
+        VP["3D viewport<br/>region_3d.view_matrix<br/>window_matrix, region.height"]:::bpy
+        PROPS["scene.ogc3dtiles<br/>list, Max SSE, origin,<br/>point / material / compositor props"]:::bpy
+        OBJ["bpy.data: meshes, images,<br/>materials, node groups,<br/>'3D Tiles' collections + root Empties"]:::bpy
+        TIMER["modal operator timer (GUI)<br/>or stream_tick() (-b)"]:::bpy
+    end
+
+    subgraph CAM["camera/"]
+        ADAPT["CesiumCameraAdapter.get_view_state(root)<br/>ENU ↔ ECEF via scene origin + root Empty<br/>frustum planes, fov, height px"]:::addon
+        EYE["viewport_eye()<br/>eye, p11, height, persp"]:::addon
+    end
+
+    subgraph UI["ui/ (per stream)"]
+        TICK["stream_tick → _sync_streams<br/>_tick_python / _tick_native"]:::addon
+        VIS["_apply_visibility / _evict<br/>hide_set, remove_tile"]:::addon
+        PROXY["_update_view_proxy / _eye_tick<br/>→ 'OGC3D View' Empty + Value nodes"]:::addon
+    end
+
+    subgraph PY["Python backend (tileset/)"]
+        TRAV["traversal.select()<br/>SSE, frustum, foveation,<br/>REPLACE/ADD, one sorted queue"]:::addon
+        DLM["io.TileDownloadManager<br/>threads, keep-alive Session,<br/>DiskCache, unwrap b3dm/pnts/glb"]:::addon
+        GPL["gltf_payload.glb_to_payload<br/>numpy arrays (worker thread)"]:::addon
+    end
+
+    subgraph NAT["cesium-native-python backend"]
+        CNB["CesiumNativeBackend<br/>Tileset.update_view(ViewState)<br/>options.maximum_screen_space_error live"]:::native
+        PREP["_GlbPreparer (IPrepareRendererResources)<br/>prepare_in_load_thread: native_mesh.extract_mesh_payload<br/>prepare_in_main_thread: on_main_thread_ready"]:::native
+        CACHE["shared AsyncSystem + CachingAssetAccessor<br/>(sqlite http-cache, one per process)"]:::native
+    end
+
+    subgraph BUILD["io/ (main thread)"]
+        B1["build_tile_from_payload<br/>foreach_set, packed images,<br/>matte / unlit material, Points modifier"]:::addon
+        B2["import_glb_file<br/>(glTF importer fallback)"]:::addon
+        MAT["materials.ensure_relight_group<br/>compositor.build_beauty_tree"]:::addon
+    end
+
+    NET[("tileset.json / b3dm / pnts / glb<br/>HTTP(S), ion, share links")]:::net
+
+    TIMER --> TICK
+    VP --> ADAPT --> TICK
+    VP --> EYE --> PROXY --> OBJ
+    PROPS --> TICK
+    TICK -- "ViewState" --> TRAV
+    TICK -- "ViewState (pos, dir, up, fov)" --> CNB
+    TRAV -- "load list" --> DLM --> NET
+    DLM --> GPL -- "payload" --> B1
+    DLM -- "glb file" --> B2
+    CNB --> CACHE --> NET
+    CNB --> PREP -- "payload or glb bytes" --> B1
+    TRAV -- "render set" --> VIS
+    CNB -- "tiles to render / freed" --> VIS
+    B1 --> OBJ
+    B2 --> OBJ
+    VIS --> OBJ
+    OBJ -. "Apply Relight / Build" .-> MAT --> OBJ
+```
+
+What each stage needs and produces:
+
+| stage | reads | produces | thread |
+|---|---|---|---|
+| `camera.CesiumCameraAdapter` | viewport matrices, scene origin (lat/lon/h), root Empty transform | `ViewState` in the tileset's ECEF frame | main |
+| `traversal.select` (Python) | `Tile` tree (parsed `tileset.json`, external tilesets grafted on arrival), `ViewState`, Max SSE, foveation | render set, keep set, one priority-sorted load list | main |
+| `io.TileDownloadManager` | load list, token, disk cache | `FetchResult`: GLB parts (+ RTC) or external tileset JSON, numpy payloads when *Direct mesh* | worker threads |
+| `CesiumNativeBackend.update_view` | `ViewState` as position / direction / up / fov | tiles to render, newly ready / freed tiles, stats | main (cesium-native pool for loads) |
+| `_GlbPreparer.prepare_in_load_thread` | `Model` from cesium-native | numpy payload (`native_mesh.extract_mesh_payload`) or stripped GLB bytes | cesium-native workers |
+| `io.build_tile_from_payload` / `import_glb_file` | payload or GLB file, tile matrix (`tile_world_matrix`, `apply_payload_offset` in float64) | mesh object under the root Empty, hidden until selected | main |
+| `_apply_visibility` / `_evict` | render set, keep set, Max Tiles | `hide_set`, `remove_tile` | main |
+| `materials` / `compositor` | tile objects, panel sliders | shared "OGC3D Relight" group, "OGC3D Beauty" compositor tree | main, on demand |
+
+One tick, in order:
+
+```mermaid
+sequenceDiagram
+    participant T as timer / stream_tick
+    participant C as CesiumCameraAdapter
+    participant B as backend (Python or native)
+    participant W as workers (threads / cesium-native pool)
+    participant IO as io (main thread)
+    participant S as bpy scene
+
+    T->>C: get_view_state(root Empty)
+    C->>S: read region_3d, origin, root matrix
+    C-->>T: ViewState
+    T->>B: update_view(ViewState)
+    B-->>T: render set, load list (Python) / ready + freed tiles (native)
+    B->>W: fetch + decode (Python: TileDownloadManager; native: Tileset loads)
+    W-->>IO: payload (numpy) or GLB bytes
+    IO->>S: build mesh, images, material, Points modifier (budget: Imports / tick)
+    T->>S: hide/show tiles, evict, move 'OGC3D View' Empty
+```
+
 ### Several tilesets at once
 
 The sidebar holds a list of tilesets (add / remove, per-entry URL, ion token

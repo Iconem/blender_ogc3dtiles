@@ -343,6 +343,19 @@ in the add-on preferences. The pure Python path is used otherwise.
 4. Hit **Start**
 5. Navigate the 3D viewport — tiles load as you move the camera
 
+Sidebar order, top to bottom: tileset list and Start / Stop / Clear, then
+**LOD** (Max SSE, Max Tiles, foveation), **Streaming** (collapsed: detail
+falloff, max distance, parallel downloads, imports per tick, direct mesh,
+disk cache, per-stream backend stats), **Display** (point display and
+radius, relation lines), **Materials** (relight: Apply / Remove, sliders),
+**Compositor** (edges and sliders, stable viewport, Build / Remove), then
+the collapsed **Scene Origin** and **Backend** sections.  The node-tree
+button next to Apply Relight, Build and the point display opens the
+corresponding tree ('OGC3D Relight' shader group, 'OGC3D Beauty' compositor
+tree, 'OGC3D Points…' geometry nodes) pinned in a node editor — an existing
+one, or the 3D viewport split in two — so the shader or the compositor can
+be adapted by hand; the sliders keep driving the same Value nodes.
+
 The glTF importer (Python backend, or "Direct mesh" off) is silenced to
 WARNING while tiles import; the direct mesh path prints nothing per tile.
 

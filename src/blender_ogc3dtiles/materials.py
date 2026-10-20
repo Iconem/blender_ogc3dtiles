@@ -337,6 +337,7 @@ def draw_panel(layout, props):
     row = layout.row(align=True)
     row.operator("ogc3dtiles.relight_apply", icon="SHADING_RENDERED", text="Apply Relight")
     row.operator("ogc3dtiles.relight_remove", icon="X", text="")
+    row.operator("ogc3dtiles.open_nodes", icon="NODETREE", text="").kind = "RELIGHT"
     layout.prop(props, "auto_relight", text="Relight new tiles")
     ng = bpy.data.node_groups.get(GROUP_NAME)
     if ng is not None:
@@ -350,7 +351,6 @@ def draw_panel(layout, props):
             n = ng.nodes.get(name)
             if n is not None:
                 col.prop(n.outputs[0], "default_value", text=name)
-        layout.label(text="Edit the group itself in the Shader Editor", icon="NODETREE")
 
 
 _classes = [OGC3D_OT_RelightApply, OGC3D_OT_RelightRemove]

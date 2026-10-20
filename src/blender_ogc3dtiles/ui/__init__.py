@@ -1054,17 +1054,28 @@ class OGC3D_PT_MainPanel(Panel):
             row.operator("ogc3dtiles.stop_stream", icon="PAUSE", text="Stop")
         row.operator("ogc3dtiles.clear_tiles", icon="TRASH", text="Clear All Tiles")
 
-        # Backend
-        header, body = layout.panel("ogc3d_backend", default_closed=False)
-        header.label(text="Backend", icon="MOD_DYNAMICPAINT")
+        # 1. LOD — what decides which tiles are shown
+        header, body = layout.panel("ogc3d_lod", default_closed=False)
+        header.label(text="LOD", icon="DRIVER_DISTANCE")
         if body:
-            prefs = _get_prefs(context)
-            if hasattr(prefs, "bl_rna"):
-                row = body.row()
-                row.enabled = not props.is_streaming
-                row.prop(prefs, "traversal_backend", text="")
-            ok, status = _cesium_status
-            body.label(text=f"cesium-native-python: {status}", icon="CHECKMARK" if ok else "INFO")
+            body.prop(props, "max_screen_space_error", text="Max SSE (live)")
+            body.prop(props, "max_loaded_tiles", text="Max Tiles / tileset")
+            row = body.row(align=True)
+            row.prop(props, "foveated_cone", text="Foveation cone")
+            row.prop(props, "foveated_relaxation", text="Edge SSE relax")
+
+        # 2. Streaming — how tiles get here (advanced)
+        header, body = layout.panel("ogc3d_streaming", default_closed=True)
+        header.label(text="Streaming", icon="SORTTIME")
+        if body:
+            body.prop(props, "detail_falloff", text="Detail Falloff m")
+            body.prop(props, "load_distance", text="Max Distance m")
+            body.prop(props, "max_concurrent_requests", text="Parallel DL")
+            body.prop(props, "imports_per_tick", text="Imports / tick")
+            body.prop(props, "native_direct_mesh", text="Direct mesh (numpy, both backends)")
+            row = body.row(align=True)
+            row.prop(props, "use_disk_cache", text="Disk cache")
+            row.operator("ogc3dtiles.clear_cache", icon="TRASH", text="")
             for st in _state["streams"].values():
                 if st["backend"] is None:
                     continue
@@ -1082,56 +1093,14 @@ class OGC3D_PT_MainPanel(Panel):
                 icon = "PAUSE" if (st.get("paused") or not props.is_streaming) else "PLAY"
                 body.label(text=f"{st['name'][:18]}: {running}  {extra}", icon=icon)
 
-        # Origin
-        header, body = layout.panel("ogc3d_origin", default_closed=True)
-        header.label(text="Scene Origin", icon="ORIENTATION_GLOBAL")
+        # 3. Display — what the viewport shows (points, overlays)
+        header, body = layout.panel("ogc3d_display", default_closed=False)
+        header.label(text="Display", icon="OUTLINER_DATA_POINTCLOUD")
         if body:
-            body.prop(props, "origin_mode", text="Mode")
-            if props.origin_mode == "AUTO":
-                body.prop(props, "origin_reuse_km")
-            col = body.column()
-            col.enabled = props.origin_mode == "CUSTOM"
-            col.prop(props, "origin_lat", text="Latitude °")
-            col.prop(props, "origin_lon", text="Longitude °")
-            col.prop(props, "origin_height", text="Height m")
-            row = body.row()
-            row.label(text="Origin set" if props.origin_valid else "Origin not set yet",
-                      icon="CHECKMARK" if props.origin_valid else "INFO")
-            row.operator("ogc3dtiles.origin_reset", text="", icon="FILE_REFRESH")
-
-        # LOD
-        header, body = layout.panel("ogc3d_lod", default_closed=False)
-        header.label(text="LOD", icon="DRIVER_DISTANCE")
-        if body:
-            body.prop(props, "max_screen_space_error", text="Max SSE (live)")
-            body.prop(props, "detail_falloff", text="Detail Falloff m")
-            body.prop(props, "load_distance", text="Max Distance m")
-            body.prop(props, "max_loaded_tiles", text="Max Tiles / tileset")
             row = body.row(align=True)
-            row.prop(props, "foveated_cone", text="Foveation cone")
-            row.prop(props, "foveated_relaxation", text="Edge SSE relax")
-
-        # Streaming
-        header, body = layout.panel("ogc3d_streaming", default_closed=True)
-        header.label(text="Streaming", icon="SORTTIME")
-        if body:
-            body.prop(props, "max_concurrent_requests", text="Parallel DL")
-            body.prop(props, "imports_per_tick", text="Imports / tick")
-            body.prop(props, "native_direct_mesh", text="Direct mesh (numpy, both backends)")
-            row = body.row(align=True)
-            row.prop(props, "hide_relation_lines", text="Hide relation lines")
-            shown = _relationship_lines_shown(context)
-            row.operator("ogc3dtiles.relation_lines", text="",
-                         icon="HIDE_OFF" if shown else "HIDE_ON", depress=shown)
-            row = body.row(align=True)
-            row.prop(props, "use_disk_cache", text="Disk cache")
-            row.operator("ogc3dtiles.clear_cache", icon="TRASH", text="")
-
-        # Points
-        header, body = layout.panel("ogc3d_points", default_closed=True)
-        header.label(text="Point Clouds", icon="OUTLINER_DATA_POINTCLOUD")
-        if body:
-            body.prop(props, "point_display", text="Display")
+            row.prop(props, "point_display", text="Points")
+            op = row.operator("ogc3dtiles.open_nodes", text="", icon="NODETREE")
+            op.kind = "POINTS"
             body.prop(props, "point_radius_mode", text="Radius")
             if props.point_radius_mode == "UNIFORM":
                 body.prop(props, "point_radius", text="Radius m")
@@ -1153,20 +1122,153 @@ class OGC3D_PT_MainPanel(Panel):
                 body.label(text="Discs follow glTF normals, else face the view", icon="INFO")
             else:
                 body.label(text="Colours in Material Preview / Rendered", icon="INFO")
+            row = body.row(align=True)
+            row.prop(props, "hide_relation_lines", text="Hide relation lines")
+            shown = _relationship_lines_shown(context)
+            row.operator("ogc3dtiles.relation_lines", text="",
+                         icon="HIDE_OFF" if shown else "HIDE_ON", depress=shown)
 
-        # Materials
-        header, body = layout.panel("ogc3d_materials", default_closed=True)
+        # 4. Materials — relight shader (Material Preview / Rendered)
+        header, body = layout.panel("ogc3d_materials", default_closed=False)
         header.label(text="Materials", icon="MATERIAL")
         if body:
             from .. import materials as _materials
             _materials.draw_panel(body, props)
 
-        # Compositor
+        # 5. Compositor — screen-space beauty pass (Rendered / renders)
         header, body = layout.panel("ogc3d_compositor", default_closed=False)
         header.label(text="Compositor", icon="NODE_COMPOSITING")
         if body:
             from .. import compositor as _compositor
             _compositor.draw_panel(body, props)
+
+        # 6. Scene origin
+        header, body = layout.panel("ogc3d_origin", default_closed=True)
+        header.label(text="Scene Origin", icon="ORIENTATION_GLOBAL")
+        if body:
+            body.prop(props, "origin_mode", text="Mode")
+            if props.origin_mode == "AUTO":
+                body.prop(props, "origin_reuse_km")
+            col = body.column()
+            col.enabled = props.origin_mode == "CUSTOM"
+            col.prop(props, "origin_lat", text="Latitude °")
+            col.prop(props, "origin_lon", text="Longitude °")
+            col.prop(props, "origin_height", text="Height m")
+            row = body.row()
+            row.label(text="Origin set" if props.origin_valid else "Origin not set yet",
+                      icon="CHECKMARK" if props.origin_valid else "INFO")
+            row.operator("ogc3dtiles.origin_reset", text="", icon="FILE_REFRESH")
+
+        # 7. Backend (advanced)
+        header, body = layout.panel("ogc3d_backend", default_closed=True)
+        header.label(text="Backend", icon="MOD_DYNAMICPAINT")
+        if body:
+            prefs = _get_prefs(context)
+            if hasattr(prefs, "bl_rna"):
+                row = body.row()
+                row.enabled = not props.is_streaming
+                row.prop(prefs, "traversal_backend", text="")
+            ok, status = _cesium_status
+            body.label(text=f"cesium-native-python: {status}", icon="CHECKMARK" if ok else "INFO")
+
+
+class OGC3D_OT_OpenNodes(Operator):
+    """Show the add-on's node tree in a node editor (an existing one, or a new
+    one split off the 3D viewport) so it can be edited by hand"""
+    bl_idname = "ogc3dtiles.open_nodes"
+    bl_label = "Open in Node Editor"
+
+    kind: bpy.props.EnumProperty(items=[
+        ("RELIGHT", "Relight shader group", "'OGC3D Relight' shader node group"),
+        ("COMPOSITOR", "Beauty compositor", "'OGC3D Beauty' compositor tree"),
+        ("POINTS", "Point display nodes", "Geometry Nodes group of the current point display mode"),
+    ], default="RELIGHT")
+
+    def execute(self, context):
+        from .. import materials as _materials
+        from .. import compositor as _compositor
+        from ..io import _GROUP_FOR_MODE
+        props = context.scene.ogc3dtiles
+        if self.kind == "RELIGHT":
+            ng = bpy.data.node_groups.get(_materials.GROUP_NAME)
+            if ng is None:
+                _materials.ensure_relight_group()
+                ng = bpy.data.node_groups.get(_materials.GROUP_NAME)
+            ui_type = "ShaderNodeTree"
+        elif self.kind == "COMPOSITOR":
+            ng = bpy.data.node_groups.get(_compositor.TREE_NAME)
+            if ng is None:
+                bpy.ops.ogc3dtiles.compositor_build()
+                ng = bpy.data.node_groups.get(_compositor.TREE_NAME)
+            ui_type = "CompositorNodeTree"
+        else:
+            ng = bpy.data.node_groups.get(_GROUP_FOR_MODE.get(props.point_display, "OGC3D Points"))
+            if ng is None:
+                self.report({"WARNING"}, "No point tile loaded yet (the group is created with the first one)")
+                return {"CANCELLED"}
+            ui_type = "GeometryNodeTree"
+        if ng is None:
+            self.report({"ERROR"}, "Node tree not available")
+            return {"CANCELLED"}
+        area = _node_editor_area(context, ui_type)
+        if area is None:
+            self.report({"ERROR"}, "Could not open a node editor")
+            return {"CANCELLED"}
+        space = area.spaces.active
+        try:
+            if ui_type == "ShaderNodeTree":
+                space.shader_type = "OBJECT"
+            space.pin = True
+            space.node_tree = ng
+        except Exception as e:                       # noqa: BLE001
+            self.report({"WARNING"}, f"Editor opened, select the tree by hand ({e})")
+        area.tag_redraw()
+        _view_all_nodes(context, area)
+        return {"FINISHED"}
+
+
+def _node_editor_area(context, ui_type):
+    """An existing node editor on this screen, else the 3D viewport split in
+    two (bottom 45 % becomes the node editor)."""
+    screen = context.screen
+    for area in screen.areas:
+        if area.type == "NODE_EDITOR":
+            area.ui_type = ui_type
+            return area
+    view = context.area if context.area and context.area.type == "VIEW_3D" else None
+    if view is None:
+        view = next((a for a in screen.areas if a.type == "VIEW_3D"), None)
+    if view is None:
+        return None
+    before = {a.as_pointer() for a in screen.areas}
+    region = next((r for r in view.regions if r.type == "WINDOW"), None)
+    try:
+        with context.temp_override(area=view, region=region):
+            bpy.ops.screen.area_split(direction="HORIZONTAL", factor=0.45)
+    except Exception as e:                           # noqa: BLE001
+        print(f"[3DTiles] area split failed: {e}")
+        return None
+    new = next((a for a in screen.areas if a.as_pointer() not in before), None)
+    if new is None:
+        return None
+    new.type = "NODE_EDITOR"
+    new.ui_type = ui_type
+    return new
+
+
+def _view_all_nodes(context, area):
+    def _later():
+        try:
+            region = next((r for r in area.regions if r.type == "WINDOW"), None)
+            with context.temp_override(area=area, region=region):
+                bpy.ops.node.view_all()
+        except Exception:
+            pass
+        return None
+    try:
+        bpy.app.timers.register(_later, first_interval=0.1)
+    except Exception:
+        pass
 
 
 class OGC3D_PT_CoordPanel(Panel):
@@ -1203,6 +1305,7 @@ class OGC3D_PT_CoordPanel(Panel):
 
 # ── Registration ──────────────────────────────────────────────────────────────
 _classes = [
+    OGC3D_OT_OpenNodes,
     OGC3D_OT_TilesetAdd,
     OGC3D_OT_TilesetRemove,
     OGC3D_OT_StartStream,

@@ -410,7 +410,8 @@ def draw_panel(layout, props):
     row.operator("ogc3dtiles.compositor_build", icon="NODE_COMPOSITING",
                  text="Rebuild" if built else "Build")
     row.operator("ogc3dtiles.compositor_remove", icon="X", text="")
-    layout.label(text="View: Rendered shading, or the Compositing workspace", icon="INFO")
+    row.operator("ogc3dtiles.open_nodes", icon="NODETREE", text="").kind = "COMPOSITOR"
+    layout.label(text="Shown in Rendered shading (viewport compositor: Always)", icon="INFO")
 
 
 _classes = [OGC3D_OT_CompositorBuild, OGC3D_OT_CompositorRemove]

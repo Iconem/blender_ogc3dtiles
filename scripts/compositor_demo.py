@@ -14,9 +14,20 @@ import bpy
 from mathutils import Vector
 
 argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
-out_plain = argv[0] if argv else ""
-out_comp = argv[1] if len(argv) > 1 else ""
-elev = math.radians(float(argv[2])) if len(argv) > 2 else math.radians(35)
+# usage A: out_plain.png out_comp.png [elev_deg]
+# usage B: --views <prefix> name:az:elev:dist[:ox:oy:oz] ...   (offsets = bbox fractions)
+multi = bool(argv) and argv[0] == "--views"
+out_plain = argv[0] if argv and not multi else ""
+out_comp = argv[1] if len(argv) > 1 and not multi else ""
+elev = math.radians(float(argv[2])) if len(argv) > 2 and not multi else math.radians(35)
+views = []
+if multi:
+    prefix = argv[1]
+    for spec in argv[2:]:
+        parts = spec.split(":")
+        name, az, el, dist = parts[0], float(parts[1]), float(parts[2]), float(parts[3])
+        off = tuple(float(v) for v in parts[4:7]) if len(parts) >= 7 else (0.0, 0.0, 0.0)
+        views.append((name, az, el, dist, off))
 
 sc = bpy.context.scene
 bpy.context.view_layer.update()
@@ -39,10 +50,16 @@ if objs:
     cam_data.clip_end = 1e6
     cam = bpy.data.objects.new("CompCam", cam_data)
     sc.collection.objects.link(cam)
-    az = math.radians(-35)
-    cam.location = ctr + Vector((math.cos(az) * math.cos(elev), math.sin(az) * math.cos(elev),
-                                 math.sin(elev))) * size * 0.9
-    cam.rotation_euler = (ctr - cam.location).to_track_quat("-Z", "Y").to_euler()
+    ext = hi - lo
+
+    def place(az_deg, el_deg, dist_f, off=(0.0, 0.0, 0.0)):
+        tgt = ctr + Vector((ext.x * off[0], ext.y * off[1], ext.z * off[2]))
+        a, e = math.radians(az_deg), math.radians(el_deg)
+        cam.location = tgt + Vector((math.cos(a) * math.cos(e), math.sin(a) * math.cos(e),
+                                     math.sin(e))) * size * dist_f
+        cam.rotation_euler = (tgt - cam.location).to_track_quat("-Z", "Y").to_euler()
+
+    place(-35, math.degrees(elev), 0.9)
     sc.camera = cam
     sun = bpy.data.lights.new("Sun", "SUN")
     sun.energy = 3.0
@@ -114,7 +131,7 @@ def mix_rgb(x, y, blend, fac):
     return m
 
 
-def math(x, y, op):
+def mathn(x, y, op):
     return N("ShaderNodeMath", x, y, operation=op)
 
 
@@ -124,10 +141,10 @@ set_in(edge, "Type", "Sobel")
 nt.links.new(rl.outputs["Normal" if "Normal" in rl.outputs else "Image"], edge.inputs["Image"])
 edge_bw = N("CompositorNodeRGBToBW", -400, -300)
 nt.links.new(edge.outputs["Image"], edge_bw.inputs["Image"])
-edge_inv = math(-200, -300, "SUBTRACT")
+edge_inv = mathn(-200, -300, "SUBTRACT")
 edge_inv.inputs[0].default_value = 1.0
 nt.links.new(edge_bw.outputs["Val"], edge_inv.inputs[1])
-edge_gain = math(0, -300, "POWER")
+edge_gain = mathn(0, -300, "POWER")
 edge_gain.inputs[1].default_value = 0.6
 nt.links.new(edge_inv.outputs[0], edge_gain.inputs[0])
 
@@ -157,7 +174,10 @@ for sock in cb.inputs:
 nt.links.new(crease.outputs[2], cb.inputs["Image"])
 haze = mix_rgb(600, 100, "MIX", 0.0)
 if "Mist" in rl.outputs and rl.outputs["Mist"].enabled:
-    nt.links.new(rl.outputs["Mist"], haze.inputs["Factor"])
+    mist_gain = mathn(450, -150, "MULTIPLY")
+    mist_gain.inputs[1].default_value = 0.35      # keep the haze subtle
+    nt.links.new(rl.outputs["Mist"], mist_gain.inputs[0])
+    nt.links.new(mist_gain.outputs[0], haze.inputs["Factor"])
 nt.links.new(cb.outputs["Image"], haze.inputs[6])
 haze.inputs[7].default_value = (0.75, 0.8, 0.9, 1.0)
 
@@ -181,3 +201,14 @@ if out_comp:
     sc.render.filepath = out_comp
     bpy.ops.render.render(write_still=True)
     print("COMP_DONE", out_comp)
+
+if multi and objs:
+    for name, az_deg, el_deg, dist_f, off in views:
+        place(az_deg, el_deg, dist_f, off)
+        for tag, comp in (("plain", False), ("beauty", True)):
+            sc.render.use_compositing = comp
+            if not hasattr(sc, "compositing_node_group"):
+                sc.use_nodes = comp
+            sc.render.filepath = f"{prefix}_{name}_{tag}.png"
+            bpy.ops.render.render(write_still=True)
+            print("COMP_VIEW", sc.render.filepath)

@@ -223,20 +223,31 @@ a `Col` colour attribute (COLOR_0 decoded straight from the buffer, ubyte /
 ushort / float) and a shared Geometry Nodes modifier.  Four radius modes:
 **Adaptive** (default): 0.6 × the tile's mean point spacing (5th–95th
 percentile extent / point count, ignored below 64 points) × *Point scale*,
-then clamped to a *Min / Max pixels* range on screen, so coarse ADD parents
-get bigger points than fine children, far points never vanish and near ones
-never bloat (Potree's adaptive size); **Per tile** is the same without the
-pixel clamp; **Uniform** is one radius for every tile; **Screen pixels** is
+clamped to a *Min / Max pixels* range measured at the **view pivot
+distance** (eye → orbit centre in the viewport, camera → point tiles when
+rendering).  One distance for the whole scene means every tile of one LOD
+level gets the same radius, and the two metre bounds are plain Value nodes
+rewritten only when the distance moves by more than 15 %, so the point
+tiles re-evaluate while zooming, never while orbiting (Potree's adaptive
+size); **Per tile** is the same without the pixel clamp; **Uniform** is one
+radius for every tile; **Screen pixels** is the exact per-point version,
 radius = pixels × distance to the eye, clamped to a metre range (constant
-on-screen size like 3DTilesRendererJS' point size with attenuation).  The
-eye is the 'OGC3D View' Empty that the streaming tick (or, when nothing
-streams, a 0.15 s timer) moves to the viewport eye and a `render_pre`
-handler moves to the scene camera.  Two display modes
+on-screen size like 3DTilesRendererJS' point size with attenuation) — this
+one reads the eye from the 'OGC3D View' Empty, so every point tile
+re-evaluates whenever the eye moves.  The streaming tick (or, when nothing
+streams, a 0.15 s timer) feeds the viewport, a `render_pre` handler the
+scene camera.  Three display modes
 (`Point Clouds` sub-panel): **Point cloud** (Mesh → Points; cheapest; unlit
-vertex colours in Material Preview / Rendered, material colour in Solid) and
+vertex colours in Material Preview / Rendered, material colour in Solid),
 **Tiny tetrahedra** (4 vertices per point, realised as a mesh whose active
 colour attribute is `Col`, so Solid mode with Color → Attribute shows the
-colours as well).  Measured main-thread cost per tile: 8–9 ms direct vs 10–13 ms
+colours as well) and **Disc splats** (an 8-gon disc instanced on every
+point, not realised; oriented along the point's glTF normal when the tile
+has one — kept as the `ogc3d_normal` attribute — otherwise facing the view
+through a shared "View Dir" vector refreshed per tick / render; the point
+material reads `Col` through both a Geometry and an Instancer Attribute
+node, since instance attributes only reach EEVEE through the latter).
+Measured main-thread cost per tile: 8–9 ms direct vs 10–13 ms
 through `bpy.ops.import_scene.gltf`; the direct path also needs no temp files
 and works regardless of which glTF extensions Blender's importer knows.
 Toggle: "Direct mesh" in the sidebar (off = GLB re-import).
@@ -282,7 +293,12 @@ where nothing is drawn (sanitised to "far"), its Mist and AO passes are 1
 everywhere (haze is a ramp on Depth instead), and Rendered shading lights
 the scene with the world only — *Build* brightens Blender's default
 dark-grey world once when the scene has no sun lamp, otherwise the tiles
-look black next to Material Preview's studio HDRI.
+look black next to Material Preview's studio HDRI.  *Stable viewport*
+(default on) renders the viewport with one TAA sample while the tree is
+built: EEVEE jitters every accumulated sample by a sub-pixel offset and the
+Depth / Normal passes are not accumulated, so EDL and creases shimmer by a
+pixel in four directions until the view converges; one sample removes the
+shimmer at the cost of viewport anti-aliasing (Remove restores the count).
 `scripts/compositor_demo.py` reuses the same builder for headless renders.
 
 ## Coordinate System

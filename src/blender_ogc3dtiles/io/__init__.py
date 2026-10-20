@@ -554,7 +554,10 @@ def _material_from_payload(mp: dict, img, key: str):
 
 def _wire_point_colors(mat):
     """Point clouds: unlit vertex colours. Attribute node (not Color Attribute)
-    so it also resolves on the point cloud produced by the Mesh→Points modifier."""
+    so it also resolves on the point cloud produced by the Mesh→Points
+    modifier; a second lookup of type Instancer reads the same attribute from
+    the instance domain for disc splats (points instanced, not realised).
+    The two are added: whichever domain exists carries the colour."""
     nt = mat.node_tree
     bsdf = nt.nodes.get("Principled BSDF")
     if bsdf is None:
@@ -562,10 +565,38 @@ def _wire_point_colors(mat):
     attr = nt.nodes.new("ShaderNodeAttribute")
     attr.attribute_name = "Col"
     attr.attribute_type = "GEOMETRY"
-    attr.location = (-400, 0)
+    attr.location = (-600, 0)
     bsdf.inputs["Base Color"].default_value = (0.0, 0.0, 0.0, 1.0)
     nt.links.new(attr.outputs["Color"], bsdf.inputs["Emission Color"])
     bsdf.inputs["Emission Strength"].default_value = 1.0
+    _ensure_instancer_color(mat)
+
+
+def _ensure_instancer_color(mat) -> bool:
+    """Add the Instancer-domain colour lookup to a point material built by an
+    older version (needed by disc splats)."""
+    nt = mat.node_tree if mat and mat.use_nodes else None
+    if nt is None:
+        return False
+    if any(n.type == "ATTRIBUTE" and n.attribute_type == "INSTANCER" for n in nt.nodes):
+        return False
+    bsdf = nt.nodes.get("Principled BSDF")
+    geo = next((n for n in nt.nodes if n.type == "ATTRIBUTE" and n.attribute_name == "Col"), None)
+    if bsdf is None or geo is None:
+        return False
+    inst = nt.nodes.new("ShaderNodeAttribute")
+    inst.attribute_name = "Col"
+    inst.attribute_type = "INSTANCER"
+    inst.location = (-600, -200)
+    add = nt.nodes.new("ShaderNodeMix")
+    add.data_type = "RGBA"
+    add.blend_type = "ADD"
+    add.inputs["Factor"].default_value = 1.0
+    add.location = (-350, -100)
+    nt.links.new(geo.outputs["Color"], add.inputs[6])
+    nt.links.new(inst.outputs["Color"], add.inputs[7])
+    nt.links.new(add.outputs[2], bsdf.inputs["Emission Color"])
+    return True
 
 
 def build_tile_from_payload(payload: dict, key: str, scene: bpy.types.Scene,
@@ -607,6 +638,12 @@ def build_tile_from_payload(payload: dict, key: str, scene: bpy.types.Scene,
             me.normals_split_custom_set_from_vertices(np.ascontiguousarray(nrm, dtype=np.float32))
         except Exception:
             pass
+    if not n_f and payload.get("points") and nrm is not None and len(nrm) == n_v:
+        try:                                    # oriented disc splats
+            na = me.attributes.new(NORMAL_ATTR, "FLOAT_VECTOR", "POINT")
+            na.data.foreach_set("vector", np.ascontiguousarray(nrm, dtype=np.float32).ravel())
+        except Exception:
+            pass
     cols = payload.get("colors")
     if cols is not None and len(cols) == n_v:
         attr = me.color_attributes.new("Col", "FLOAT_COLOR", "POINT")
@@ -646,9 +683,9 @@ def build_tile_from_payload(payload: dict, key: str, scene: bpy.types.Scene,
     obj.matrix_world = root.matrix_world @ Matrix(apply_payload_offset(matrix_rows, payload))
     if payload.get("points"):
         spacing = float(payload.get("point_spacing") or 0.0)
-        obj["point_radius_auto"] = min(max(0.6 * spacing, 0.01), 5.0) if spacing > 0 else 0.05
-        mesh_mode = getattr(scene.ogc3dtiles, "point_display", "POINTS") == "MESH"
-        _add_points_modifier(obj, point_radius_for(scene, payload), mesh_mode)
+        obj["point_radius_auto"] = min(max(0.6 * spacing, 0.01), 2.0) if spacing > 0 else 0.05
+        _add_points_modifier(obj, point_radius_for(scene, payload),
+                             getattr(scene.ogc3dtiles, "point_display", "POINTS"))
     elif getattr(scene.ogc3dtiles, "auto_relight", False):
         from ..materials import apply_relight
         for m in me.materials:
@@ -684,41 +721,135 @@ def apply_point_radius(scene) -> int:
     props = scene.ogc3dtiles
     mode = getattr(props, "point_radius_mode", "AUTO")
     uniform = mode == "UNIFORM"
-    for name, mesh_mode in ((POINTS_NODEGROUP, False), (POINTS_MESH_NODEGROUP, True)):
+    for display, name in _GROUP_FOR_MODE.items():
         ng = bpy.data.node_groups.get(name)
         if ng is None:
             continue
-        ng = _points_nodegroup(mesh_mode)          # upgrades an old group in place
+        ng = _points_nodegroup(display)            # upgrades an old group in place
         for node_name, val in ((SCREEN_MODE_NODE, 1.0 if mode == "SCREEN" else 0.0),
                                (ADAPT_MODE_NODE, 1.0 if mode == "ADAPTIVE" else 0.0),
                                (PX_SIZE_NODE, float(props.point_px) * 0.5),   # diameter → radius
                                (PX_MIN_NODE, float(props.point_px_min_m)),
-                               (PX_MAX_NODE, float(props.point_px_max_m)),
-                               (ADAPT_MIN_NODE, float(props.point_adapt_min_px) * 0.5),
-                               (ADAPT_MAX_NODE, float(props.point_adapt_max_px) * 0.5)):
+                               (PX_MAX_NODE, float(props.point_px_max_m))):
             node = ng.nodes.get(node_name)
             if node is not None:
                 node.outputs[0].default_value = val
     if mode in EYE_MODES:
         ensure_view_proxy(scene)
+    if mode == "ADAPTIVE":
+        update_adaptive(scene, force=True)
+    # per-object Radius inputs only change to / from Uniform; touching them
+    # otherwise would re-evaluate every point tile for nothing
     n = 0
     for o in bpy.data.objects:
         mod = o.modifiers.get("Points") if o.type == "MESH" else None
         if mod is None or mod.type != "NODES" or mod.node_group is None:
             continue
         r = float(props.point_radius) if uniform else float(o.get("point_radius_auto", o.get("point_radius", 0.05)))
-        _set_points_inputs(mod, mod.node_group, r, None)
-        o.update_tag()
-        n += 1
+        cur = _points_input(mod, mod.node_group, "Radius")
+        if cur is None or abs(cur - r) > 1e-9:
+            _set_points_inputs(mod, mod.node_group, r, None)
+            o.update_tag()
+            n += 1
     return n
+
+
+_last_adapt = [None]
+_last_dir = [None]
+
+
+def update_adaptive(scene, dist=None, p11=None, height_px=None, force=False):
+    """Adaptive mode: Adapt Min / Max M = pixel bounds × metres-per-pixel at
+    ``dist`` (eye → view pivot in the viewport, camera → point tiles when
+    rendering; 1 for orthographic views).  Written to the shared groups only
+    when a bound moves by more than 15 %, so point tiles re-evaluate while
+    zooming, not while orbiting."""
+    props = scene.ogc3dtiles
+    if dist is None:
+        from ..camera import viewport_focus
+        vf = viewport_focus()
+        if vf is None:
+            return False
+        dist, p11, height_px = (vf.dist if vf.persp else 1.0), vf.p11, vf.height
+    mpp = float(dist) * 2.0 / max(abs(float(p11)) * float(height_px), 1e-6)
+    lo = 0.5 * float(props.point_adapt_min_px) * mpp
+    hi = max(0.5 * float(props.point_adapt_max_px) * mpp, lo)
+    last = _last_adapt[0]
+    if (not force and last is not None
+            and abs(lo - last[0]) <= 0.15 * max(last[0], 1e-9)
+            and abs(hi - last[1]) <= 0.15 * max(last[1], 1e-9)):
+        return False
+    _last_adapt[0] = (lo, hi)
+    for name in POINT_GROUPS:
+        ng = bpy.data.node_groups.get(name)
+        if ng is None:
+            continue
+        for node_name, val in ((ADAPT_MIN_NODE, lo), (ADAPT_MAX_NODE, hi)):
+            node = ng.nodes.get(node_name)
+            if node is not None:
+                node.outputs[0].default_value = val
+    return True
+
+
+def update_view_dir(direction, force=False):
+    """Disc splats without normals face the eye: one world-space direction for
+    the whole scene (updated when it turns by more than ~2°)."""
+    ng = bpy.data.node_groups.get(POINTS_DISC_NODEGROUP)
+    node = ng.nodes.get(VIEW_DIR_NODE) if ng else None
+    if node is None:
+        return False
+    d = tuple(float(v) for v in direction)
+    n = (d[0] ** 2 + d[1] ** 2 + d[2] ** 2) ** 0.5
+    if n < 1e-9:
+        return False
+    d = (d[0] / n, d[1] / n, d[2] / n)
+    last = _last_dir[0]
+    if not force and last is not None and (d[0] * last[0] + d[1] * last[1] + d[2] * last[2]) > 0.9994:
+        return False
+    _last_dir[0] = d
+    node.vector = d
+    return True
+
+
+def point_tiles_distance(scene, eye) -> float:
+    """Distance from ``eye`` to the centre of the visible point tiles (render
+    stand-in for the viewport's view distance); 100 m without any."""
+    from mathutils import Vector
+    lo = Vector((1e30, 1e30, 1e30))
+    hi = -lo
+    n = 0
+    for o in scene.objects:
+        if o.type != "MESH" or o.hide_render or o.modifiers.get("Points") is None:
+            continue
+        for c in o.bound_box:
+            p = o.matrix_world @ Vector(c)
+            lo = Vector((min(lo.x, p.x), min(lo.y, p.y), min(lo.z, p.z)))
+            hi = Vector((max(hi.x, p.x), max(hi.y, p.y), max(hi.z, p.z)))
+        n += 1
+    if not n:
+        return 100.0
+    return max(((lo + hi) * 0.5 - Vector(eye)).length, 1e-3)
 
 
 POINTS_NODEGROUP = "OGC3D Points"
 POINTS_MESH_NODEGROUP = "OGC3D Points (Mesh)"
+POINTS_DISC_NODEGROUP = "OGC3D Points (Discs)"
+POINT_GROUPS = (POINTS_NODEGROUP, POINTS_MESH_NODEGROUP, POINTS_DISC_NODEGROUP)
+_GROUP_FOR_MODE = {"POINTS": POINTS_NODEGROUP, "MESH": POINTS_MESH_NODEGROUP,
+                   "DISCS": POINTS_DISC_NODEGROUP}
 POINT_SCALE_NODE = "Point Scale"
 
 
-def _points_nodegroup(mesh_mode: bool = False):
+def _display_mode(mode) -> str:
+    """Accept the legacy bool (mesh_mode) or the point_display enum string."""
+    if mode is True:
+        return "MESH"
+    if mode is False or mode is None:
+        return "POINTS"
+    return mode if mode in _GROUP_FOR_MODE else "POINTS"
+
+
+def _points_nodegroup(mesh_mode=False):
     """Shared Geometry Nodes group for vertex-only tiles.
 
     POINTS mode: Mesh → Points.  Cheapest; coloured in Material Preview /
@@ -731,12 +862,18 @@ def _points_nodegroup(mesh_mode: bool = False):
     is joined first (that is what carries the active-colour name through
     Blender's realise step) and its loose vertices are deleted afterwards.
 
-    Both groups take Geometry / Radius / Material and multiply the radius by
+    DISCS mode: each point becomes an 8-gon disc instance (not realised),
+    oriented along the point's glTF normal when the tile has one, otherwise
+    facing the eye ("View Dir" vector, refreshed per tick / render).
+
+    All groups take Geometry / Radius / Material and multiply the radius by
     a Value node named "Point Scale" that the sidebar exposes."""
-    name = POINTS_MESH_NODEGROUP if mesh_mode else POINTS_NODEGROUP
+    display = _display_mode(mesh_mode)
+    mesh_mode = display == "MESH"
+    name = _GROUP_FOR_MODE[display]
     ng = bpy.data.node_groups.get(name)
     if ng is not None:
-        if ng.nodes.get(ADAPT_MODE_NODE) is not None:
+        if ng.nodes.get(ADAPT_MIN_NODE) is not None:
             return ng
         # group saved by an older version: rebuild the nodes, keep the
         # interface sockets (modifiers reference them by identifier)
@@ -772,9 +909,55 @@ def _points_nodegroup(mesh_mode: bool = False):
     setmat = N("GeometryNodeSetMaterial")   # points do not inherit the mesh material
     n_in.location, scale.location, mul.location = (-700, 0), (-700, -200), (-500, -150)
     m2p.location, setmat.location, n_out.location = (-300, 0), (500, 0), (750, 0)
-    if not mesh_mode:
+    if display == "POINTS":
         L(mul.outputs[0], m2p.inputs["Radius"])
         L(m2p.outputs["Points"], setmat.inputs["Geometry"])
+    elif display == "DISCS":
+        circle = N("GeometryNodeMeshCircle")
+        circle.fill_type = "NGON"
+        circle.inputs["Vertices"].default_value = 8
+        circle.inputs["Radius"].default_value = 1.0
+        L(circle.outputs["Mesh"], setmat.inputs["Geometry"])     # material on the disc mesh
+        iop = N("GeometryNodeInstanceOnPoints")
+        L(m2p.outputs["Points"], iop.inputs["Points"])
+        L(setmat.outputs["Geometry"], iop.inputs["Instance"])
+        L(mul.outputs[0], iop.inputs["Scale"])
+        # orientation: glTF normal when the tile carries one, else the eye
+        named = N("GeometryNodeInputNamedAttribute")
+        named.data_type = "FLOAT_VECTOR"
+        named.inputs["Name"].default_value = NORMAL_ATTR
+        vdir = N("FunctionNodeInputVector")
+        vdir.name = vdir.label = VIEW_DIR_NODE
+        vdir.vector = (0.0, 0.0, 1.0)
+        self_obj = N("GeometryNodeSelfObject")
+        info = N("GeometryNodeObjectInfo")
+        L(self_obj.outputs[0], info.inputs["Object"])
+        inv = N("FunctionNodeInvertMatrix")
+        L(info.outputs["Transform"], inv.inputs[0])
+        tdir = N("FunctionNodeTransformDirection")     # world view dir → object space
+        L(vdir.outputs[0], tdir.inputs["Direction"])
+        L(inv.outputs[0], tdir.inputs["Transform"])
+        nlen = N("ShaderNodeVectorMath")
+        nlen.operation = "LENGTH"
+        L(named.outputs["Attribute"], nlen.inputs[0])
+        has_n = N("FunctionNodeCompare")
+        has_n.data_type = "FLOAT"
+        has_n.operation = "GREATER_THAN"
+        has_n.inputs[1].default_value = 0.5
+        L(nlen.outputs["Value"], has_n.inputs[0])
+        sw = N("GeometryNodeSwitch")
+        sw.input_type = "VECTOR"
+        L(has_n.outputs["Result"], sw.inputs["Switch"])
+        L(tdir.outputs[0], sw.inputs["False"])
+        L(named.outputs["Attribute"], sw.inputs["True"])
+        align = N("FunctionNodeAlignRotationToVector")
+        align.axis = "Z"
+        align.pivot_axis = "AUTO"
+        L(sw.outputs[0], align.inputs["Vector"])
+        L(align.outputs["Rotation"], iop.inputs["Rotation"])
+        L(iop.outputs["Instances"], n_out.inputs["Geometry"])
+        circle.location, iop.location, named.location = (-300, -300), (100, 0), (-300, 300)
+        vdir.location, tdir.location, align.location = (-500, 450), (-300, 450), (-100, 350)
     else:
         cone = N("GeometryNodeMeshCone")            # 3 side vertices → tetrahedron
         cone.inputs["Vertices"].default_value = 3
@@ -805,7 +988,8 @@ def _points_nodegroup(mesh_mode: bool = False):
         cone.location, iop.location, real.location = (-300, -300), (-100, 0), (100, 0)
         tag.location, join.location, dele.location = (-100, 250), (300, 0), (400, -150)
     L(n_in.outputs["Material"], setmat.inputs["Material"])
-    L(setmat.outputs["Geometry"], n_out.inputs["Geometry"])
+    if display != "DISCS":
+        L(setmat.outputs["Geometry"], n_out.inputs["Geometry"])
     return ng
 
 
@@ -816,10 +1000,12 @@ VIEW_PERSP_NODE = "View Persp"       # 1 perspective, 0 orthographic
 PX_SIZE_NODE = "Point Pixels"
 PX_MIN_NODE = "Min Radius"
 PX_MAX_NODE = "Max Radius"
-ADAPT_MODE_NODE = "Adaptive Mode"   # 1 = metres radius clamped to [Adapt Min Px, Adapt Max Px]
-ADAPT_MIN_NODE = "Adapt Min Px"
-ADAPT_MAX_NODE = "Adapt Max Px"
-EYE_MODES = ("SCREEN", "ADAPTIVE")  # modes that need the eye proxy / view scale
+ADAPT_MODE_NODE = "Adaptive Mode"   # 1 = metres radius clamped to [Adapt Min M, Adapt Max M]
+ADAPT_MIN_NODE = "Adapt Min M"      # metres = pixel bound × metres-per-pixel at the view pivot
+ADAPT_MAX_NODE = "Adapt Max M"
+VIEW_DIR_NODE = "View Dir"          # unit vector towards the eye (world); disc splats face it
+NORMAL_ATTR = "ogc3d_normal"        # per-point glTF NORMAL, kept for oriented disc splats
+EYE_MODES = ("SCREEN",)             # modes that need the per-point eye proxy
 
 
 def _value(ng, name, default):
@@ -839,8 +1025,8 @@ def _screen_radius_nodes(ng, metres_socket):
     N, L = ng.nodes.new, ng.links.new
     mode = _value(ng, SCREEN_MODE_NODE, 0.0)
     amode = _value(ng, ADAPT_MODE_NODE, 0.0)
-    amin = _value(ng, ADAPT_MIN_NODE, 1.0)
-    amax = _value(ng, ADAPT_MAX_NODE, 6.0)
+    amin = _value(ng, ADAPT_MIN_NODE, 0.01)
+    amax = _value(ng, ADAPT_MAX_NODE, 1.0)
     vscale = _value(ng, VIEW_SCALE_NODE, 0.002)
     persp = _value(ng, VIEW_PERSP_NODE, 1.0)
     px = _value(ng, PX_SIZE_NODE, 3.0)
@@ -882,19 +1068,15 @@ def _screen_radius_nodes(ng, metres_socket):
     L(r_px2.outputs[0], clamp.inputs["Value"])
     L(rmin.outputs[0], clamp.inputs["Min"])
     L(rmax.outputs[0], clamp.inputs["Max"])
-    # adaptive: the metres radius, clamped to a pixel range at this distance
-    lo = N("ShaderNodeMath")
-    lo.operation = "MULTIPLY"
-    L(r_px.outputs[0], lo.inputs[0])
-    L(amin.outputs[0], lo.inputs[1])
-    hi = N("ShaderNodeMath")
-    hi.operation = "MULTIPLY"
-    L(r_px.outputs[0], hi.inputs[0])
-    L(amax.outputs[0], hi.inputs[1])
+    # adaptive: the metres radius clamped to [Adapt Min M, Adapt Max M].  Both
+    # are set from Python (pixel bounds × metres-per-pixel at the distance
+    # eye → view pivot), so every tile of one LOD level gets the same radius
+    # and the tiles only re-evaluate when the view distance changes, not on
+    # every eye move
     aclamp = N("ShaderNodeClamp")
     L(metres_socket, aclamp.inputs["Value"])
-    L(lo.outputs[0], aclamp.inputs["Min"])
-    L(hi.outputs[0], aclamp.inputs["Max"])
+    L(amin.outputs[0], aclamp.inputs["Min"])
+    L(amax.outputs[0], aclamp.inputs["Max"])
     amix = N("ShaderNodeMix")
     amix.data_type = "FLOAT"
     L(amode.outputs[0], amix.inputs["Factor"])
@@ -919,7 +1101,7 @@ def ensure_view_proxy(scene):
         obj.hide_select = True
         obj["ogc3dtiles_view_proxy"] = True
         ensure_collection(scene).objects.link(obj)
-    for name in (POINTS_NODEGROUP, POINTS_MESH_NODEGROUP):
+    for name in POINT_GROUPS:
         ng = bpy.data.node_groups.get(name)
         node = ng.nodes.get("Eye Info") if ng else None
         if node is not None and node.inputs["Object"].default_value is not obj:
@@ -940,7 +1122,7 @@ def update_view_proxy(scene, eye_world, p11, height_px, is_persp):
     obj = ensure_view_proxy(scene)
     obj.location = eye_world
     vscale = 2.0 / max(abs(p11) * float(height_px), 1e-6)
-    for name in (POINTS_NODEGROUP, POINTS_MESH_NODEGROUP):
+    for name in POINT_GROUPS:
         ng = bpy.data.node_groups.get(name)
         if ng is None:
             continue
@@ -950,6 +1132,16 @@ def update_view_proxy(scene, eye_world, p11, height_px, is_persp):
         n = ng.nodes.get(VIEW_PERSP_NODE)
         if n is not None:
             n.outputs[0].default_value = 1.0 if is_persp else 0.0
+
+
+def _points_input(mod, ng, name):
+    for item in ng.interface.items_tree:
+        if getattr(item, "in_out", "") == "INPUT" and item.name == name:
+            try:
+                return float(mod[item.identifier])
+            except Exception:          # noqa: BLE001
+                return None
+    return None
 
 
 def _set_points_inputs(mod, ng, radius, mat):
@@ -962,10 +1154,11 @@ def _set_points_inputs(mod, ng, radius, mat):
             mod[item.identifier] = float(radius)
 
 
-def _add_points_modifier(obj, radius: float = 0.04, mesh_mode: bool = False):
+def _add_points_modifier(obj, radius: float = 0.04, mesh_mode=False):
     try:
-        created = bpy.data.node_groups.get(POINTS_MESH_NODEGROUP if mesh_mode else POINTS_NODEGROUP) is None
-        ng = _points_nodegroup(mesh_mode)
+        display = _display_mode(mesh_mode)
+        created = bpy.data.node_groups.get(_GROUP_FOR_MODE[display]) is None
+        ng = _points_nodegroup(display)
         if created:
             apply_point_radius(bpy.context.scene)     # push the panel values into the new group
         mod = obj.modifiers.new("Points", "NODES")
@@ -978,9 +1171,8 @@ def _add_points_modifier(obj, radius: float = 0.04, mesh_mode: bool = False):
 
 
 def apply_point_display(mode: str) -> int:
-    """Switch every point tile between the two node groups."""
-    mesh_mode = mode == "MESH"
-    ng = _points_nodegroup(mesh_mode)
+    """Switch every point tile between the point / tetrahedra / disc groups."""
+    ng = _points_nodegroup(_display_mode(mode))
     n = 0
     for o in bpy.data.objects:
         mod = o.modifiers.get("Points") if o.type == "MESH" else None
@@ -988,6 +1180,8 @@ def apply_point_display(mode: str) -> int:
             continue
         mod.node_group = ng
         mat = o.data.materials[0] if o.data.materials else None
+        if mat is not None:
+            _ensure_instancer_color(mat)
         _set_points_inputs(mod, ng, o.get("point_radius", 0.05), mat)
         o.update_tag()
         n += 1
@@ -995,7 +1189,7 @@ def apply_point_display(mode: str) -> int:
 
 
 def apply_point_scale(scale: float) -> None:
-    for name in (POINTS_NODEGROUP, POINTS_MESH_NODEGROUP):
+    for name in POINT_GROUPS:
         ng = bpy.data.node_groups.get(name)
         node = ng.nodes.get(POINT_SCALE_NODE) if ng else None
         if node is not None:
@@ -1066,10 +1260,9 @@ def _render_pre(scene, _depsgraph=None):
     """Rendering: the eye is the scene camera, pixels are the render height."""
     try:
         cam = scene.camera
-        if cam is None or bpy.data.objects.get(VIEW_PROXY) is None:
+        if cam is None:
             return
-        if scene.ogc3dtiles.point_radius_mode not in EYE_MODES:
-            return
+        props = scene.ogc3dtiles
         import math
         h = max(int(scene.render.resolution_y * scene.render.resolution_percentage / 100), 1)
         data = cam.data
@@ -1079,17 +1272,24 @@ def _render_pre(scene, _depsgraph=None):
         else:
             p11 = 1.0 / math.tan(data.angle_y / 2.0)
             persp = True
-        update_view_proxy(scene, tuple(cam.matrix_world.translation), p11, h, persp)
+        eye = tuple(cam.matrix_world.translation)
+        mode = props.point_radius_mode
+        if mode == "SCREEN" and bpy.data.objects.get(VIEW_PROXY) is not None:
+            update_view_proxy(scene, eye, p11, h, persp)
+        elif mode == "ADAPTIVE":
+            update_adaptive(scene, point_tiles_distance(scene, eye) if persp else 1.0, p11, h, force=True)
+        if getattr(props, "point_display", "") == "DISCS":
+            update_view_dir(tuple(cam.matrix_world.col[2].xyz), force=True)
     except Exception as e:                           # noqa: BLE001
-        print(f"[3DTiles] render view proxy failed: {e}")
+        print(f"[3DTiles] render view update failed: {e}")
 
 
 def _upgrade_points_groups(_dummy=None):
     """Files saved with older point groups get the current nodes on load."""
     try:
-        for name, mesh_mode in ((POINTS_NODEGROUP, False), (POINTS_MESH_NODEGROUP, True)):
+        for display, name in _GROUP_FOR_MODE.items():
             if bpy.data.node_groups.get(name) is not None:
-                _points_nodegroup(mesh_mode)
+                _points_nodegroup(display)
         if bpy.data.objects.get(VIEW_PROXY) is not None:
             ensure_view_proxy(bpy.context.scene)
     except Exception as e:                           # noqa: BLE001

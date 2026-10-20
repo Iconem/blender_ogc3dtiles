@@ -330,6 +330,27 @@ def build_beauty_tree(scene, edges: str = None, edl_radius_px: int = 3,
     return nt
 
 
+def is_built(scene) -> bool:
+    return bpy.data.node_groups.get(TREE_NAME) is not None and scene.render.use_compositing
+
+
+def set_stable_viewport(scene, enabled: bool) -> None:
+    """EEVEE accumulates viewport samples with a sub-pixel jitter while the
+    Depth / Normal passes come from the current sample only, so EDL and
+    Sobel creases shimmer by a pixel until the view converges.  One viewport
+    sample removes the shimmer (and the anti-aliasing); the previous count
+    is kept on the scene and restored when disabled."""
+    props = scene.ogc3dtiles
+    ee = scene.eevee
+    if enabled:
+        if props.comp_prev_taa == 0 and ee.taa_samples != 1:
+            props.comp_prev_taa = ee.taa_samples
+        ee.taa_samples = 1
+    elif props.comp_prev_taa:
+        ee.taa_samples = props.comp_prev_taa
+        props.comp_prev_taa = 0
+
+
 def set_viewport_compositor(context, mode: str = "ALWAYS"):
     """Rendered viewport shading shows the compositor when its 'Compositor'
     option is Always (per 3D viewport)."""
@@ -351,6 +372,7 @@ class OGC3D_OT_CompositorBuild(Operator):
     def execute(self, context):
         build_beauty_tree(context.scene)
         set_viewport_compositor(context, "ALWAYS")
+        set_stable_viewport(context.scene, context.scene.ogc3dtiles.comp_stable_viewport)
         lit = ensure_world_light(context.scene)
         self.report({"INFO"}, "Compositor tree built: see the Compositing workspace, "
                               "or Rendered shading in the viewport"
@@ -369,6 +391,7 @@ class OGC3D_OT_CompositorRemove(Operator):
         if hasattr(sc, "compositing_node_group"):
             sc.compositing_node_group = None
         set_viewport_compositor(context, "DISABLED")
+        set_stable_viewport(sc, False)
         return {"FINISHED"}
 
 
@@ -381,6 +404,7 @@ def draw_panel(layout, props):
         col.prop(props, "comp_crease_strength", text="Crease strength")
     col.prop(props, "comp_ao", text="AO")
     col.prop(props, "comp_haze", text="Haze")
+    layout.prop(props, "comp_stable_viewport", text="Stable viewport (1 sample, no shimmer)")
     row = layout.row(align=True)
     built = bpy.data.node_groups.get(TREE_NAME) is not None
     row.operator("ogc3dtiles.compositor_build", icon="NODE_COMPOSITING",

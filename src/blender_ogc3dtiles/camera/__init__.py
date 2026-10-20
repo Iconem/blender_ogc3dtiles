@@ -13,6 +13,7 @@ from __future__ import annotations
 import math
 
 import bpy
+from typing import NamedTuple
 
 from ..tileset.traversal import (
     ViewState,
@@ -141,6 +142,30 @@ def register():
 
 def unregister():
     pass
+
+
+class ViewFocus(NamedTuple):
+    eye: tuple        # world
+    dir: tuple        # unit vector from the scene towards the eye (world)
+    dist: float       # eye → view pivot (orbit centre)
+    p11: float        # window_matrix[1][1]
+    height: int       # region height px
+    persp: bool
+
+
+def viewport_focus():
+    """Eye, towards-eye direction, pivot distance and projection of the first
+    3D viewport (point sizing / disc orientation).  None without a window."""
+    r3d, region = find_view3d()
+    if r3d is None:
+        return None
+    inv = r3d.view_matrix.inverted()
+    win = r3d.window_matrix
+    p11 = float(win[1][1]) if abs(win[1][1]) > 1e-9 else 1.0
+    eye = inv.translation
+    dist = float((eye - r3d.view_location).length) if r3d.is_perspective else 1.0
+    return ViewFocus(tuple(eye), tuple(inv.col[2].xyz), max(dist, 1e-3), p11,
+                     max(int(region.height), 1), bool(r3d.is_perspective))
 
 
 def viewport_eye():

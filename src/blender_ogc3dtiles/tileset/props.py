@@ -47,6 +47,15 @@ def _on_point_scale(self, context):
     apply_point_scale(self.point_scale)
 
 
+def _on_comp_stable(self, context):
+    try:
+        from .. import compositor
+        compositor.set_stable_viewport(context.scene, self.comp_stable_viewport
+                                       and compositor.is_built(context.scene))
+    except Exception:          # noqa: BLE001
+        pass
+
+
 def _on_comp(self, context):
     """Compositor sliders drive Value nodes of the existing tree (no rebuild)."""
     try:
@@ -201,6 +210,10 @@ class TilesSceneProps(PropertyGroup):
             ("MESH", "Tiny tetrahedra",
              "Each point becomes a 4-vertex tetrahedron. Also coloured in Solid mode "
              "(set Viewport Shading → Color → Attribute); ~4x the geometry"),
+            ("DISCS", "Disc splats",
+             "Each point becomes an 8-gon disc instance, oriented along the point's "
+             "glTF normal when the tile has one, otherwise facing the view. Coloured "
+             "in Material Preview / Rendered"),
         ],
         default="POINTS",
         update=_on_point_display,
@@ -280,8 +293,17 @@ class TilesSceneProps(PropertyGroup):
     relight_gold: BoolProperty(
         name="Gold transfer",
         description="Relight: metallic / glossy treatment of yellow, saturated albedo",
-        default=True, update=_on_relight_gold,
+        default=False, update=_on_relight_gold,
     )
+    comp_stable_viewport: BoolProperty(
+        name="Stable viewport",
+        description="While the beauty compositor is on, render the viewport with a single "
+                    "TAA sample: EEVEE jitters each accumulated sample by a sub-pixel offset "
+                    "and the Depth / Normal passes are not accumulated, so EDL and creases "
+                    "shimmer by 1 px until convergence. One sample = no shimmer, no AA",
+        default=True, update=_on_comp_stable,
+    )
+    comp_prev_taa: IntProperty(default=0, options={'HIDDEN'})
     point_scale: FloatProperty(
         name="Point scale",
         description="Multiplier on the per-tile point radius (radius = 0.6 x mean point spacing)",

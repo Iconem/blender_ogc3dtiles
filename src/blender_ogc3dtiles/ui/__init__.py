@@ -539,8 +539,7 @@ def stream_tick(context) -> bool:
     props = scene.ogc3dtiles
     now = time.monotonic()
     changed = _sync_streams(scene, props, now)
-    if props.point_radius_mode in ("SCREEN", "ADAPTIVE"):
-        _update_view_proxy(scene)
+    _update_view(scene, props)
     loaded = pending = visible = 0
     parts = []
     for st in _state["streams"].values():
@@ -613,16 +612,27 @@ def _sync_streams(scene, props, now) -> bool:
     return changed
 
 
-def _update_view_proxy(scene):
-    """Screen-space point size: the shared points node group reads the eye
-    position from the 'OGC3D View' Empty and a per-pixel scale from a Value
-    node; both are refreshed here from the 3D viewport (and from the scene
-    camera when rendering, see io.update_view_proxy)."""
-    from ..camera import viewport_eye
-    from ..io import update_view_proxy
-    eye = viewport_eye()
-    if eye is not None:
-        update_view_proxy(scene, *eye)
+def _update_view(scene, props):
+    """View-dependent point display, refreshed from the 3D viewport (and from
+    the scene camera when rendering, see io._render_pre):
+    Screen pixels → eye proxy Empty + per-pixel scale (per-point distance);
+    Adaptive → metre bounds from the pixel bounds at the view-pivot distance;
+    Disc splats → towards-eye direction for normal-less points."""
+    from ..camera import viewport_focus
+    from ..io import update_view_proxy, update_adaptive, update_view_dir
+    mode = props.point_radius_mode
+    discs = props.point_display == "DISCS"
+    if mode not in ("SCREEN", "ADAPTIVE") and not discs:
+        return
+    vf = viewport_focus()
+    if vf is None:
+        return
+    if mode == "SCREEN":
+        update_view_proxy(scene, vf.eye, vf.p11, vf.height, vf.persp)
+    elif mode == "ADAPTIVE":
+        update_adaptive(scene, vf.dist, vf.p11, vf.height)
+    if discs:
+        update_view_dir(vf.dir)
 
 
 def _view_for(st):
@@ -1139,6 +1149,8 @@ class OGC3D_PT_MainPanel(Panel):
                 body.prop(props, "point_scale", text="Point scale")
             if props.point_display == "MESH":
                 body.label(text="Solid mode: Shading → Color → Attribute", icon="INFO")
+            elif props.point_display == "DISCS":
+                body.label(text="Discs follow glTF normals, else face the view", icon="INFO")
             else:
                 body.label(text="Colours in Material Preview / Rendered", icon="INFO")
 
@@ -1150,7 +1162,7 @@ class OGC3D_PT_MainPanel(Panel):
             _materials.draw_panel(body, props)
 
         # Compositor
-        header, body = layout.panel("ogc3d_compositor", default_closed=True)
+        header, body = layout.panel("ogc3d_compositor", default_closed=False)
         header.label(text="Compositor", icon="NODE_COMPOSITING")
         if body:
             from .. import compositor as _compositor
@@ -1218,11 +1230,9 @@ def _eye_tick():
             return None
         scene = bpy.context.scene
         props = getattr(scene, "ogc3dtiles", None)
-        if (props is None or props.is_streaming
-                or props.point_radius_mode not in ("SCREEN", "ADAPTIVE")
-                or bpy.data.objects.get("OGC3D View") is None):
+        if props is None or props.is_streaming:
             return EYE_TIMER_S
-        _update_view_proxy(scene)
+        _update_view(scene, props)
     except Exception:          # noqa: BLE001 — no window / context during file load
         pass
     return EYE_TIMER_S

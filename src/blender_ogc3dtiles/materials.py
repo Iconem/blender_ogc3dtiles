@@ -35,7 +35,7 @@ TUNABLES = (
     ("Gold Boost", 0.35, 0.0, 2.0, "Extra brightness inside the mask"),
     ("Specular", 0.3, 0.0, 1.0, "Specular IOR level outside the mask"),
 )
-HIDDEN_TUNABLES = (("Gold Enable", 1.0),)     # driven by scene props, not sliders
+HIDDEN_TUNABLES = (("Gold Enable", 0.0),)     # driven by scene props, not sliders
 GROUP_VERSION_NODE = "Clay Color"             # presence marks an up-to-date group
 
 

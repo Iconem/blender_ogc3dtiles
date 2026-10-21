@@ -569,6 +569,10 @@ def stream_tick(context) -> bool:
     # scene for update and restarts the Cycles viewport render every tick
     _state["status"] = f"Visible {visible}  Loaded {loaded}  Queue {pending}  |  " + "  ".join(parts)
     _state["counts"] = (loaded, pending)
+    _state["pending_total"] = pending
+    _state["last_tick_t"] = now
+    if changed:
+        _state["last_change_t"] = now
     return changed
 
 
@@ -1000,6 +1004,11 @@ def fit_clip_range(radius_m):
                         space.clip_end = want
                     space.clip_start = max(space.clip_start, space.clip_end / CLIP_RATIO_MAX)
                     area.tag_redraw()
+        # camera objects default to a 100 m clip end: a render of a site-scale
+        # tileset would come out empty (world colour only)
+        for cam in bpy.data.cameras:
+            if cam.clip_end < want:
+                cam.clip_end = want
     except Exception as e:                           # noqa: BLE001
         print(f"[3DTiles] Clip range fit failed: {e}")
 
@@ -1206,6 +1215,21 @@ class OGC3D_PT_MainPanel(Panel):
             from .. import compositor as _compositor
             _compositor.draw_panel(body, props)
 
+        # 5b. Render — stream for the camera, converged animation
+        header, body = layout.panel("ogc3d_render", default_closed=True)
+        header.label(text="Render", icon="RENDER_ANIMATION")
+        if body:
+            body.prop(props, "view_source", text="Stream for")
+            row = body.row(align=True)
+            row.prop(props, "render_settle_s", text="Settle s")
+            row.prop(props, "render_max_wait_s", text="Max wait s")
+            body.operator("ogc3dtiles.render_converged", icon="RENDER_ANIMATION",
+                          text="Render converged animation")
+            prog = _state.get("render_progress")
+            if prog:
+                body.label(text=prog, icon="INFO")
+            body.label(text="Output: scene Output path, one file per frame", icon="FILE_FOLDER")
+
         # 5. Backend (advanced)
         header, body = layout.panel("ogc3d_backend", default_closed=True)
         header.label(text="Backend", icon="MOD_DYNAMICPAINT")
@@ -1217,6 +1241,100 @@ class OGC3D_PT_MainPanel(Panel):
                 row.prop(prefs, "traversal_backend", text="")
             ok, status = _cesium_status
             body.label(text=f"cesium-native-python: {status}", icon="CHECKMARK" if ok else "INFO")
+
+
+class OGC3D_OT_RenderConverged(Operator):
+    """Render the frame range from the scene camera, waiting before each frame
+    until the tile queue is empty and nothing changed for 'Settle time'
+    (or 'Max wait' passed).  Streams for the scene camera while it runs."""
+    bl_idname = "ogc3dtiles.render_converged"
+    bl_label = "Render Converged Animation"
+    bl_options = {"REGISTER"}
+
+    _timer = None
+
+    def invoke(self, context, event):
+        scene = context.scene
+        props = scene.ogc3dtiles
+        if scene.camera is None:
+            self.report({"ERROR"}, "No scene camera")
+            return {"CANCELLED"}
+        if not props.is_streaming:
+            with context.temp_override(window=context.window, area=context.area, region=context.region):
+                if "FINISHED" not in bpy.ops.ogc3dtiles.start_stream():
+                    self.report({"ERROR"}, "Streaming could not start")
+                    return {"CANCELLED"}
+        self._prev_source = props.view_source
+        self._prev_frame = scene.frame_current
+        self._prev_filepath = scene.render.filepath
+        props.view_source = "CAMERA"
+        self._frames = list(range(scene.frame_start, scene.frame_end + 1, max(scene.frame_step, 1)))
+        self._i = 0
+        self._done = 0
+        self._goto(scene, self._frames[0])
+        self._timer = context.window_manager.event_timer_add(0.1, window=context.window)
+        context.window_manager.modal_handler_add(self)
+        return {"RUNNING_MODAL"}
+
+    def _goto(self, scene, frame):
+        scene.frame_set(frame)
+        now = time.monotonic()
+        self._t_frame = now
+        _state["last_change_t"] = now
+        _state["last_tick_t"] = 0.0
+        _state["render_progress"] = f"frame {frame}: waiting for tiles"
+
+    def modal(self, context, event):
+        scene = context.scene
+        props = scene.ogc3dtiles
+        if event.type == "ESC" or not props.is_streaming:
+            self._finish(context, cancelled=True)
+            return {"CANCELLED"}
+        if event.type != "TIMER":
+            return {"PASS_THROUGH"}
+        now = time.monotonic()
+        waited = now - self._t_frame
+        ticked = _state.get("last_tick_t", 0.0) > self._t_frame
+        quiet = now - _state.get("last_change_t", now)
+        converged = (ticked and _state.get("pending_total", 1) == 0
+                     and quiet >= props.render_settle_s and waited >= props.render_settle_s)
+        if not converged and waited < props.render_max_wait_s:
+            _state["render_progress"] = (f"frame {scene.frame_current}: queue "
+                                         f"{_state.get('pending_total', '?')}, quiet {quiet:.1f} s")
+            return {"PASS_THROUGH"}
+        frame = self._frames[self._i]
+        path = scene.render.frame_path(frame=frame)
+        scene.render.filepath = path
+        _state["render_progress"] = f"frame {frame}: rendering"
+        try:
+            bpy.ops.render.render("EXEC_DEFAULT", write_still=True)
+        except Exception as e:                       # noqa: BLE001
+            self.report({"ERROR"}, f"Render failed at frame {frame}: {e}")
+            self._finish(context, cancelled=True)
+            return {"CANCELLED"}
+        finally:
+            scene.render.filepath = self._prev_filepath
+        self._done += 1
+        print(f"[3DTiles] rendered frame {frame} after {waited:.1f} s -> {path}")
+        self._i += 1
+        if self._i >= len(self._frames):
+            self._finish(context, cancelled=False)
+            self.report({"INFO"}, f"Rendered {self._done} frames")
+            return {"FINISHED"}
+        self._goto(scene, self._frames[self._i])
+        return {"PASS_THROUGH"}
+
+    def _finish(self, context, cancelled):
+        scene = context.scene
+        props = scene.ogc3dtiles
+        if self._timer is not None:
+            context.window_manager.event_timer_remove(self._timer)
+            self._timer = None
+        props.view_source = self._prev_source
+        scene.render.filepath = self._prev_filepath
+        scene.frame_set(self._prev_frame)
+        _state["render_progress"] = (f"cancelled after {self._done} frames" if cancelled
+                                     else f"done: {self._done} frames")
 
 
 class OGC3D_OT_OpenNodes(Operator):
@@ -1360,6 +1478,7 @@ class OGC3D_PT_CoordPanel(Panel):
 # ── Registration ──────────────────────────────────────────────────────────────
 _classes = [
     OGC3D_OT_OpenNodes,
+    OGC3D_OT_RenderConverged,
     OGC3D_OT_TilesetAdd,
     OGC3D_OT_TilesetRemove,
     OGC3D_OT_StartStream,

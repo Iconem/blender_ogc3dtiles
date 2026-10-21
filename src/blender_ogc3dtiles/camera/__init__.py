@@ -61,13 +61,12 @@ class CesiumCameraAdapter:
         """``root_obj`` is the per-tileset root Empty: tiles live in its local
         space (ENU), so the camera is expressed there too. Moving / rotating /
         scaling the Empty is therefore honoured by culling and SSE."""
-        r3d, region = find_view3d()
-        if r3d is None:
-            return None
         props = self.scene.ogc3dtiles
+        src = self._source(props)
+        if src is None:
+            return None
+        view, win, w, hpx, is_persp, pull_back, src_sig = src
         lat, lon, h = props.origin_lat, props.origin_lon, props.origin_height
-
-        view = r3d.view_matrix            # world → view
         root_sig = ()
         root_scale = 1.0
         if root_obj is not None:
@@ -76,23 +75,22 @@ class CesiumCameraAdapter:
             sc = mw.to_scale()
             root_scale = max((abs(sc.x) + abs(sc.y) + abs(sc.z)) / 3.0, 1e-9)
             root_sig = tuple(round(v, 4) for row in mw for v in row)
-        win = r3d.window_matrix           # view → clip
         inv = view.inverted()
         pos_enu = inv.translation
         fwd_enu = inv.to_3x3() @ _V((0.0, 0.0, -1.0))
         up_enu = inv.to_3x3() @ _V((0.0, 1.0, 0.0))
-        is_persp = r3d.is_perspective
         ortho_offset = 0.0
         if not is_persp:
-            # orthographic: Blender's view matrix puts the eye on the pivot;
-            # pull it back by the view distance so distances stay meaningful
-            pos_enu = pos_enu - fwd_enu * r3d.view_distance
+            # orthographic viewport: Blender's view matrix puts the eye on the
+            # pivot; pull it back by the view distance so distances stay
+            # meaningful (a camera object is already at its eye: pull_back 0)
+            pos_enu = pos_enu - fwd_enu * pull_back
             # cesium-native only knows perspective cameras: a narrow camera
             # far enough back that its frame at the pivot equals the ortho
             # frame (height 2 / win[1][1] world units) gives the same SSE
             p11_w = float(win[1][1]) if abs(win[1][1]) > 1e-9 else 1.0
             far = (1.0 / p11_w) / math.tan(ViewState.ORTHO_FOV / 2.0)
-            ortho_offset = max(far - float(r3d.view_distance), 0.0)
+            ortho_offset = max(far - float(pull_back), 0.0)
 
         # frustum planes: clip = win @ view (ENU) → ECEF
         clip = win @ view
@@ -105,7 +103,6 @@ class CesiumCameraAdapter:
         pos = blender_to_ecef(tuple(pos_enu), lat, lon, h)
         direction = rotate_enu_to_ecef(tuple(fwd_enu.normalized()), lat, lon)
         up = rotate_enu_to_ecef(tuple(up_enu.normalized()), lat, lon)
-        w, hpx = max(int(region.width), 1), max(int(region.height), 1)
         p11 = float(win[1][1]) if abs(win[1][1]) > 1e-9 else 1.0
         p00 = float(win[0][0]) if abs(win[0][0]) > 1e-9 else p11 * hpx / w
         if not is_persp:
@@ -114,12 +111,38 @@ class CesiumCameraAdapter:
             p11 *= root_scale
             p00 *= root_scale
         sig = (tuple(round(v, 1) for v in pos_enu), tuple(round(v, 3) for v in fwd_enu),
-               w, hpx, round(p11, 4), is_persp, root_sig)
+               w, hpx, round(p11, 4), is_persp, root_sig, src_sig)
         return ViewState(position=pos, direction=direction, up=up,
                          viewport_width=w, viewport_height=hpx,
                          p11=p11, p00=p00, is_persp=is_persp,
                          frustum_planes=planes, signature=sig,
                          ortho_eye_offset=ortho_offset)
+
+    def _source(self, props):
+        """(view_matrix, window_matrix, width_px, height_px, is_persp,
+        ortho_pull_back, signature) from the 3D viewport, or from the scene
+        camera at the render resolution when ``view_source`` is CAMERA."""
+        scene = self.scene
+        if getattr(props, "view_source", "VIEWPORT") == "CAMERA" and scene.camera is not None:
+            cam = scene.camera
+            r = scene.render
+            w = max(int(r.resolution_x * r.resolution_percentage / 100), 1)
+            hpx = max(int(r.resolution_y * r.resolution_percentage / 100), 1)
+            try:
+                dg = bpy.context.evaluated_depsgraph_get()
+                win = cam.calc_matrix_camera(dg, x=w, y=hpx,
+                                             scale_x=r.pixel_aspect_x, scale_y=r.pixel_aspect_y)
+            except Exception:                 # noqa: BLE001 — no context in some handlers
+                return None
+            view = cam.matrix_world.inverted()
+            return (view, win, w, hpx, cam.data.type != "ORTHO", 0.0,
+                    ("CAM", cam.name, scene.frame_current))
+        r3d, region = find_view3d()
+        if r3d is None:
+            return None
+        return (r3d.view_matrix, r3d.window_matrix, max(int(region.width), 1),
+                max(int(region.height), 1), bool(r3d.is_perspective),
+                float(r3d.view_distance), ("VIEW",))
 
     # ── legacy helpers (kept for callers/tests) ──────────────────────────────
 

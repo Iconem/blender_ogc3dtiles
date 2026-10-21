@@ -341,6 +341,28 @@ class TilesSceneProps(PropertyGroup):
                     "edits the geometry of all tiles; starts as a pass-through",
         default=False, update=_on_tile_geometry,
     )
+    view_source: EnumProperty(
+        name="Stream for",
+        description="Which view decides tile selection and LOD",
+        items=[
+            ("VIEWPORT", "3D viewport", "The largest 3D viewport (interactive use)"),
+            ("CAMERA", "Scene camera", "The active scene camera at the render resolution "
+                                       "(scrubbing the timeline re-selects tiles)"),
+        ],
+        default="VIEWPORT",
+    )
+    render_settle_s: FloatProperty(
+        name="Settle time",
+        description="Converged animation render: seconds without any tile change (and an "
+                    "empty queue) before a frame is rendered",
+        default=1.0, min=0.0, max=60.0,
+    )
+    render_max_wait_s: FloatProperty(
+        name="Max wait",
+        description="Converged animation render: render the frame anyway after this many "
+                    "seconds, even if tiles are still arriving",
+        default=120.0, min=1.0, max=3600.0,
+    )
     relight_gold: BoolProperty(
         name="Gold transfer",
         description="Relight: metallic / glossy treatment of yellow, saturated albedo",

@@ -424,14 +424,17 @@ in the add-on preferences. The pure Python path is used otherwise.
 4. Hit **Start**
 5. Navigate the 3D viewport — tiles load as you move the camera
 
-Sidebar order, top to bottom: tileset list and Start / Stop / Clear,
+Every section of the sidebar is its own panel (boxed, collapsible, and
+re-orderable with the drag handle in its header, like the Object
+Properties tabs; Blender remembers the order and the folded state).
+Default order, top to bottom: tileset list and Start / Stop / Clear,
 **Scene Origin** (collapsed), then **LOD / Streaming** (Max SSE, Parallel
 DL, Imports / tick, and a collapsed *Advanced* sub-panel: Max Tiles,
 foveation, detail falloff, max distance, direct mesh, disk cache, per-stream
 backend stats), **Display** (point display and radius, relation lines),
 **Materials** (relight: Apply / Remove, sliders), **Compositor** (edges and
-sliders, stable viewport, Build / Remove), then the collapsed **Backend**
-section.  Defaults: Max SSE 4 px, 16 parallel downloads, 4 imports per
+sliders, stable viewport, Build / Remove), **Render** (collapsed), then the
+collapsed **Backend** and **Coordinate Info** panels.  Defaults: Max SSE 4 px, 16 parallel downloads, 4 imports per
 tick (lower it if the UI stutters while tiles pour in).  The node-tree
 button next to Apply Relight, Build and the point display opens the
 corresponding tree ('OGC3D Relight' shader group, 'OGC3D Beauty' compositor

@@ -77,3 +77,38 @@ renderer integration. Items 1–4 are already patched locally
     draping can be wired to a UV layer in Blender.
 18. A tiny `IPrepareRendererResources` reference implementation in Python
     (just storing the model) in `examples/` would have saved a day.
+19. **Orthographic cameras.** `ViewState` only takes `(position, direction,
+    up, viewport, hfov, vfov)`, i.e. a perspective frustum, so an orthographic
+    viewport (Blender's numpad 5, CAD-style top views, plan renders) has no
+    honest representation. Feeding it a narrow camera at the pivot gives a
+    thin cone and an inflated screen-space error: in our bench tileset the
+    same orthographic view rendered 35 tiles with 121 culled, versus 73
+    rendered / 32 culled once emulated properly. The emulation we ship
+    (`camera.get_view_state`, `ViewState.native_position`) places a 1-degree
+    camera `(frame_height / 2) / tan(0.5 deg)` metres behind the pivot so its
+    frame at the pivot equals the orthographic frame, and disables fog
+    culling because that distant eye sits far above the fog table. It is
+    only exact on the pivot plane: nearer tiles are slightly over-refined,
+    farther ones under-refined, and the frustum is a sliver of a cone instead
+    of a box. Requests, in order of preference:
+    - `ViewState.create_orthographic(position, direction, up, viewport,
+      frame_width, frame_height)` with SSE = `geometric_error * viewport_h /
+      frame_height` (no distance term) and a box frustum. cesium-native's
+      `ViewState` is perspective-only today (`CullingVolume` from
+      `hfov`/`vfov`), so this needs a small upstream change there too; the
+      `CullingVolume` already works on planes, only the SSE formula and the
+      plane construction differ.
+    - Failing that, `ViewState.from_matrices(view, projection, viewport)`
+      (item 16) and let the culling volume come from the clip matrix via
+      Gribb-Hartmann, so orthographic and off-axis projections fall out for
+      free; `computeScreenSpaceError` can test `projection[3][3] == 1`.
+    - At minimum, document that `ViewState` is perspective-only and that fog
+      culling is on by default (height-based, it silently culls distant eyes).
+20. **Typed accessor views are float-only.** `AccessorViewVec3` /
+    `AccessorViewVec4` (and `get_*_accessor_view` helpers) return `float`
+    data; `COLOR_0` stored as normalised `UNSIGNED_BYTE` / `UNSIGNED_SHORT`
+    (the usual case for `pnts`-converted glb and 3D Tiles 1.1 point octrees)
+    comes out as garbage or zeros. Either honour `normalized` + component
+    type inside the view, or expose the raw `bufferView` slice with stride /
+    component type so callers can decode with numpy (what
+    `native_mesh._raw_accessor` does).

@@ -230,7 +230,9 @@ of about 1e7 the planes come out NaN (nothing is clipped, or a flat slab is);
 and orthographic depth, which spans the whole clip range linearly, dropped to
 centimetre precision.  Raise the clip end by hand for globe-scale tilesets;
 keep clip start above clip end / 1e7 if you use Alt+B.  The clipping region
-only affects drawing, not which tiles stream.
+only affects drawing, not which tiles stream, and in Blender 5.1 only Solid
+and Wireframe shading honour it: EEVEE (Material Preview, Rendered) ignores
+the clipping region on any scene, add-on or not.
 
 ### Direct mesh construction (cesium-native, default)
 

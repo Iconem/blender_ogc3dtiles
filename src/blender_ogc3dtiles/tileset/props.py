@@ -80,7 +80,7 @@ class TilesetItem(PropertyGroup):
         default=False, update=_on_item_sse)
     max_sse: FloatProperty(name="Max SSE", description="Screen-space error threshold (px) for "
                            "this tileset when 'Own SSE' is ticked; lower = finer tiles. Live",
-                           default=8.0, min=1.0, max=512.0, update=_on_item_sse)
+                           default=4.0, min=1.0, max=512.0, update=_on_item_sse)
     uid: StringProperty(default="", options={'HIDDEN'})
 
 
@@ -144,13 +144,13 @@ class TilesSceneProps(PropertyGroup):
         name="Max SSE",
         description="Screen-space error threshold in pixels for every tileset without "
                     "'Own SSE'; lower = finer tiles. Live while streaming",
-        default=8.0, min=1.0, max=512.0,
+        default=4.0, min=1.0, max=512.0,
         update=_on_global_sse,
     )
     max_concurrent_requests: IntProperty(
         name="Max Concurrent Downloads",
         description="Parallel HTTP tile downloads",
-        default=6, min=1, max=32,
+        default=16, min=1, max=64,
     )
     max_loaded_tiles: IntProperty(
         name="Max Loaded Tiles",
@@ -191,8 +191,9 @@ class TilesSceneProps(PropertyGroup):
     )
     imports_per_tick: IntProperty(
         name="Imports per tick",
-        description="GLBs imported per 50 ms timer tick (1 keeps the UI smooth)",
-        default=1, min=1, max=16,
+        description="Tiles built per 50 ms timer tick (lower keeps the UI smoother "
+                    "while loading, higher fills the view faster)",
+        default=4, min=1, max=16,
     )
     auto_relight: BoolProperty(
         name="Relight new tiles",

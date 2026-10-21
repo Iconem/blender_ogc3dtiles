@@ -140,7 +140,7 @@ that tileset only.
 Per row: the checkbox **pauses** the stream (nothing is loaded or evicted,
 loaded tiles stay as they are), the eye hides its sub-collection (same as the
 outliner).  Entries added, ticked or removed while streaming are picked up on
-the next tick.  **Max SSE** (LOD sub-panel) is the live renderer setting for
+the next tick.  **Max SSE** (LOD / Streaming sub-panel) is the live renderer setting for
 every stream; tick *Own SSE* on an entry to override it for that tileset.
 Both re-select immediately on both backends.  *Start* discards the tiles a
 previous *Stop* left on screen (they belong to a dead selection).  Two
@@ -157,7 +157,7 @@ ancestors before any deeper tile), then CesiumJS-style foveated: shallow tiles f
 then by screen-space error weighted towards the view centre (*Foveation
 cone* = fraction of the view half-angle); *Edge SSE relax* > 0 additionally
 lets the periphery stay coarser.  cesium-native orders its own queue the same
-way internally.  "Hide relation lines" (Streaming sub-panel) switches off the
+way internally.  "Hide relation lines" (Display sub-panel) switches off the
 dashed object→parent overlay in every 3D viewport on Start — it is a
 per-viewport overlay, Blender has no per-object switch.
 
@@ -237,7 +237,7 @@ one reads the eye from the 'OGC3D View' Empty, so every point tile
 re-evaluates whenever the eye moves.  The streaming tick (or, when nothing
 streams, a 0.15 s timer) feeds the viewport, a `render_pre` handler the
 scene camera.  Three display modes
-(`Point Clouds` sub-panel): **Point cloud** (Mesh → Points; cheapest; unlit
+(`Display` sub-panel): **Point cloud** (Mesh → Points; cheapest; unlit
 vertex colours in Material Preview / Rendered, material colour in Solid),
 **Tiny tetrahedra** (4 vertices per point, realised as a mesh whose active
 colour attribute is `Col`, so Solid mode with Color → Attribute shows the
@@ -343,13 +343,15 @@ in the add-on preferences. The pure Python path is used otherwise.
 4. Hit **Start**
 5. Navigate the 3D viewport — tiles load as you move the camera
 
-Sidebar order, top to bottom: tileset list and Start / Stop / Clear, then
-**LOD** (Max SSE, Max Tiles, foveation), **Streaming** (collapsed: detail
-falloff, max distance, parallel downloads, imports per tick, direct mesh,
-disk cache, per-stream backend stats), **Display** (point display and
-radius, relation lines), **Materials** (relight: Apply / Remove, sliders),
-**Compositor** (edges and sliders, stable viewport, Build / Remove), then
-the collapsed **Scene Origin** and **Backend** sections.  The node-tree
+Sidebar order, top to bottom: tileset list and Start / Stop / Clear,
+**Scene Origin** (collapsed), then **LOD / Streaming** (Max SSE, Parallel
+DL, Imports / tick, and a collapsed *Advanced* sub-panel: Max Tiles,
+foveation, detail falloff, max distance, direct mesh, disk cache, per-stream
+backend stats), **Display** (point display and radius, relation lines),
+**Materials** (relight: Apply / Remove, sliders), **Compositor** (edges and
+sliders, stable viewport, Build / Remove), then the collapsed **Backend**
+section.  Defaults: Max SSE 4 px, 16 parallel downloads, 4 imports per
+tick (lower it if the UI stutters while tiles pour in).  The node-tree
 button next to Apply Relight, Build and the point display opens the
 corresponding tree ('OGC3D Relight' shader group, 'OGC3D Beauty' compositor
 tree, 'OGC3D Points…' geometry nodes) pinned in a node editor — an existing

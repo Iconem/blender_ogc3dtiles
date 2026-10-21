@@ -1054,46 +1054,62 @@ class OGC3D_PT_MainPanel(Panel):
             row.operator("ogc3dtiles.stop_stream", icon="PAUSE", text="Stop")
         row.operator("ogc3dtiles.clear_tiles", icon="TRASH", text="Clear All Tiles")
 
-        # 1. LOD — what decides which tiles are shown
+        # Scene origin — right under the list: it decides where tiles land
+        header, body = layout.panel("ogc3d_origin", default_closed=True)
+        header.label(text="Scene Origin", icon="ORIENTATION_GLOBAL")
+        if body:
+            body.prop(props, "origin_mode", text="Mode")
+            if props.origin_mode == "AUTO":
+                body.prop(props, "origin_reuse_km")
+            col = body.column()
+            col.enabled = props.origin_mode == "CUSTOM"
+            col.prop(props, "origin_lat", text="Latitude °")
+            col.prop(props, "origin_lon", text="Longitude °")
+            col.prop(props, "origin_height", text="Height m")
+            row = body.row()
+            row.label(text="Origin set" if props.origin_valid else "Origin not set yet",
+                      icon="CHECKMARK" if props.origin_valid else "INFO")
+            row.operator("ogc3dtiles.origin_reset", text="", icon="FILE_REFRESH")
+
+        # 1. LOD / Streaming — what is shown and how fast it gets here
         header, body = layout.panel("ogc3d_lod", default_closed=False)
-        header.label(text="LOD", icon="DRIVER_DISTANCE")
+        header.label(text="LOD / Streaming", icon="DRIVER_DISTANCE")
         if body:
-            body.prop(props, "max_screen_space_error", text="Max SSE (live)")
-            body.prop(props, "max_loaded_tiles", text="Max Tiles / tileset")
-            row = body.row(align=True)
-            row.prop(props, "foveated_cone", text="Foveation cone")
-            row.prop(props, "foveated_relaxation", text="Edge SSE relax")
+            col = body.column(align=True)
+            col.prop(props, "max_screen_space_error", text="Max SSE (live)")
+            col.prop(props, "max_concurrent_requests", text="Parallel DL")
+            col.prop(props, "imports_per_tick", text="Imports / tick")
+            sub_h, sub = body.panel("ogc3d_lod_advanced", default_closed=True)
+            sub_h.label(text="Advanced")
+            if sub:
+                sub.prop(props, "max_loaded_tiles", text="Max Tiles / tileset")
+                row = sub.row(align=True)
+                row.prop(props, "foveated_cone", text="Foveation cone")
+                row.prop(props, "foveated_relaxation", text="Edge SSE relax")
+                sub.prop(props, "detail_falloff", text="Detail Falloff m")
+                sub.prop(props, "load_distance", text="Max Distance m")
+                sub.prop(props, "native_direct_mesh", text="Direct mesh (numpy, both backends)")
+                row = sub.row(align=True)
+                row.prop(props, "use_disk_cache", text="Disk cache")
+                row.operator("ogc3dtiles.clear_cache", icon="TRASH", text="")
+                for st in _state["streams"].values():
+                    if st["backend"] is None:
+                        continue
+                    running = "cesium-native" if st["mode"] == "native" else "Pure Python"
+                    if st["mode"] == "native":
+                        s = st.get("stats") or {}
+                        extra = (f"visited {s.get('tiles_visited', 0)} culled {s.get('tiles_culled', 0)} "
+                                 f"{s.get('bytes', 0) / 1e6:.0f} MB")
+                    else:
+                        sel = st["backend"].last_selection()
+                        extra = (f"visited {sel.visited} culled {sel.culled} render {len(sel.render)} "
+                                 f"load {len(sel.load)}") if sel else ""
+                    if st.get("import_n"):
+                        extra += f"  import {1000 * st['import_s'] / st['import_n']:.0f} ms/tile"
+                    icon = "PAUSE" if (st.get("paused") or not props.is_streaming) else "PLAY"
+                    body.label(text=f"{st['name'][:18]}: {running}  {extra}", icon=icon)
 
-        # 2. Streaming — how tiles get here (advanced)
-        header, body = layout.panel("ogc3d_streaming", default_closed=True)
-        header.label(text="Streaming", icon="SORTTIME")
-        if body:
-            body.prop(props, "detail_falloff", text="Detail Falloff m")
-            body.prop(props, "load_distance", text="Max Distance m")
-            body.prop(props, "max_concurrent_requests", text="Parallel DL")
-            body.prop(props, "imports_per_tick", text="Imports / tick")
-            body.prop(props, "native_direct_mesh", text="Direct mesh (numpy, both backends)")
-            row = body.row(align=True)
-            row.prop(props, "use_disk_cache", text="Disk cache")
-            row.operator("ogc3dtiles.clear_cache", icon="TRASH", text="")
-            for st in _state["streams"].values():
-                if st["backend"] is None:
-                    continue
-                running = "cesium-native" if st["mode"] == "native" else "Pure Python"
-                if st["mode"] == "native":
-                    s = st.get("stats") or {}
-                    extra = (f"visited {s.get('tiles_visited', 0)} culled {s.get('tiles_culled', 0)} "
-                             f"{s.get('bytes', 0) / 1e6:.0f} MB")
-                else:
-                    sel = st["backend"].last_selection()
-                    extra = (f"visited {sel.visited} culled {sel.culled} render {len(sel.render)} "
-                             f"load {len(sel.load)}") if sel else ""
-                if st.get("import_n"):
-                    extra += f"  import {1000 * st['import_s'] / st['import_n']:.0f} ms/tile"
-                icon = "PAUSE" if (st.get("paused") or not props.is_streaming) else "PLAY"
-                body.label(text=f"{st['name'][:18]}: {running}  {extra}", icon=icon)
-
-        # 3. Display — what the viewport shows (points, overlays)
+        # 2. Display — what the viewport shows (points, overlays)
         header, body = layout.panel("ogc3d_display", default_closed=False)
         header.label(text="Display", icon="OUTLINER_DATA_POINTCLOUD")
         if body:
@@ -1128,38 +1144,21 @@ class OGC3D_PT_MainPanel(Panel):
             row.operator("ogc3dtiles.relation_lines", text="",
                          icon="HIDE_OFF" if shown else "HIDE_ON", depress=shown)
 
-        # 4. Materials — relight shader (Material Preview / Rendered)
+        # 3. Materials — relight shader (Material Preview / Rendered)
         header, body = layout.panel("ogc3d_materials", default_closed=False)
         header.label(text="Materials", icon="MATERIAL")
         if body:
             from .. import materials as _materials
             _materials.draw_panel(body, props)
 
-        # 5. Compositor — screen-space beauty pass (Rendered / renders)
+        # 4. Compositor — screen-space beauty pass (Rendered / renders)
         header, body = layout.panel("ogc3d_compositor", default_closed=False)
         header.label(text="Compositor", icon="NODE_COMPOSITING")
         if body:
             from .. import compositor as _compositor
             _compositor.draw_panel(body, props)
 
-        # 6. Scene origin
-        header, body = layout.panel("ogc3d_origin", default_closed=True)
-        header.label(text="Scene Origin", icon="ORIENTATION_GLOBAL")
-        if body:
-            body.prop(props, "origin_mode", text="Mode")
-            if props.origin_mode == "AUTO":
-                body.prop(props, "origin_reuse_km")
-            col = body.column()
-            col.enabled = props.origin_mode == "CUSTOM"
-            col.prop(props, "origin_lat", text="Latitude °")
-            col.prop(props, "origin_lon", text="Longitude °")
-            col.prop(props, "origin_height", text="Height m")
-            row = body.row()
-            row.label(text="Origin set" if props.origin_valid else "Origin not set yet",
-                      icon="CHECKMARK" if props.origin_valid else "INFO")
-            row.operator("ogc3dtiles.origin_reset", text="", icon="FILE_REFRESH")
-
-        # 7. Backend (advanced)
+        # 5. Backend (advanced)
         header, body = layout.panel("ogc3d_backend", default_closed=True)
         header.label(text="Backend", icon="MOD_DYNAMICPAINT")
         if body:

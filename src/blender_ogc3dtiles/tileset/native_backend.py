@@ -380,6 +380,7 @@ class CesiumNativeBackend:
         opts.maximum_cached_bytes = self._max_cached_bytes
         opts.maximum_simultaneous_tile_loads = self._max_loads
         opts.enable_occlusion_culling = False
+        opts.enable_fog_culling = False    # height-based fog would cull the far ortho eye's view
         opts.preload_siblings = False      # fewer speculative imports on the main thread
         opts.forbid_holes = True           # keep parents until children are in
         # budget for prepare_in_main_thread work per update (ms); our mesh
@@ -472,6 +473,24 @@ class CesiumNativeBackend:
         self._max_sse = v
         if self._tileset is not None:
             self._tileset.options.maximum_screen_space_error = float(v)
+
+    def root_radius_m(self):
+        """Bounding-sphere radius (m) of the root volume, None when unknown."""
+        if self._tileset is None or self._tileset.root_tile is None:
+            return None
+        root = self._tileset.root_tile
+        if root.child_count == 1 and root.geometric_error == float("inf"):
+            root = root.children[0]
+        bv = root.bounding_volume
+        try:
+            return float(self._cs.tiles.content.TileBoundingVolumes.bounding_sphere(bv).radius)
+        except Exception:
+            pass
+        try:
+            h = np.asarray(bv.as_oriented_bounding_box().half_axes, np.float64)
+            return float(np.sqrt((h * h).sum()))
+        except Exception:
+            return None
 
     def root_center_ecef(self):
         """ECEF centre of the root bounding volume once tileset.json is in."""

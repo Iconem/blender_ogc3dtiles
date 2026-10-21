@@ -329,8 +329,10 @@ def _start_stream(scene, props, st, choice, cache) -> None:
         root_tile = parse_tileset(data, st["url"])
         backend.set_root(root_tile)
         st["root_tile"] = root_tile
-        cx, cy, cz, _r = root_tile.sphere_ecef()
+        cx, cy, cz, root_r = root_tile.sphere_ecef()
         _decide_origin(props, (cx, cy, cz))
+        if not bpy.app.background:
+            fit_clip_range(root_r)
         st["download_mgr"] = TileDownloadManager(
             max_concurrent=props.max_concurrent_requests, token=st["token"], cache=cache,
             direct_mesh=props.native_direct_mesh)
@@ -832,6 +834,12 @@ def _tick_native(scene, props, st, now) -> bool:
             st["pending"] = 0
             return False
         _decide_origin(props, c)
+    if not st.get("clip_fit"):
+        r = backend.root_radius_m()
+        if r is not None:
+            st["clip_fit"] = True
+            if not bpy.app.background:
+                fit_clip_range(r)
 
     for key in backend.pop_freed():
         rec = tiles.pop(key, None)
@@ -862,7 +870,7 @@ def _tick_native(scene, props, st, now) -> bool:
     need = (view.signature != st["last_sig"] or changed
             or now - st["last_sel_t"] > SELECTION_MAX_AGE_S)
     if need:
-        res = backend.update_view(view.position, view.direction, view.up,
+        res = backend.update_view(view.native_position, view.direction, view.up,
                                   view.viewport_width, view.viewport_height,
                                   view.fov_x, view.fov_y, dt=now - st["last_sel_t"])
         changed |= _apply_visibility(st, set(res.to_render), set(), now)
@@ -955,10 +963,35 @@ def _orient_viewport(context, props):
                             (math.radians(65), 0, 0), "XYZ").to_quaternion()
                         r3d.view_distance = 500.0
                         r3d.view_location = (0.0, 0.0, 0.0)
-                    space.clip_end = max(space.clip_end, 1e6)
                     return
     except Exception as e:                           # noqa: BLE001
         print(f"[3DTiles] Viewport orient failed: {e}")
+
+
+CLIP_END_MIN, CLIP_END_MAX = 1000.0, 2.0e5
+CLIP_RATIO_MAX = 1.0e6      # far / near; Alt+B (clip region) breaks past ~1e7
+
+
+def fit_clip_range(radius_m):
+    """Size the 3D viewports' clip range to the tileset: far = a few times the
+    root radius, near = far / 1e6.  A fixed far of 1e6 m (the old behaviour)
+    made Blender's clipping region (Alt+B) degenerate in perspective and left
+    orthographic depth at centimetre precision."""
+    try:
+        want = min(max(6.0 * float(radius_m or 0.0), CLIP_END_MIN), CLIP_END_MAX)
+        for window in bpy.context.window_manager.windows:
+            for area in window.screen.areas:
+                if area.type != "VIEW_3D":
+                    continue
+                for space in area.spaces:
+                    if space.type != "VIEW_3D":
+                        continue
+                    if space.clip_end < want or space.clip_end > CLIP_END_MAX:
+                        space.clip_end = want
+                    space.clip_start = max(space.clip_start, space.clip_end / CLIP_RATIO_MAX)
+                    area.tag_redraw()
+    except Exception as e:                           # noqa: BLE001
+        print(f"[3DTiles] Clip range fit failed: {e}")
 
 
 def _set_origin_from_ecef(props, ex, ey, ez):

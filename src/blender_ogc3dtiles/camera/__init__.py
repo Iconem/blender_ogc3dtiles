@@ -82,9 +82,17 @@ class CesiumCameraAdapter:
         fwd_enu = inv.to_3x3() @ _V((0.0, 0.0, -1.0))
         up_enu = inv.to_3x3() @ _V((0.0, 1.0, 0.0))
         is_persp = r3d.is_perspective
+        ortho_offset = 0.0
         if not is_persp:
-            # orthographic: pull the eye back so distances stay meaningful
+            # orthographic: Blender's view matrix puts the eye on the pivot;
+            # pull it back by the view distance so distances stay meaningful
             pos_enu = pos_enu - fwd_enu * r3d.view_distance
+            # cesium-native only knows perspective cameras: a narrow camera
+            # far enough back that its frame at the pivot equals the ortho
+            # frame (height 2 / win[1][1] world units) gives the same SSE
+            p11_w = float(win[1][1]) if abs(win[1][1]) > 1e-9 else 1.0
+            far = (1.0 / p11_w) / math.tan(ViewState.ORTHO_FOV / 2.0)
+            ortho_offset = max(far - float(r3d.view_distance), 0.0)
 
         # frustum planes: clip = win @ view (ENU) → ECEF
         clip = win @ view
@@ -110,7 +118,8 @@ class CesiumCameraAdapter:
         return ViewState(position=pos, direction=direction, up=up,
                          viewport_width=w, viewport_height=hpx,
                          p11=p11, p00=p00, is_persp=is_persp,
-                         frustum_planes=planes, signature=sig)
+                         frustum_planes=planes, signature=sig,
+                         ortho_eye_offset=ortho_offset)
 
     # ── legacy helpers (kept for callers/tests) ──────────────────────────────
 

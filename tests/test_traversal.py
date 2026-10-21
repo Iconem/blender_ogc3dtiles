@@ -138,3 +138,27 @@ def test_benchmark_python_backend(benchmark, simple_tile_tree):
     cam = (6_378_200.0, 0.0, 0.0)
     result = benchmark(lambda: b.update_view(cam, SCREEN_H, FOV_Y))
     assert result is not None
+
+
+def test_ortho_native_emulation():
+    """An orthographic ViewState exposes a narrow perspective camera pulled
+    back so that cesium-native computes the same SSE: ge * H / ortho_height."""
+    from blender_ogc3dtiles.tileset.traversal import ViewState, _sse
+    height_m, H = 200.0, 1000           # ortho frame height (m), viewport px
+    p11 = 2.0 / height_m
+    far = (1.0 / p11) / math.tan(ViewState.ORTHO_FOV / 2.0)
+    v = ViewState(position=(0.0, 0.0, 0.0), direction=(0.0, 0.0, -1.0), viewport_height=H,
+                  viewport_width=2000, p11=p11, p00=p11 / 2.0, is_persp=False,
+                  ortho_eye_offset=far - 10.0)
+    # python traversal: SSE in px is ge * H / height, independent of distance
+    assert abs(_sse(1.0, 5.0, v) - H / height_m) < 1e-9
+    # perspective emulation: eye 'far' behind the pivot plane (pivot at z=-10)
+    eye = v.native_position
+    assert abs(eye[2] - (far - 10.0)) < 1e-9
+    d = far
+    sse_native = 1.0 * H / (2.0 * d * math.tan(v.fov_y / 2.0))
+    assert abs(sse_native - H / height_m) < 1e-9
+    # aspect: frame width / height = p11 / p00 = 2
+    assert abs(math.tan(v.fov_x / 2.0) / math.tan(v.fov_y / 2.0) - 2.0) < 1e-9
+    assert v.native_position == v.position or v.is_persp is False
+    assert ViewState(position=(1.0, 2.0, 3.0)).native_position == (1.0, 2.0, 3.0)

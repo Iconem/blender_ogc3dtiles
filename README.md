@@ -424,6 +424,12 @@ in the add-on preferences. The pure Python path is used otherwise.
 4. Hit **Start**
 5. Navigate the 3D viewport — tiles load as you move the camera
 
+<p align="center">
+<img src="docs/img/sidebar_1_streaming.png" width="31%" alt="Tileset list, Scene Origin, LOD / Streaming">
+<img src="docs/img/sidebar_2_display_materials.png" width="31%" alt="Display and Materials (relight applied)">
+<img src="docs/img/sidebar_3_compositor_render_backend.png" width="31%" alt="Compositor, Render, Backend">
+</p>
+
 Every section of the sidebar is its own panel (boxed, collapsible, and
 re-orderable with the drag handle in its header, like the Object
 Properties tabs; Blender remembers the order and the folded state).

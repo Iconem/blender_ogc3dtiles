@@ -27,6 +27,14 @@ def _on_global_sse(self, context):
         pass
 
 
+def _on_clip_materials(self, context):
+    try:
+        from .. import materials
+        materials.set_clip_materials(bool(self.clip_materials))
+    except Exception as e:                        # noqa: BLE001
+        print(f"[3DTiles] clip materials: {e}")
+
+
 def _on_point_radius(self, context):
     from ..io import apply_point_radius
     apply_point_radius(context.scene)
@@ -290,6 +298,13 @@ class TilesSceneProps(PropertyGroup):
     point_radius: FloatProperty(
         name="Point radius (m)", description="Uniform point radius",
         default=0.08, min=0.001, max=50.0, update=_on_point_radius,
+    )
+    clip_materials: BoolProperty(
+        name="Clip materials to viewport region",
+        description="Copy the 3D viewport's clipping region (Alt+B) into every tile "
+                    "material so Material Preview and Rendered clip too (EEVEE ignores "
+                    "the region itself); follows Alt+B on / off while enabled",
+        default=False, update=_on_clip_materials,
     )
     relight_gold: BoolProperty(
         name="Gold transfer",

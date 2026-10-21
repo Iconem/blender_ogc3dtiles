@@ -232,7 +232,13 @@ centimetre precision.  Raise the clip end by hand for globe-scale tilesets;
 keep clip start above clip end / 1e7 if you use Alt+B.  The clipping region
 only affects drawing, not which tiles stream, and in Blender 5.1 only Solid
 and Wireframe shading honour it: EEVEE (Material Preview, Rendered) ignores
-the clipping region on any scene, add-on or not.
+the clipping region on any scene, add-on or not.  **Clip to viewport region**
+(Materials section) works around that: every tile material gets a Mix Shader
+to a Transparent BSDF driven by the shared 'OGC3D Clip' group, into which the
+add-on copies the viewport's clip planes each tick.  While it is on, Alt+B
+alone toggles the clipping (drag a region to clip, Alt+B again to clear);
+the planes come from the largest 3D viewport, and F12 renders use whatever
+region that viewport last had.  Untick to remove the nodes again.
 
 ### Direct mesh construction (cesium-native, default)
 

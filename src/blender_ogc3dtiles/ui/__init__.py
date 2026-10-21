@@ -622,6 +622,9 @@ def _update_view(scene, props):
     Disc splats → towards-eye direction for normal-less points."""
     from ..camera import viewport_focus
     from ..io import update_view_proxy, update_adaptive, update_view_dir
+    if props.clip_materials:
+        from .. import materials as _materials
+        _materials.update_clip_planes()
     mode = props.point_radius_mode
     discs = props.point_display == "DISCS"
     if mode not in ("SCREEN", "ADAPTIVE") and not discs:

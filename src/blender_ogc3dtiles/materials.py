@@ -36,6 +36,18 @@ TUNABLES = (
     ("Specular", 0.3, 0.0, 1.0, "Specular IOR level outside the mask"),
 )
 HIDDEN_TUNABLES = (("Gold Enable", 0.0),)     # driven by scene props, not sliders
+
+# ── viewport clipping region → shader ────────────────────────────────────────
+# EEVEE (Material Preview / Rendered) ignores Blender's clipping region
+# (Alt+B); Solid honours it.  With "Clip to viewport region" on, the region's
+# planes are copied into this shared group every tick and every tile
+# material mixes to a Transparent BSDF where any plane says "outside".
+CLIP_GROUP = "OGC3D Clip"
+CLIP_ENABLE = "Clip Enable"
+CLIP_MIX = "OGC3D Clip Mix"
+CLIP_TRANSPARENT = "OGC3D Clip Transparent"
+CLIP_PLANES = 6                                # RegionView3D.clip_planes
+_last_clip = [None]
 GROUP_VERSION_NODE = "Clay Color"             # presence marks an up-to-date group
 
 
@@ -224,6 +236,162 @@ def set_gold_enabled(enabled: bool) -> None:
         node.outputs[0].default_value = 1.0 if enabled else 0.0
 
 
+def ensure_clip_group():
+    ng = bpy.data.node_groups.get(CLIP_GROUP)
+    if ng is None:
+        ng = bpy.data.node_groups.new(CLIP_GROUP, "ShaderNodeTree")
+        ng.interface.new_socket("Clip", in_out="OUTPUT", socket_type="NodeSocketFloat")
+        _build_clip_group(ng)
+    return ng
+
+
+def _build_clip_group(ng):
+    """Clip = Enable × (min_i(N_i · P + D_i) < 0), P = world position.
+    Blender's convention: a point is inside the region when N·P + D >= 0 for
+    every plane; unused planes are (0,0,0) / D = 1 so they never clip."""
+    nodes, links = ng.nodes, ng.links
+    nodes.clear()
+    out = nodes.new("NodeGroupOutput")
+    out.location = (900, 0)
+    geo = nodes.new("ShaderNodeNewGeometry")
+    geo.location = (-600, 0)
+    enable = _value_node(ng, CLIP_ENABLE, 0.0)
+    enable.location = (500, -200)
+    prev = None
+    for i in range(CLIP_PLANES):
+        dot = nodes.new("ShaderNodeVectorMath")
+        dot.operation = "DOT_PRODUCT"
+        dot.name = dot.label = f"Plane {i}"
+        dot.location = (-350, 200 - 150 * i)
+        dot.inputs[1].default_value = (0.0, 0.0, 0.0)
+        links.new(geo.outputs["Position"], dot.inputs[0])
+        d = _value_node(ng, f"Plane {i} D", 1.0)
+        d.location = (-350, 130 - 150 * i)
+        add = nodes.new("ShaderNodeMath")
+        add.operation = "ADD"
+        add.location = (-150, 200 - 150 * i)
+        links.new(dot.outputs["Value"], add.inputs[0])
+        links.new(d.outputs[0], add.inputs[1])
+        if prev is None:
+            prev = add
+        else:
+            mn = nodes.new("ShaderNodeMath")
+            mn.operation = "MINIMUM"
+            mn.location = (50 + 60 * i, 200 - 150 * i)
+            links.new(prev.outputs[0], mn.inputs[0])
+            links.new(add.outputs[0], mn.inputs[1])
+            prev = mn
+    lt = nodes.new("ShaderNodeMath")
+    lt.operation = "LESS_THAN"
+    lt.location = (500, 0)
+    lt.inputs[1].default_value = 0.0
+    links.new(prev.outputs[0], lt.inputs[0])
+    mul = nodes.new("ShaderNodeMath")
+    mul.operation = "MULTIPLY"
+    mul.location = (700, 0)
+    links.new(lt.outputs[0], mul.inputs[0])
+    links.new(enable.outputs[0], mul.inputs[1])
+    links.new(mul.outputs[0], out.inputs[0])
+
+
+def _surface_target(nt):
+    """Socket a material's final shader should feed: the clip mix when the
+    material is clipped, else the Material Output surface."""
+    mix = nt.nodes.get(CLIP_MIX)
+    if mix is not None:
+        return mix.inputs[1]
+    out = next((n for n in nt.nodes if n.type == "OUTPUT_MATERIAL"), None)
+    return out.inputs["Surface"] if out is not None else None
+
+
+def apply_clip(mat) -> bool:
+    if mat is None or not mat.use_nodes or mat.node_tree is None:
+        return False
+    nt = mat.node_tree
+    if nt.nodes.get(CLIP_MIX) is not None:
+        return False
+    out = next((n for n in nt.nodes if n.type == "OUTPUT_MATERIAL"), None)
+    if out is None or not out.inputs["Surface"].links:
+        return False
+    src = out.inputs["Surface"].links[0].from_socket
+    grp = nt.nodes.new("ShaderNodeGroup")
+    grp.node_tree = ensure_clip_group()
+    grp.name = grp.label = CLIP_GROUP
+    grp.location = (out.location.x - 400, out.location.y - 250)
+    tr = nt.nodes.new("ShaderNodeBsdfTransparent")
+    tr.name = tr.label = CLIP_TRANSPARENT
+    tr.location = (out.location.x - 400, out.location.y - 400)
+    mix = nt.nodes.new("ShaderNodeMixShader")
+    mix.name = mix.label = CLIP_MIX
+    mix.location = (out.location.x - 180, out.location.y)
+    out.location.x += 60
+    nt.links.new(grp.outputs[0], mix.inputs["Fac"])
+    nt.links.new(src, mix.inputs[1])
+    nt.links.new(tr.outputs[0], mix.inputs[2])
+    nt.links.new(mix.outputs[0], out.inputs["Surface"])
+    return True
+
+
+def remove_clip(mat) -> bool:
+    if mat is None or not mat.use_nodes or mat.node_tree is None:
+        return False
+    nt = mat.node_tree
+    mix = nt.nodes.get(CLIP_MIX)
+    if mix is None:
+        return False
+    src = mix.inputs[1].links[0].from_socket if mix.inputs[1].links else None
+    out = next((n for n in nt.nodes if n.type == "OUTPUT_MATERIAL"), None)
+    for name in (CLIP_MIX, CLIP_TRANSPARENT, CLIP_GROUP):
+        n = nt.nodes.get(name)
+        if n is not None:
+            nt.nodes.remove(n)
+    if src is not None and out is not None:
+        nt.links.new(src, out.inputs["Surface"])
+    return True
+
+
+def set_clip_materials(enabled: bool) -> int:
+    """Apply / remove the clip mix on every tile material; returns the count."""
+    n = 0
+    for m in tile_materials():
+        n += bool(apply_clip(m) if enabled else remove_clip(m))
+    if enabled:
+        update_clip_planes(force=True)
+    return n
+
+
+def update_clip_planes(force=False):
+    """Copy the first 3D viewport's clipping region (Alt+B) into the group:
+    Clip Enable follows ``use_clip_planes``, so Alt+B toggles the effect."""
+    ng = bpy.data.node_groups.get(CLIP_GROUP)
+    if ng is None:
+        return
+    from .camera import find_view3d
+    r3d, _ = find_view3d()
+    if r3d is None:
+        return
+    on = bool(r3d.use_clip_planes)
+    planes = [tuple(p) for p in r3d.clip_planes] if on else []
+    key = (on, tuple(round(v, 4) for p in planes for v in p))
+    if key == _last_clip[0] and not force:
+        return
+    _last_clip[0] = key
+    en = ng.nodes.get(CLIP_ENABLE)
+    if en is not None:
+        en.outputs[0].default_value = 1.0 if on else 0.0
+    for i in range(CLIP_PLANES):
+        dot, d = ng.nodes.get(f"Plane {i}"), ng.nodes.get(f"Plane {i} D")
+        if dot is None or d is None:
+            continue
+        p = planes[i] if i < len(planes) else (0.0, 0.0, 0.0, 1.0)
+        if any(abs(v) > 1e-12 for v in p[:3]) and all(v == v for v in p):   # used, no NaN
+            dot.inputs[1].default_value = p[:3]
+            d.outputs[0].default_value = p[3]
+        else:
+            dot.inputs[1].default_value = (0.0, 0.0, 0.0)
+            d.outputs[0].default_value = 1.0
+
+
 def _albedo_socket(mat):
     """Find the colour source of a material: Image Texture colour output, or a
     plain RGB from the Principled base colour."""
@@ -260,7 +428,7 @@ def apply_relight(mat) -> bool:
     nt.links.new(albedo, grp.inputs["Albedo"])
     if alpha is not None:
         nt.links.new(alpha, grp.inputs["Alpha"])
-    nt.links.new(grp.outputs["BSDF"], out.inputs["Surface"])
+    nt.links.new(grp.outputs["BSDF"], _surface_target(nt))
     return True
 
 
@@ -272,15 +440,15 @@ def remove_relight(mat) -> bool:
                 and n.node_tree.name == GROUP_NAME), None)
     if grp is None:
         return False
-    out = next((n for n in nt.nodes if n.type == "OUTPUT_MATERIAL"), None)
     bsdf = next((n for n in nt.nodes if n.type == "BSDF_PRINCIPLED"), None)
     nt.nodes.remove(grp)
     if bsdf is not None:
         bsdf.mute = False
         bsdf.hide = False
         bsdf.location.y += 400
-        if out is not None:
-            nt.links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
+        tgt = _surface_target(nt)
+        if tgt is not None:
+            nt.links.new(bsdf.outputs["BSDF"], tgt)
     return True
 
 
@@ -339,6 +507,14 @@ def draw_panel(layout, props):
     row.operator("ogc3dtiles.relight_remove", icon="X", text="")
     row.operator("ogc3dtiles.open_nodes", icon="NODETREE", text="").kind = "RELIGHT"
     layout.prop(props, "auto_relight", text="Relight new tiles")
+    row = layout.row(align=True)
+    row.prop(props, "clip_materials", text="Clip to viewport region (Alt+B)")
+    if props.clip_materials:
+        from .camera import find_view3d
+        r3d, _ = find_view3d()
+        on = bool(r3d is not None and r3d.use_clip_planes)
+        layout.label(text="Region active (Alt+B clears it)" if on
+                     else "No region: drag one with Alt+B", icon="MOD_BOOLEAN" if on else "INFO")
     ng = bpy.data.node_groups.get(GROUP_NAME)
     if ng is not None:
         col = layout.column(align=True)

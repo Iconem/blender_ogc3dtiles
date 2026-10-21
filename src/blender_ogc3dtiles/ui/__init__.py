@@ -512,16 +512,22 @@ class OGC3D_OT_ModalStream(Operator):
                 traceback.print_exc()
                 props.status_text = f"tick error: {e}"
                 changed = True
-            if changed:
-                for area in context.screen.areas:
-                    if area.type == "VIEW_3D":
-                        area.tag_redraw()
+            for area in context.screen.areas:
+                if area.type != "VIEW_3D":
+                    continue
+                if changed:
+                    area.tag_redraw()
+                else:
+                    for r in area.regions:        # sidebar status only
+                        if r.type == "UI":
+                            r.tag_redraw()
         return {"PASS_THROUGH"}
 
     def invoke(self, context, event):
         props = context.scene.ogc3dtiles
         props.is_streaming = True
         props.status_text = "Streaming…"
+        _state["status"] = None
         self._timer = context.window_manager.event_timer_add(self.INTERVAL, window=context.window)
         context.window_manager.modal_handler_add(self)
         MODAL_RUNNING[0] = True
@@ -559,9 +565,10 @@ def stream_tick(context) -> bool:
         pending += st.get("pending", 0)
         visible += len(st["render_keys"])
         parts.append(f"{st['name'][:14]} {len(st['render_keys'])}/{len(st['tiles'])}")
-    props.tiles_loaded = loaded
-    props.tiles_pending = pending
-    props.status_text = f"Visible {visible}  Loaded {loaded}  Queue {pending}  |  " + "  ".join(parts)
+    # kept in _state, not in scene properties: a scene property write tags the
+    # scene for update and restarts the Cycles viewport render every tick
+    _state["status"] = f"Visible {visible}  Loaded {loaded}  Queue {pending}  |  " + "  ".join(parts)
+    _state["counts"] = (loaded, pending)
     return changed
 
 
@@ -1054,7 +1061,8 @@ class OGC3D_PT_MainPanel(Panel):
 
         box = layout.box()
         icon = "RADIOBUT_ON" if props.is_streaming else "RADIOBUT_OFF"
-        box.label(text=props.status_text, icon=icon)
+        box.label(text=(_state.get("status") if props.is_streaming and _state.get("status")
+                        else props.status_text), icon=icon)
 
         # Tilesets
         row = layout.row()
@@ -1175,6 +1183,10 @@ class OGC3D_PT_MainPanel(Panel):
             else:
                 body.label(text="Colours in Material Preview / Rendered", icon="INFO")
             row = body.row(align=True)
+            row.prop(props, "tile_geometry", text="Shared geometry nodes")
+            op = row.operator("ogc3dtiles.open_nodes", text="", icon="NODETREE")
+            op.kind = "GEOMETRY"
+            row = body.row(align=True)
             row.prop(props, "hide_relation_lines", text="Hide relation lines")
             shown = _relationship_lines_shown(context)
             row.operator("ogc3dtiles.relation_lines", text="",
@@ -1217,6 +1229,7 @@ class OGC3D_OT_OpenNodes(Operator):
         ("RELIGHT", "Relight shader group", "'OGC3D Relight' shader node group"),
         ("COMPOSITOR", "Beauty compositor", "'OGC3D Beauty' compositor tree"),
         ("POINTS", "Point display nodes", "Geometry Nodes group of the current point display mode"),
+        ("GEOMETRY", "Tile geometry nodes", "'OGC3D Tile Geometry' group applied to every tile"),
     ], default="RELIGHT")
 
     def execute(self, context):
@@ -1236,6 +1249,12 @@ class OGC3D_OT_OpenNodes(Operator):
                 bpy.ops.ogc3dtiles.compositor_build()
                 ng = bpy.data.node_groups.get(_compositor.TREE_NAME)
             ui_type = "CompositorNodeTree"
+        elif self.kind == "GEOMETRY":
+            from ..io import ensure_tile_geometry_group
+            ng = ensure_tile_geometry_group()
+            if not props.tile_geometry:
+                props.tile_geometry = True
+            ui_type = "GeometryNodeTree"
         else:
             ng = bpy.data.node_groups.get(_GROUP_FOR_MODE.get(props.point_display, "OGC3D Points"))
             if ng is None:

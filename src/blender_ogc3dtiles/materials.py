@@ -350,6 +350,24 @@ def remove_clip(mat) -> bool:
     return True
 
 
+def set_backface_culling(enabled: bool) -> int:
+    """Single-sided (cull back faces) or double-sided tile materials, in
+    EEVEE and Cycles alike."""
+    n = 0
+    for m in tile_materials():
+        apply_backface(m, enabled)
+        n += 1
+    return n
+
+
+def apply_backface(mat, enabled: bool) -> None:
+    if mat is None:
+        return
+    mat.use_backface_culling = bool(enabled)
+    if hasattr(mat, "use_backface_culling_shadow"):
+        mat.use_backface_culling_shadow = bool(enabled)
+
+
 def set_clip_materials(enabled: bool) -> int:
     """Apply / remove the clip mix on every tile material; returns the count."""
     n = 0
@@ -509,6 +527,7 @@ def draw_panel(layout, props):
     layout.prop(props, "auto_relight", text="Relight new tiles")
     row = layout.row(align=True)
     row.prop(props, "clip_materials", text="Clip to viewport region (Alt+B)")
+    layout.prop(props, "backface_culling", text="Backface culling (single-sided)")
     if props.clip_materials:
         from .camera import find_view3d
         r3d, _ = find_view3d()

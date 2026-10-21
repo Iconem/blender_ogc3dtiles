@@ -35,6 +35,22 @@ def _on_clip_materials(self, context):
         print(f"[3DTiles] clip materials: {e}")
 
 
+def _on_backface_culling(self, context):
+    try:
+        from .. import materials
+        materials.set_backface_culling(bool(self.backface_culling))
+    except Exception as e:                        # noqa: BLE001
+        print(f"[3DTiles] backface culling: {e}")
+
+
+def _on_tile_geometry(self, context):
+    try:
+        from .. import io
+        io.set_tile_geometry(bool(self.tile_geometry))
+    except Exception as e:                        # noqa: BLE001
+        print(f"[3DTiles] tile geometry nodes: {e}")
+
+
 def _on_point_radius(self, context):
     from ..io import apply_point_radius
     apply_point_radius(context.scene)
@@ -305,6 +321,19 @@ class TilesSceneProps(PropertyGroup):
                     "material so Material Preview and Rendered clip too (EEVEE ignores "
                     "the region itself); follows Alt+B on / off while enabled",
         default=False, update=_on_clip_materials,
+    )
+    backface_culling: BoolProperty(
+        name="Backface culling",
+        description="Cull back faces of every tile material (single-sided); off = "
+                    "double-sided, which shows the inside of clipped or open meshes",
+        default=False, update=_on_backface_culling,
+    )
+    tile_geometry: BoolProperty(
+        name="Shared geometry nodes",
+        description="Put the shared 'OGC3D Tile Geometry' Geometry Nodes modifier on every "
+                    "tile (loaded and streamed later), first in the stack, so one graph "
+                    "edits the geometry of all tiles; starts as a pass-through",
+        default=False, update=_on_tile_geometry,
     )
     relight_gold: BoolProperty(
         name="Gold transfer",

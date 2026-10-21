@@ -239,6 +239,28 @@ add-on copies the viewport's clip planes each tick.  While it is on, Alt+B
 alone toggles the clipping (drag a region to clip, Alt+B again to clear);
 the planes come from the largest 3D viewport, and F12 renders use whatever
 region that viewport last had.  Untick to remove the nodes again.
+**Backface culling** below it makes every tile material single-sided (EEVEE
+and Cycles); off, the default, keeps them double-sided so clipped or open
+meshes show their inside.
+
+### Editing tile geometry
+
+**Shared geometry nodes** (Display section) puts one Geometry Nodes
+modifier, 'OGC3D Tile Geometry', first in the modifier stack of every tile
+mesh, loaded or streamed later, so a single graph edits the vertices, edges
+or attributes of all tiles (the point display modifier runs after it).  The
+group starts as a pass-through; the node-tree button opens it pinned in a
+node editor.  Untick to remove the modifier from every tile; the group stays
+in the file for the next time.
+
+### Cycles viewport
+
+Cycles restarts its viewport render whenever the scene is tagged for update.
+The add-on therefore keeps the per-tick status line out of scene properties
+and only redraws the sidebar; tiles appearing or disappearing still restart
+it, which is unavoidable.  If "GPU Compute" is greyed out in the render
+device selector, no device is ticked under Preferences, System, Cycles
+Render Devices (CUDA / OptiX / HIP / oneAPI / Metal).
 
 ### Direct mesh construction (cesium-native, default)
 

@@ -506,10 +506,7 @@ def import_glb_file(path: str, key: str, scene: bpy.types.Scene, root: bpy.types
         from ..materials import apply_relight
         for n in new_mats:
             apply_relight(bpy.data.materials.get(n))
-    if getattr(scene.ogc3dtiles, "clip_materials", False):
-        from ..materials import apply_clip
-        for n in new_mats:
-            apply_clip(bpy.data.materials.get(n))
+    _new_tile_hooks(scene, new_objs, [bpy.data.materials.get(n) for n in new_mats])
     data_names = (sorted(set(bpy.data.meshes.keys()) - before_m)
                   + new_mats
                   + sorted(set(bpy.data.images.keys()) - before_i))
@@ -694,10 +691,7 @@ def build_tile_from_payload(payload: dict, key: str, scene: bpy.types.Scene,
         from ..materials import apply_relight
         for m in me.materials:
             apply_relight(m)
-    if getattr(scene.ogc3dtiles, "clip_materials", False):
-        from ..materials import apply_clip
-        for m in me.materials:
-            apply_clip(m)
+    _new_tile_hooks(scene, [obj], list(me.materials))
     obj.hide_viewport = hidden
     obj.hide_render = hidden
     obj.select_set(False)
@@ -1160,6 +1154,83 @@ def _set_points_inputs(mod, ng, radius, mat):
             mod[item.identifier] = mat
         elif item.name == "Radius":
             mod[item.identifier] = float(radius)
+
+
+TILE_GEOMETRY_GROUP = "OGC3D Tile Geometry"
+TILE_GEOMETRY_MOD = "OGC3D Geometry"
+
+
+def ensure_tile_geometry_group():
+    """Shared, user-editable Geometry Nodes group applied to every tile when
+    'Shared geometry nodes' is on.  Created as a pass-through."""
+    ng = bpy.data.node_groups.get(TILE_GEOMETRY_GROUP)
+    if ng is not None:
+        return ng
+    ng = bpy.data.node_groups.new(TILE_GEOMETRY_GROUP, "GeometryNodeTree")
+    ng.is_modifier = True
+    ng.interface.new_socket("Geometry", in_out="INPUT", socket_type="NodeSocketGeometry")
+    ng.interface.new_socket("Geometry", in_out="OUTPUT", socket_type="NodeSocketGeometry")
+    gi = ng.nodes.new("NodeGroupInput")
+    gi.location = (-300, 0)
+    go = ng.nodes.new("NodeGroupOutput")
+    go.location = (300, 0)
+    ng.links.new(gi.outputs[0], go.inputs[0])
+    return ng
+
+
+def apply_tile_geometry(obj) -> bool:
+    """Add the shared modifier first in the stack (before the Points display)."""
+    if obj is None or obj.type != "MESH" or obj.modifiers.get(TILE_GEOMETRY_MOD) is not None:
+        return False
+    mod = obj.modifiers.new(TILE_GEOMETRY_MOD, "NODES")
+    mod.node_group = ensure_tile_geometry_group()
+    try:
+        with bpy.context.temp_override(object=obj):
+            bpy.ops.object.modifier_move_to_index(modifier=mod.name, index=0)
+    except Exception:
+        try:
+            obj.modifiers.move(len(obj.modifiers) - 1, 0)
+        except Exception:
+            pass
+    return True
+
+
+def remove_tile_geometry(obj) -> bool:
+    mod = obj.modifiers.get(TILE_GEOMETRY_MOD) if obj is not None and obj.type == "MESH" else None
+    if mod is None:
+        return False
+    obj.modifiers.remove(mod)
+    return True
+
+
+def tile_mesh_objects():
+    from ..materials import _is_tile_object
+    for o in bpy.data.objects:
+        if o.type == "MESH" and o.data is not None and _is_tile_object(o):
+            yield o
+
+
+def set_tile_geometry(enabled: bool) -> int:
+    n = 0
+    for o in list(tile_mesh_objects()):
+        n += bool(apply_tile_geometry(o) if enabled else remove_tile_geometry(o))
+    return n
+
+
+def _new_tile_hooks(scene, objs, mats):
+    """Per-scene toggles that every newly built tile must honour."""
+    props = scene.ogc3dtiles
+    if getattr(props, "clip_materials", False):
+        from ..materials import apply_clip
+        for m in mats:
+            apply_clip(m)
+    if getattr(props, "backface_culling", False):
+        from ..materials import apply_backface
+        for m in mats:
+            apply_backface(m, True)
+    if getattr(props, "tile_geometry", False):
+        for o in objs:
+            apply_tile_geometry(o)
 
 
 def _add_points_modifier(obj, radius: float = 0.04, mesh_mode=False):

@@ -1,6 +1,6 @@
 # OGC 3D Tiles Streaming — Blender Plugin
 
-![Google Photorealistic 3D Tiles over central Rome, streamed into the Blender viewport](docs/img/rome_google_3dtiles.jpg)
+![Google Photorealistic 3D Tiles over the Colosseum in Blender: viewport with the add-on sidebar, then EEVEE, Cycles with a 10 kW lamp, and EEVEE through the beauty compositor (EDL 16)](docs/img/rome_google_3dtiles.jpg)
 
 ![Sidebar: tileset list, Scene Origin, LOD / Streaming - Display, Materials - Compositor, Render, Backend](docs/img/sidebar.jpg)
 

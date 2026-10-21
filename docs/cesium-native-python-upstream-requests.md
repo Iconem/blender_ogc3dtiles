@@ -22,7 +22,6 @@ Patch: `third_party/cesium-native-python-windows.patch` (109 lines, 4 files).
 | B2 | **b3dm container padding.** Tiles whose GLB chunk is followed by padding (RealityCapture exports) fail inside the b3dm converter: the GLB reader gets the padded buffer. | Nothing on the native path; those tiles are missing. Our pure-Python backend trims to the GLB header length. | Trim to the declared GLB length before handing the span to `GltfReader`. |
 | B3 | **GIL in the load-thread callback.** `prepare_in_load_thread` runs on the worker pool holding the GIL (pybind11 default), so numpy work there serialises every worker. | Keep that callback minimal and do the mesh extraction on the main thread (about 8 ms per tile). | Document the GIL behaviour; offer `release_gil` or a batch API returning positions, indices, UVs and images for a whole `Model` in one call. |
 | B4 | **SqliteCache across processes.** Two processes on one cache file log `database is locked` on every request. | A lock file next to the db, else a pid-suffixed db per process. | Open with `busy_timeout` or WAL, or expose the option. |
-| B5 | **Raster overlays.** `attach_raster_in_main_thread` passes the texture-coordinate transforms only through the C++ struct. | Overlays are unused. | Expose the transforms as numpy so draping can be wired to a UV layer. |
 
 ## C. Worked around; an upstream fix would let us delete code
 

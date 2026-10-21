@@ -28,7 +28,6 @@ send the Windows PR right away.
 - [ ] **B2 b3dm container padding.** Tiles whose GLB chunk is followed by padding (RealityCapture exports) fail in the b3dm converter because the padded span reaches `GltfReader`. Trim to the declared GLB length.
 - [ ] **B3 GIL in `prepare_in_load_thread`.** The callback holds the GIL, so numpy work there serialises the worker pool. Document it, and offer `release_gil` or a batch call returning positions, indices, UVs and images for a whole `Model`.
 - [ ] **B4 SqliteCache across processes** logs `database is locked` per request. `busy_timeout` or WAL, or expose the option.
-- [ ] **B5 Raster overlay** texture-coordinate transforms are only reachable from C++; expose them as numpy.
 
 ### C. Worked around, an upstream fix would let integrators delete code (most impact first)
 

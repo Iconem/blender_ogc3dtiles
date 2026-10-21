@@ -1224,10 +1224,9 @@ def _new_tile_hooks(scene, objs, mats):
         from ..materials import apply_clip
         for m in mats:
             apply_clip(m)
-    if getattr(props, "backface_culling", False):
-        from ..materials import apply_backface
-        for m in mats:
-            apply_backface(m, True)
+    from ..materials import apply_backface
+    for m in mats:
+        apply_backface(m, getattr(props, "backface_mode", "DOUBLE"))
     if getattr(props, "tile_geometry", False):
         for o in objs:
             apply_tile_geometry(o)

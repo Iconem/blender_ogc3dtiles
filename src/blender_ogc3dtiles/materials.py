@@ -350,22 +350,33 @@ def remove_clip(mat) -> bool:
     return True
 
 
-def set_backface_culling(enabled: bool) -> int:
-    """Single-sided (cull back faces) or double-sided tile materials, in
-    EEVEE and Cycles alike."""
+BACKFACE_ORIGINAL = "ogc3d_backface"       # material custom prop: imported culling flag
+
+
+def set_backface_mode(mode: str) -> int:
+    """DOUBLE / SINGLE force the culling flag on every tile material (EEVEE
+    and Cycles); MATERIAL restores what the tile declared."""
     n = 0
     for m in tile_materials():
-        apply_backface(m, enabled)
+        apply_backface(m, mode)
         n += 1
     return n
 
 
-def apply_backface(mat, enabled: bool) -> None:
+def apply_backface(mat, mode: str) -> None:
     if mat is None:
         return
-    mat.use_backface_culling = bool(enabled)
+    if BACKFACE_ORIGINAL not in mat:
+        mat[BACKFACE_ORIGINAL] = int(mat.use_backface_culling)
+    if mode == "DOUBLE":
+        cull = False
+    elif mode == "SINGLE":
+        cull = True
+    else:
+        cull = bool(mat[BACKFACE_ORIGINAL])
+    mat.use_backface_culling = cull
     if hasattr(mat, "use_backface_culling_shadow"):
-        mat.use_backface_culling_shadow = bool(enabled)
+        mat.use_backface_culling_shadow = cull
 
 
 def set_clip_materials(enabled: bool) -> int:
@@ -527,7 +538,7 @@ def draw_panel(layout, props):
     layout.prop(props, "auto_relight", text="Relight new tiles")
     row = layout.row(align=True)
     row.prop(props, "clip_materials", text="Clip to viewport region (Alt+B)")
-    layout.prop(props, "backface_culling", text="Backface culling (single-sided)")
+    layout.prop(props, "backface_mode", text="Faces")
     if props.clip_materials:
         from .camera import find_view3d
         r3d, _ = find_view3d()
@@ -564,6 +575,19 @@ def _upgrade_group_on_load(_dummy=None):
     try:
         if bpy.data.node_groups.get(GROUP_NAME) is not None:
             ensure_relight_group()
+        # scene toggles that are on (by default or saved) must hold for the
+        # tiles already in the file; property defaults fire no update
+        for scene in bpy.data.scenes:
+            props = getattr(scene, "ogc3dtiles", None)
+            if props is None:
+                continue
+            if props.clip_materials:
+                set_clip_materials(True)
+            set_backface_mode(props.backface_mode)
+            if props.tile_geometry:
+                from .io import set_tile_geometry
+                set_tile_geometry(True)
+            break
     except Exception as e:                        # noqa: BLE001
         print(f"[3DTiles] relight group upgrade failed: {e}")
 

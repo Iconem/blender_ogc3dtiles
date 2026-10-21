@@ -35,12 +35,12 @@ def _on_clip_materials(self, context):
         print(f"[3DTiles] clip materials: {e}")
 
 
-def _on_backface_culling(self, context):
+def _on_backface_mode(self, context):
     try:
         from .. import materials
-        materials.set_backface_culling(bool(self.backface_culling))
+        materials.set_backface_mode(self.backface_mode)
     except Exception as e:                        # noqa: BLE001
-        print(f"[3DTiles] backface culling: {e}")
+        print(f"[3DTiles] backface mode: {e}")
 
 
 def _on_tile_geometry(self, context):
@@ -320,13 +320,19 @@ class TilesSceneProps(PropertyGroup):
         description="Copy the 3D viewport's clipping region (Alt+B) into every tile "
                     "material so Material Preview and Rendered clip too (EEVEE ignores "
                     "the region itself); follows Alt+B on / off while enabled",
-        default=False, update=_on_clip_materials,
+        default=True, update=_on_clip_materials,
     )
-    backface_culling: BoolProperty(
-        name="Backface culling",
-        description="Cull back faces of every tile material (single-sided); off = "
-                    "double-sided, which shows the inside of clipped or open meshes",
-        default=False, update=_on_backface_culling,
+    backface_mode: EnumProperty(
+        name="Faces",
+        description="Back-face handling of every tile material (EEVEE and Cycles)",
+        items=[
+            ("DOUBLE", "Force double-sided", "Never cull back faces: clipped or open meshes "
+                                            "show their inside"),
+            ("SINGLE", "Force single-sided", "Cull back faces everywhere"),
+            ("MATERIAL", "Material setting", "Keep what the tile declared (glTF doubleSided; "
+                                             "most photogrammetry exports are single-sided)"),
+        ],
+        default="DOUBLE", update=_on_backface_mode,
     )
     tile_geometry: BoolProperty(
         name="Shared geometry nodes",

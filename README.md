@@ -238,10 +238,13 @@ to a Transparent BSDF driven by the shared 'OGC3D Clip' group, into which the
 add-on copies the viewport's clip planes each tick.  While it is on, Alt+B
 alone toggles the clipping (drag a region to clip, Alt+B again to clear);
 the planes come from the largest 3D viewport, and F12 renders use whatever
-region that viewport last had.  Untick to remove the nodes again.
-**Backface culling** below it makes every tile material single-sided (EEVEE
-and Cycles); off, the default, keeps them double-sided so clipped or open
-meshes show their inside.
+region that viewport last had.  It is on by default; untick to remove the
+nodes again.  **Faces** below it sets back-face handling for every tile
+material (EEVEE and Cycles): *Force double-sided* (default: clipped or open
+meshes show their inside), *Force single-sided*, or *Material setting*,
+which restores what the tile declared (glTF `doubleSided`; most
+photogrammetry exports are single-sided, which is why tiles used to vanish
+from behind).
 
 ### Editing tile geometry
 

@@ -268,9 +268,10 @@ other way round:
   which selects tiles for the active camera at the render resolution, so
   scrubbing the timeline re-selects tiles along the camera path.
 - **Render converged animation** steps through the frame range from the
-  scene camera.  For each frame it waits until the download / build queue
-  is empty and nothing has changed for *Settle s* (or until *Max wait s*
-  has passed), renders the frame with the scene's output settings to the
+  scene camera.  The first frame waits at least *Warm-up s* (default 10:
+  empty scene, cold cache).  Every frame then waits until the download /
+  build queue is empty and nothing has changed for *Settle s* (or until
+  *Max wait s* has passed), renders the frame with the scene's output settings to the
   Output path (one file per frame, like Render Animation), then moves on.
   ESC cancels; the sidebar shows the frame, the queue length and how long
   the scene has been quiet.  Streaming starts if it is not running, and the

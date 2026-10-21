@@ -357,6 +357,13 @@ class TilesSceneProps(PropertyGroup):
                     "empty queue) before a frame is rendered",
         default=1.0, min=0.0, max=60.0,
     )
+    render_warmup_s: FloatProperty(
+        name="Warm-up",
+        description="Converged animation render: minimum wait before the first frame (empty "
+                    "scene, cold cache); later frames only need the settle time because a "
+                    "smooth camera path changes little between frames",
+        default=10.0, min=0.0, max=600.0,
+    )
     render_max_wait_s: FloatProperty(
         name="Max wait",
         description="Converged animation render: render the frame anyway after this many "

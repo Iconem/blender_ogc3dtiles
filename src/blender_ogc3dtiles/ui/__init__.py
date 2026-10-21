@@ -1220,9 +1220,10 @@ class OGC3D_PT_MainPanel(Panel):
         header.label(text="Render", icon="RENDER_ANIMATION")
         if body:
             body.prop(props, "view_source", text="Stream for")
-            row = body.row(align=True)
-            row.prop(props, "render_settle_s", text="Settle s")
-            row.prop(props, "render_max_wait_s", text="Max wait s")
+            col = body.column(align=True)
+            col.prop(props, "render_warmup_s", text="Warm-up s (first frame)")
+            col.prop(props, "render_settle_s", text="Settle s (every frame)")
+            col.prop(props, "render_max_wait_s", text="Max wait s")
             body.operator("ogc3dtiles.render_converged", icon="RENDER_ANIMATION",
                           text="Render converged animation")
             prog = _state.get("render_progress")
@@ -1280,6 +1281,7 @@ class OGC3D_OT_RenderConverged(Operator):
         scene.frame_set(frame)
         now = time.monotonic()
         self._t_frame = now
+        self._min_wait = scene.ogc3dtiles.render_warmup_s if self._i == 0 else 0.0
         _state["last_change_t"] = now
         _state["last_tick_t"] = 0.0
         _state["render_progress"] = f"frame {frame}: waiting for tiles"
@@ -1297,9 +1299,11 @@ class OGC3D_OT_RenderConverged(Operator):
         ticked = _state.get("last_tick_t", 0.0) > self._t_frame
         quiet = now - _state.get("last_change_t", now)
         converged = (ticked and _state.get("pending_total", 1) == 0
-                     and quiet >= props.render_settle_s and waited >= props.render_settle_s)
+                     and quiet >= props.render_settle_s
+                     and waited >= max(props.render_settle_s, self._min_wait))
         if not converged and waited < props.render_max_wait_s:
-            _state["render_progress"] = (f"frame {scene.frame_current}: queue "
+            stage = "warm-up" if waited < self._min_wait else "settling"
+            _state["render_progress"] = (f"frame {scene.frame_current}: {stage}, queue "
                                          f"{_state.get('pending_total', '?')}, quiet {quiet:.1f} s")
             return {"PASS_THROUGH"}
         frame = self._frames[self._i]

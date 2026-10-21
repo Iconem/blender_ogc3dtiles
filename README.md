@@ -1,5 +1,10 @@
 # OGC 3D Tiles Streaming — Blender Plugin
 
+![Google Photorealistic 3D Tiles over central Rome, streamed into the Blender viewport](docs/img/rome_google_3dtiles.jpg)
+
+![Sidebar: tileset list, Scene Origin, LOD / Streaming - Display, Materials - Compositor, Render, Backend](docs/img/sidebar.jpg)
+
+
 Stream OGC 3D Tiles tilesets directly into Blender with Cesium-compatible
 Level-of-Detail and non-blocking HTTP downloads. Two interchangeable
 backends: pure Python (always available) or cesium-native via
@@ -122,7 +127,7 @@ sequenceDiagram
     C-->>T: ViewState
     T->>B: update_view(ViewState)
     B-->>T: render set, load list (Python) / ready + freed tiles (native)
-    B->>W: fetch + decode (Python: TileDownloadManager; native: Tileset loads)
+    B->>W: fetch + decode (Python TileDownloadManager, or cesium-native Tileset loads)
     W-->>IO: payload (numpy) or GLB bytes
     IO->>S: build mesh, images, material, Points modifier (budget: Imports / tick)
     T->>S: hide/show tiles, evict, move 'OGC3D View' Empty
@@ -423,12 +428,6 @@ in the add-on preferences. The pure Python path is used otherwise.
 3. Leave the origin mode on *Auto* (first tileset centres the scene)
 4. Hit **Start**
 5. Navigate the 3D viewport — tiles load as you move the camera
-
-<p align="center">
-<img src="docs/img/sidebar_1_streaming.png" width="31%" alt="Tileset list, Scene Origin, LOD / Streaming">
-<img src="docs/img/sidebar_2_display_materials.png" width="31%" alt="Display and Materials (relight applied)">
-<img src="docs/img/sidebar_3_compositor_render_backend.png" width="31%" alt="Compositor, Render, Backend">
-</p>
 
 Every section of the sidebar is its own panel (boxed, collapsible, and
 re-orderable with the drag handle in its header, like the Object

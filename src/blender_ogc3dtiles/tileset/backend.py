@@ -110,8 +110,8 @@ else:
 
 def probe_cesium() -> tuple:
     """(available, status_message) — only checks importability."""
-    if sys.version_info < (3, 12):
-        return False, f"Python {sys.version_info.major}.{sys.version_info.minor} — needs 3.12+"
+    if sys.version_info < (3, 11):
+        return False, f"Python {sys.version_info.major}.{sys.version_info.minor} — needs 3.11+ (Blender 4.2+)"
     try:
         import cesium  # noqa: F401, PLC0415
         import cesium.tiles.selection  # noqa: F401, PLC0415
@@ -120,7 +120,7 @@ def probe_cesium() -> tuple:
             return False, f"cesium-native-python {ver} found but backend unavailable: {_native_import_error}"
         return True, f"cesium-native-python {ver} ✓"
     except ImportError:
-        return False, "Not installed — build from github.com/calebbuffa/cesium-native-python"
+        return False, "Not installed — use 'Install wheel from GitHub Release' (add-on preferences)"
     except Exception as exc:    # noqa: BLE001
         return False, f"Import error: {exc}"
 

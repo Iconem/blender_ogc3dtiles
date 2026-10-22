@@ -421,19 +421,37 @@ WGS84 (lat/lon/height)
 
 ## Installation
 
-1. Zip the `src/blender_ogc3dtiles/` folder → `blender_ogc3dtiles.zip`
-   (or symlink it into `extensions/user_default/`)
-2. Blender → Edit → Preferences → Add-ons → Install → select zip
-3. Enable "OGC 3D Tiles Streaming"
-4. View3D → Sidebar (N) → "3D Tiles" tab
+The add-on is a Blender extension (Blender 4.2 or newer; tested on 4.5 LTS,
+5.1 and 5.2 LTS).  Get `ogc_3dtiles_streaming-<version>.zip` from the
+[Releases](../../releases) page, or build it from a checkout with Blender's
+own packager:
 
-### cesium-native (optional)
+```text
+blender --command extension build --source-dir src/blender_ogc3dtiles --output-dir dist
+blender --command extension validate dist/ogc_3dtiles_streaming-0.3.0.zip
+```
 
-Build the binding for the CPython minor version Blender ships (Windows: see
-`docs/cesium-native-python-windows-build.md` for the fixes the upstream repo needs)
-(Blender 5.1 → 3.13) and install the wheel into Blender's own
-`<blender>/5.1/python/Lib/site-packages`. Then pick **CESIUM** or **AUTO**
-in the add-on preferences. The pure Python path is used otherwise.
+Then either Preferences, Get Extensions, the drop-down arrow, *Install from
+Disk*, or from a terminal:
+
+```text
+blender --command extension install-file -r user_default -e dist/ogc_3dtiles_streaming-0.3.0.zip
+```
+
+The sidebar tab "3D Tiles" appears in the 3D viewport (N).  The pure Python
+backend works out of the box; for the cesium-native backend (faster, and the
+only one that decodes meshopt / KTX2 content on Blender versions whose glTF
+importer lacks those extensions) open the add-on preferences and press
+**Install wheel from GitHub Release**, see "Installing the native backend"
+above, then restart Blender.
+
+Known limitation: on Blender 4.5 LTS (Python 3.11) the cesium-native backend
+installs and imports but crashes inside the binding's worker thread when a
+stream starts, while the same wheel streams fine from a plain Python 3.11.
+Until that is understood, use the pure Python backend on 4.x.
+
+For development, symlink `src/blender_ogc3dtiles` into
+`<config>/extensions/user_default/` and use `scripts/dev_blender.ps1`.
 
 ## Quick Start
 

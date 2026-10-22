@@ -1,178 +1,65 @@
-name: Build & Release
+# Package the Blender extension zip and attach it to a GitHub Release.
+#
+# The zip is pure Python (the cesium-native wheel is installed at runtime from
+# its own release, see README "Installing the native backend"), so this is a
+# plain archive of src/blender_ogc3dtiles with the manifest at its root,
+# the same layout `blender --command extension build` produces.  Validation
+# runs in Blender itself (downloaded once per run, ~300 MB).
+name: release extension
 
 on:
   push:
-    tags: ["v*.*.*"]
+    tags: ["v*"]
   workflow_dispatch:
     inputs:
-      publish_pypi:
-        description: "Publish to PyPI?"
-        type: boolean
-        default: false
-
-env:
-  PYTHON_VERSION: "3.12"
+      release_tag:
+        description: "Attach the zip to this GitHub Release (created if missing); empty = artifact only"
+        default: ""
 
 jobs:
-  # ── Build cesium-native-python wheels for all platforms ───────────────────────
-  build-wheels:
-    name: wheel  •  ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-          - os: windows-latest
-          - os: macos-latest
-
-    runs-on: ${{ matrix.os }}
-
-    steps:
-      - uses: actions/checkout@v4
-
-      # ── sccache ──────────────────────────────────────────────────────────────
-      - uses: mozilla-actions/sccache-action@v0.0.5
-
-      - name: Configure sccache
-        shell: bash
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true"             >> "$GITHUB_ENV"
-          echo "CMAKE_C_COMPILER_LAUNCHER=sccache"    >> "$GITHUB_ENV"
-          echo "CMAKE_CXX_COMPILER_LAUNCHER=sccache"  >> "$GITHUB_ENV"
-
-      # ── uv ───────────────────────────────────────────────────────────────────
-      - uses: astral-sh/setup-uv@v4
-        with:
-          enable-cache: true
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      # ── MSVC (Windows) ───────────────────────────────────────────────────────
-      - uses: ilammy/msvc-dev-cmd@v1
-        if: runner.os == 'Windows'
-        with:
-          arch: x64
-
-      # ── System build tools ───────────────────────────────────────────────────
-      - name: Install CMake + Ninja (Linux)
-        if: runner.os == 'Linux'
-        run: sudo apt-get install -y cmake ninja-build
-
-      - name: Install CMake + Ninja (macOS)
-        if: runner.os == 'macOS'
-        run: brew install cmake ninja
-
-      - name: Install Ninja (Windows)
-        if: runner.os == 'Windows'
-        run: choco install ninja --yes --no-progress
-
-      # ── macOS universal2 ──────────────────────────────────────────────────────
-      - name: macOS universal2 env
-        if: runner.os == 'macOS'
-        run: |
-          echo "CMAKE_OSX_ARCHITECTURES=arm64;x86_64" >> "$GITHUB_ENV"
-          echo "ARCHFLAGS=-arch arm64 -arch x86_64"   >> "$GITHUB_ENV"
-
-      # ── Build wheel via uv ────────────────────────────────────────────────────
-      # `uv build --package cesium-native-python` resolves the git source from
-      # [tool.uv.sources], clones it, and produces a wheel in dist/.
-      - name: Build cesium-native-python wheel
-        shell: bash
-        env:
-          CMAKE_GENERATOR: Ninja
-          CMAKE_BUILD_PARALLEL_LEVEL: "4"
-        run: |
-          uv build --package cesium-python --wheel --out-dir wheelhouse/
-
-      - name: Upload wheel artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: wheel-${{ matrix.os }}
-          path: wheelhouse/*.whl
-
-      - name: sccache stats
-        run: sccache --show-stats
-
-  # ── Package Blender addon zip ─────────────────────────────────────────────────
-  package-addon:
-    name: Package Addon
-    needs: build-wheels
+  package:
     runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: astral-sh/setup-uv@v4
-        with:
-          enable-cache: true
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Download all wheels
-        uses: actions/download-artifact@v4
-        with:
-          pattern: wheel-*
-          merge-multiple: true
-          path: collected-wheels/
-
-      - name: List collected wheels
-        run: ls -lh collected-wheels/
-
-      - name: Stage wheels into addon
-        run: |
-          mkdir -p blender_ogc3dtiles/wheels
-          cp collected-wheels/*.whl blender_ogc3dtiles/wheels/
-
-      - name: Update blender_manifest.toml wheel list
-        run: |
-          uv run python scripts/update_manifest_wheels.py \
-            --manifest blender_ogc3dtiles/blender_manifest.toml \
-            --wheel-dir blender_ogc3dtiles/wheels/
-
-      - name: Build addon zip
-        run: |
-          VERSION="${GITHUB_REF_NAME:-dev}"
-          ZIP="ogc_3dtiles_streaming-${VERSION}.zip"
-          zip -r "${ZIP}" blender_ogc3dtiles/ \
-            --exclude "*.pyc" \
-            --exclude "*/__pycache__/*" \
-            --exclude "*/.*"
-          echo "ADDON_ZIP=${ZIP}" >> "$GITHUB_ENV"
-          du -sh "${ZIP}"
-
-      - name: Upload addon artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: blender-addon
-          path: "*.zip"
-
-      - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            *.zip
-            collected-wheels/*.whl
-          generate_release_notes: true
-
-  # ── Publish to PyPI ───────────────────────────────────────────────────────────
-  publish-pypi:
-    name: Publish to PyPI
-    needs: build-wheels
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/') || github.event.inputs.publish_pypi == 'true'
-    environment: pypi
     permissions:
-      id-token: write   # OIDC trusted publishing
-
+      contents: write
     steps:
-      - uses: astral-sh/setup-uv@v4
+      - uses: actions/checkout@v4
 
-      - name: Download wheels
-        uses: actions/download-artifact@v4
+      - name: Build the extension zip
+        id: zip
+        run: |
+          python - <<'EOF'
+          import pathlib, re, zipfile, tomllib
+          src = pathlib.Path("src/blender_ogc3dtiles")
+          m = tomllib.loads((src / "blender_manifest.toml").read_text())
+          name = f"{m['id']}-{m['version']}.zip"
+          with zipfile.ZipFile(name, "w", zipfile.ZIP_DEFLATED) as z:
+              for p in sorted(src.rglob("*")):
+                  if p.is_dir() or "__pycache__" in p.parts or p.suffix == ".pyc":
+                      continue
+                  z.write(p, p.relative_to(src).as_posix())
+          print("created", name)
+          pathlib.Path("zipname.txt").write_text(name)
+          EOF
+          echo "name=$(cat zipname.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: Validate with Blender
+        run: |
+          curl -sSL -o blender.tar.xz https://download.blender.org/release/Blender4.5/blender-4.5.2-linux-x64.tar.xz
+          mkdir blender && tar -xJf blender.tar.xz -C blender --strip-components=1
+          ./blender/blender -b --command extension validate "${{ steps.zip.outputs.name }}"
+
+      - uses: actions/upload-artifact@v4
         with:
-          pattern: wheel-*
-          merge-multiple: true
-          path: dist/
+          name: extension
+          path: ${{ steps.zip.outputs.name }}
 
-      # uv publish handles OIDC automatically when id-token: write is set
-      - name: Publish to PyPI
-        run: uv publish dist/*.whl
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.release_tag || github.ref_name }}
+          ZIP: ${{ steps.zip.outputs.name }}
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 || \
+            gh release create "$TAG" --title "$TAG" --notes "OGC 3D Tiles Streaming extension for Blender 4.2+. Install: Preferences > Get Extensions > Install from Disk, or 'blender --command extension install-file -r user_default -e $ZIP'. The cesium-native backend is installed from the add-on preferences (Install wheel from GitHub Release)."
+          gh release upload "$TAG" "$ZIP" --clobber

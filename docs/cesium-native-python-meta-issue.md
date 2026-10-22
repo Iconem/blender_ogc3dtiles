@@ -25,9 +25,8 @@ send the Windows PR right away.
 ### B. Cannot be worked around from Python
 
 - [ ] **B1 Orthographic cameras.** `ViewState` is perspective-only (`hfov`, `vfov`). An orthographic viewport fed a narrow camera at the pivot yields a thin frustum cone and an inflated SSE (bench tileset: 35 tiles rendered, 121 culled). We emulate with a 1 degree camera placed `(frame_height / 2) / tan(0.5 deg)` behind the pivot (73 rendered, 32 culled) and fog culling off, but it is exact only on the pivot plane. Ask: `ViewState.create_orthographic(...)` with SSE = `ge * viewport_h / frame_height` and a box culling volume, or `ViewState.from_matrices(view, projection, viewport)` with planes from the clip matrix. cesium-native's own `ViewState` needs a small change for the first.
-- [ ] **B2 b3dm container padding.** Tiles whose GLB chunk is followed by padding (RealityCapture exports) fail in the b3dm converter because the padded span reaches `GltfReader`. Trim to the declared GLB length.
-- [ ] **B3 GIL in `prepare_in_load_thread`.** The callback holds the GIL, so numpy work there serialises the worker pool. Document it, and offer `release_gil` or a batch call returning positions, indices, UVs and images for a whole `Model`.
-- [ ] **B4 SqliteCache across processes** logs `database is locked` per request. `busy_timeout` or WAL, or expose the option.
+- [ ] **B2 GIL in `prepare_in_load_thread`.** The callback holds the GIL, so numpy work there serialises the worker pool. Document it, and offer `release_gil` or a batch call returning positions, indices, UVs and images for a whole `Model`.
+- [ ] **B3 SqliteCache across processes** logs `database is locked` per request. `busy_timeout` or WAL, or expose the option.
 
 ### C. Worked around, an upstream fix would let integrators delete code (most impact first)
 

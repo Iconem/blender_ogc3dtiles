@@ -1315,6 +1315,9 @@ class OGC3D_PT_BackendPanel(_OGC3DSidebar, Panel):
             row.prop(prefs, "traversal_backend", text="")
         ok, status = _cesium_status
         layout.label(text=f"cesium-native-python: {status}", icon="CHECKMARK" if ok else "INFO")
+        if not ok:
+            layout.operator("ogc3dtiles.install_cesium_wheel", icon="IMPORT",
+                            text="Install cesium-native (release wheel)")
 
 
 class OGC3D_OT_RenderConverged(Operator):

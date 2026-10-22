@@ -10,6 +10,21 @@ Level-of-Detail and non-blocking HTTP downloads. Two interchangeable
 backends: pure Python (always available) or cesium-native via
 [cesium-native-python](https://github.com/calebbuffa/cesium-native-python).
 
+## Installing the native backend
+
+The cesium-native backend is an optional wheel, `cesium-python`, built from
+[cesium-native-python](https://github.com/calebbuffa/cesium-native-python).
+No compiler is needed: Preferences, Add-ons, OGC 3D Tiles, **Install wheel
+from GitHub Release** (also offered in the sidebar's Backend section while
+the binding is missing) downloads the wheel matching Blender's CPython and
+platform from the latest Release of the configured repository and
+pip-installs it into Blender's Python.  The default repository is the
+[jo-chemla fork](https://github.com/jo-chemla/cesium-native-python/releases)
+whose CI builds Linux x86_64, Windows x64 and macOS arm64 wheels for CPython
+3.11 to 3.13; switch it to the upstream repository (or to PyPI, with `pip
+install cesium-python` in Blender's Python) once wheels are published there.
+"Build / install from source" remains for a local checkout.
+
 ## Architecture
 
 ```

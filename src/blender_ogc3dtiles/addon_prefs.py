@@ -87,6 +87,13 @@ class OGC3DTilesPreferences(AddonPreferences):
         description="Show ENU ↔ ECEF ↔ Blender mapping in a sidebar panel",
         default=False,
     )
+    cesium_wheel_repo: StringProperty(
+        name="Wheel release repo",
+        description="GitHub repository whose latest Release carries cesium-native-python "
+                    "wheels (owner/name); the matching CPython / platform wheel is "
+                    "downloaded and pip-installed into Blender's Python",
+        default="jo-chemla/cesium-native-python",
+    )
     cesium_install_path: StringProperty(
         name="cesium-native-python source dir",
         description=(
@@ -116,10 +123,13 @@ class OGC3DTilesPreferences(AddonPreferences):
             icon="CHECKMARK" if ok else ("ERROR" if "error" in status.lower() else "INFO"),
         )
 
-        # Install / rebuild buttons
+        # Install from a release wheel (no compiler needed), or build from source
+        row1 = box.row(align=True)
+        row1.operator("ogc3dtiles.install_cesium_wheel", icon="IMPORT", text="Install wheel from GitHub Release")
+        row1.operator("ogc3dtiles.reload_cesium", icon="FILE_REFRESH", text="")
+        box.prop(self, "cesium_wheel_repo", text="Release repo")
         row2 = box.row(align=True)
-        row2.operator("ogc3dtiles.install_cesium",  icon="IMPORT",        text="Install / Rebuild")
-        row2.operator("ogc3dtiles.reload_cesium",   icon="FILE_REFRESH",  text="Reload Module")
+        row2.operator("ogc3dtiles.install_cesium", icon="TOOL_SETTINGS", text="Build / install from source")
         box.prop(self, "cesium_install_path", text="Source dir")
 
         # ── 2. Performance comparison ─────────────────────────────────────────
@@ -203,6 +213,98 @@ class OGC3D_OT_InstallCesium(Operator):
         return {"FINISHED"}
 
 
+def wheel_tags():
+    """(cpython tag, platform substrings) a wheel for this interpreter must carry."""
+    import platform
+    import sys
+    cp = f"cp{sys.version_info.major}{sys.version_info.minor}"
+    machine = platform.machine().lower()
+    if sys.platform == "win32":
+        plat = ("win_amd64",) if machine in ("amd64", "x86_64") else ("win_arm64",)
+    elif sys.platform == "darwin":
+        plat = ("macosx", "arm64" if machine == "arm64" else "x86_64")
+    else:
+        plat = ("manylinux", "aarch64" if machine in ("aarch64", "arm64") else "x86_64")
+    return cp, plat
+
+
+def pick_wheel(names, cp, plat):
+    """First wheel file name matching the interpreter tag and every platform
+    substring (abi3 wheels accepted for any CPython >= their tag)."""
+    for n in names:
+        if not n.endswith(".whl") or not all(p in n for p in plat):
+            continue
+        if f"-{cp}-{cp}-" in n or f"-{cp}-abi3-" in n:
+            return n
+    for n in names:                               # abi3 built on an older CPython
+        if n.endswith(".whl") and all(p in n for p in plat) and "-abi3-" in n:
+            return n
+    return None
+
+
+class OGC3D_OT_InstallCesiumWheel(Operator):
+    """Download the cesium-native-python wheel for this Blender's Python from
+    the latest GitHub Release of the configured repo and pip-install it"""
+    bl_idname = "ogc3dtiles.install_cesium_wheel"
+    bl_label = "Install cesium-native-python wheel"
+
+    def execute(self, context):
+        import json
+        import os
+        import subprocess
+        import sys
+        import tempfile
+        import urllib.request
+        prefs = _get_prefs(context)
+        repo = (getattr(prefs, "cesium_wheel_repo", "") or "jo-chemla/cesium-native-python").strip()
+        cp, plat = wheel_tags()
+        try:
+            req = urllib.request.Request(f"https://api.github.com/repos/{repo}/releases/latest",
+                                         headers={"Accept": "application/vnd.github+json",
+                                                  "User-Agent": "blender_ogc3dtiles"})
+            with urllib.request.urlopen(req, timeout=30) as r:
+                rel = json.loads(r.read().decode("utf-8"))
+        except Exception as e:                        # noqa: BLE001
+            self.report({"ERROR"}, f"No release found at {repo}: {e}")
+            return {"CANCELLED"}
+        assets = {a["name"]: a["browser_download_url"] for a in rel.get("assets", [])}
+        name = pick_wheel(sorted(assets), cp, plat)
+        if name is None:
+            self.report({"ERROR"}, f"Release {rel.get('tag_name')} has no wheel for {cp} "
+                                   f"{'/'.join(plat)} (assets: {', '.join(sorted(assets)) or 'none'})")
+            return {"CANCELLED"}
+        tmp = tempfile.mkdtemp(prefix="ogc3dtiles_wheel_")
+        path = os.path.join(tmp, name)
+        try:
+            req = urllib.request.Request(assets[name], headers={"User-Agent": "blender_ogc3dtiles"})
+            with urllib.request.urlopen(req, timeout=600) as r, open(path, "wb") as f:
+                f.write(r.read())
+        except Exception as e:                        # noqa: BLE001
+            self.report({"ERROR"}, f"Download failed: {e}")
+            return {"CANCELLED"}
+        cmd = [sys.executable, "-m", "pip", "install", "--no-deps", "--force-reinstall", path]
+        kwargs: dict = {}
+        if sys.platform == "win32":
+            kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+        try:
+            proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                  text=True, timeout=600, **kwargs)
+        except Exception as e:                        # noqa: BLE001
+            self.report({"ERROR"}, f"pip failed: {e}")
+            return {"CANCELLED"}
+        if proc.returncode != 0:
+            print(proc.stdout)
+            self.report({"ERROR"}, f"pip install failed (rc={proc.returncode}), see System Console")
+            return {"CANCELLED"}
+        try:
+            import numpy  # noqa: F401 — the wheel's only runtime dependency
+        except ImportError:
+            subprocess.run([sys.executable, "-m", "pip", "install", "numpy"], **kwargs)
+        self.report({"INFO"}, f"Installed {name} from {repo} {rel.get('tag_name')}. "
+                              "Restart Blender (or Reload Module) to use the native backend.")
+        return {"FINISHED"}
+
+
 class OGC3D_OT_ReloadCesium(Operator):
     """Reload cesium modules without restarting Blender (Python parts only)"""
     bl_idname = "ogc3dtiles.reload_cesium"
@@ -237,6 +339,7 @@ class OGC3D_OT_ResetPerfStats(Operator):
 # ── Registration ──────────────────────────────────────────────────────────────
 
 _classes = [
+    OGC3D_OT_InstallCesiumWheel,
     OGC3DTilesPreferences,
     OGC3D_OT_InstallCesium,
     OGC3D_OT_ReloadCesium,

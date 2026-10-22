@@ -61,5 +61,5 @@ jobs:
           ZIP: ${{ steps.zip.outputs.name }}
         run: |
           gh release view "$TAG" >/dev/null 2>&1 || \
-            gh release create "$TAG" --title "$TAG" --notes "OGC 3D Tiles Streaming extension for Blender 5.1+ (tested on 5.1 and 5.2 LTS; 4.5 LTS runs with the pure Python backend only). Install: Preferences > Get Extensions > Install from Disk, or 'blender --command extension install-file -r user_default -e $ZIP'. The recommended cesium-native backend is installed from the add-on preferences (Install wheel from GitHub Release), which fetches the pre-built wheel for your Blender's Python from https://github.com/jo-chemla/cesium-native-python/releases."
+            gh release create "$TAG" --title "$TAG" --notes "OGC 3D Tiles Streaming extension for Blender 4.2+ (tested on 4.5 LTS, 5.1 and 5.2 LTS). Install: Preferences > Get Extensions > Install from Disk, or 'blender --command extension install-file -r user_default -e $ZIP'. The recommended cesium-native backend is installed from the add-on preferences (Install wheel from GitHub Release), which fetches the pre-built wheel for your Blender's Python from https://github.com/jo-chemla/cesium-native-python/releases."
           gh release upload "$TAG" "$ZIP" --clobber

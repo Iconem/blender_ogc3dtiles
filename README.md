@@ -422,7 +422,7 @@ WGS84 (lat/lon/height)
 ## Installation
 
 The add-on is a Blender extension (Blender 4.2 or newer; tested on 4.5 LTS,
-5.1 and 5.2 LTS).  Get `ogc_3dtiles_streaming-<version>.zip` from the
+5.1 and 5.2 LTS, native backend included).  Get `ogc_3dtiles_streaming-<version>.zip` from the
 [Releases](../../releases) page, or build it from a checkout with Blender's
 own packager:
 
@@ -445,10 +445,12 @@ importer lacks those extensions) open the add-on preferences and press
 **Install wheel from GitHub Release**, see "Installing the native backend"
 above, then restart Blender.
 
-Known limitation: on Blender 4.5 LTS (Python 3.11) the cesium-native backend
-installs and imports but crashes inside the binding's worker thread when a
-stream starts, while the same wheel streams fine from a plain Python 3.11.
-Until that is understood, use the pure Python backend on 4.x.
+Windows note: Blender 4.2-4.5 bundle an old MSVC runtime (14.29) and the
+loader keeps it for the whole process, so a wheel linked against the dynamic
+runtime of a current toolset crashes in its first mutex.  The released
+Windows wheels link the runtime statically and work on 4.5 and 5.x alike; the
+add-on refuses a dynamic-runtime wheel on Blender < 5.0 with a message
+instead of crashing.
 
 For development, symlink `src/blender_ogc3dtiles` into
 `<config>/extensions/user_default/` and use `scripts/dev_blender.ps1`.

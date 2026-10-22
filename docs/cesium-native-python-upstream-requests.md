@@ -19,9 +19,8 @@ Patch: `third_party/cesium-native-python-windows.patch` (109 lines, 4 files).
 | # | Symptom | What we do | Ask |
 |---|---------|------------|-----|
 | B1 | **Orthographic cameras.** `ViewState` takes `(position, direction, up, viewport, hfov, vfov)` only. An orthographic viewport fed a narrow camera at the pivot gets a thin frustum cone and an inflated SSE: bench tileset, same view, 35 tiles rendered / 121 culled. | Emulate: a 1-degree camera placed `(frame_height / 2) / tan(0.5 deg)` behind the pivot so its frame at the pivot equals the orthographic frame (73 rendered / 32 culled), fog culling off. Exact only on the pivot plane; the frustum stays a sliver, not a box. | `ViewState.create_orthographic(position, direction, up, viewport, frame_width, frame_height)`: SSE = `ge * viewport_h / frame_height`, box culling volume. cesium-native's `ViewState` is perspective-only, so this is a small upstream change too; `CullingVolume` already works on planes. Alternative: `ViewState.from_matrices(view, projection, viewport)` with Gribb-Hartmann planes, which covers orthographic and off-axis for free. |
-| B2 | **b3dm container padding.** Tiles whose GLB chunk is followed by padding (RealityCapture exports) fail inside the b3dm converter: the GLB reader gets the padded buffer. | Nothing on the native path; those tiles are missing. Our pure-Python backend trims to the GLB header length. | Trim to the declared GLB length before handing the span to `GltfReader`. |
-| B3 | **GIL in the load-thread callback.** `prepare_in_load_thread` runs on the worker pool holding the GIL (pybind11 default), so numpy work there serialises every worker. | Keep that callback minimal and do the mesh extraction on the main thread (about 8 ms per tile). | Document the GIL behaviour; offer `release_gil` or a batch API returning positions, indices, UVs and images for a whole `Model` in one call. |
-| B4 | **SqliteCache across processes.** Two processes on one cache file log `database is locked` on every request. | A lock file next to the db, else a pid-suffixed db per process. | Open with `busy_timeout` or WAL, or expose the option. |
+| B2 | **GIL in the load-thread callback.** `prepare_in_load_thread` runs on the worker pool holding the GIL (pybind11 default), so numpy work there serialises every worker. | Keep that callback minimal and do the mesh extraction on the main thread (about 8 ms per tile). | Document the GIL behaviour; offer `release_gil` or a batch API returning positions, indices, UVs and images for a whole `Model` in one call. |
+| B3 | **SqliteCache across processes.** Two processes on one cache file log `database is locked` on every request. | A lock file next to the db, else a pid-suffixed db per process. | Open with `busy_timeout` or WAL, or expose the option. |
 
 ## C. Worked around; an upstream fix would let us delete code
 
@@ -41,3 +40,10 @@ Ordered by impact, most first.
 | C10 | `CachingAssetAccessor(inner, path)` cannot set `maximum_items` / `request_options`; `TilesetOptions.request_headers` is a list of tuples while curl options take a dict. | Live with the defaults. | Expose the options; unify the header format. |
 | C11 | `BoundingVolume.center`, `Request.url`, `Response.data` are properties, sibling accessors are methods. | `callable()` checks. | Consistency, or `__getattr__` aliases. |
 | C12 | No minimal `IPrepareRendererResources` example. | Wrote our own. | A tiny Python implementation in `examples/` that just stores the model. |
+
+
+> Retracted 2026-10-22: the b3dm container-padding item. cesium-native's
+> `B3dmToGltfConverter` passes the span up to the b3dm `byteLength` and
+> `GltfReader::readBinaryGltf` slices to the GLB header length, so padded
+> tiles load fine. The failure was Blender's glTF importer rejecting GLBs
+> with trailing bytes on the pure-Python path (fixed there by trimming).

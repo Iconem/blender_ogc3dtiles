@@ -19,6 +19,7 @@ through ``pop_ready()`` and render keys through ``update_view(...)``.
 """
 from __future__ import annotations
 
+import pathlib
 import sys
 from enum import Enum
 from typing import Callable, NamedTuple
@@ -108,12 +109,48 @@ else:
 
 # ── Availability probe ────────────────────────────────────────────────────────
 
+# Blender 4.2-4.5 bundle MSVC runtime 14.29 in blender.crt and the loader keeps
+# the copy already in the process; an extension module built with a newer STL
+# (any current wheel with a dynamic CRT) then crashes in its first mutex.
+# Wheels with a static CRT import no msvcp140 and are fine anywhere.
+OLD_CRT_BLENDER_MAX = (5, 0, 0)        # Blender versions below this ship the 14.29 runtime
+
+
+def pyd_imports(path, names=(b"MSVCP140.dll", b"VCRUNTIME140.dll")) -> list:
+    """Names from ``names`` found in the module's import table (verbatim ASCII
+    strings in a PE file; a plain scan is enough and needs no PE parser)."""
+    try:
+        data = pathlib.Path(path).read_bytes()
+    except OSError:
+        return []
+    low = data.lower()
+    return [n.decode() for n in names if n.lower() in low]
+
+
+def host_crt_too_old() -> bool:
+    """True on Windows inside a Blender older than 5.0 (bundled runtime 14.29)."""
+    if sys.platform != "win32":
+        return False
+    try:
+        import bpy  # noqa: PLC0415
+        return tuple(bpy.app.version) < OLD_CRT_BLENDER_MAX
+    except Exception:          # noqa: BLE001 — no bpy (tests)
+        return False
+
+
 def probe_cesium() -> tuple:
-    """(available, status_message) — only checks importability."""
+    """(available, status_message) — importability plus the Windows runtime check."""
     if sys.version_info < (3, 11):
         return False, f"Python {sys.version_info.major}.{sys.version_info.minor} — needs 3.11+ (Blender 4.2+)"
     try:
         import cesium  # noqa: F401, PLC0415
+        if host_crt_too_old():
+            import cesium._native as _n  # noqa: PLC0415
+            dyn = pyd_imports(getattr(_n, "__file__", ""))
+            if dyn:
+                return False, ("this wheel needs the MSVC runtime " + ", ".join(dyn) +
+                               " newer than the one Blender < 5.0 bundles (14.29): use a "
+                               "static-CRT wheel or Blender 5.x")
         import cesium.tiles.selection  # noqa: F401, PLC0415
         ver = getattr(cesium, "__version__", "0.1.0")
         if CesiumNativeBackend is None:

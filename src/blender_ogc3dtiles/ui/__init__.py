@@ -368,7 +368,10 @@ def _decide_origin(props, center_ecef) -> None:
             return
         print(f"[3DTiles] Scene origin re-centred: tileset centre {d_km:.1f} km "
               f"> {props.origin_reuse_km:g} km")
-    _set_origin_from_ecef(props, cx, cy, cz)
+    if math.dist((cx, cy, cz), (0.0, 0.0, 0.0)) < LOCAL_TILESET_RADIUS_M:
+        _set_origin_local(props, cz)
+    else:
+        _set_origin_from_ecef(props, cx, cy, cz)
     props.origin_valid = True
     _state["origin_set"] = True
     for other in _state["streams"].values():
@@ -1013,6 +1016,28 @@ def fit_clip_range(radius_m):
         print(f"[3DTiles] Clip range fit failed: {e}")
 
 
+# a tileset whose centre is this close to the ECEF origin is not georeferenced
+# (it sits deep inside the Earth): local converter output such as 3dtiled
+# splat tilesets, photogrammetry exported without a root transform, ...
+LOCAL_TILESET_RADIUS_M = 1.0e6
+_WGS84_B = 6356752.314245
+
+
+def _set_origin_local(props, cz):
+    """Origin at the north pole, longitude -90, height -b: the ENU frame is
+    then the identity (E=X, N=Y, U=Z, origin at ECEF 0), so a non-georeferenced
+    tileset keeps its own Z-up axes and metres in Blender; the height takes
+    the tileset's vertical centre to z=0."""
+    props.origin_lat = 90.0
+    props.origin_lon = -90.0
+    props.origin_height = -_WGS84_B + cz
+    print(f"[3DTiles] Scene origin: local (tileset is not georeferenced), identity frame")
+
+
+def is_local_origin(props) -> bool:
+    return props.origin_lat >= 89.999 and props.origin_height < -6.0e6
+
+
 def _set_origin_from_ecef(props, ex, ey, ez):
     lat, lon, h = ecef_to_geodetic(ex, ey, ez)
     props.origin_lat = lat
@@ -1143,8 +1168,11 @@ class OGC3D_PT_OriginPanel(_OGC3DSidebar, Panel):
         col.prop(props, "origin_lon", text="Longitude °")
         col.prop(props, "origin_height", text="Height m")
         row = layout.row()
-        row.label(text="Origin set" if props.origin_valid else "Origin not set yet",
-                  icon="CHECKMARK" if props.origin_valid else "INFO")
+        if props.origin_valid and is_local_origin(props):
+            row.label(text="Local tileset (not georeferenced)", icon="CHECKMARK")
+        else:
+            row.label(text="Origin set" if props.origin_valid else "Origin not set yet",
+                      icon="CHECKMARK" if props.origin_valid else "INFO")
         row.operator("ogc3dtiles.origin_reset", text="", icon="FILE_REFRESH")
 
 
@@ -1224,6 +1252,11 @@ class OGC3D_PT_DisplayPanel(_OGC3DSidebar, Panel):
             row.prop(props, "point_px_max_m", text="Max m")
         else:
             layout.prop(props, "point_scale", text="Point scale")
+        if any(o.get("splats") for o in bpy.data.objects):
+            from ..io import splats_supported
+            layout.label(text=("Gaussian splat tiles: native 3DGS point clouds" if splats_supported()
+                               else "Splat tiles shown as points (Blender 5.3+ renders splats)"),
+                         icon="OUTLINER_OB_POINTCLOUD" if splats_supported() else "INFO")
         if props.point_display == "MESH":
             layout.label(text="Solid mode: Shading → Color → Attribute", icon="INFO")
         elif props.point_display == "DISCS":

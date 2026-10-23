@@ -693,6 +693,10 @@ class OGC3D_OT_PlacePick(Operator):
         was_streaming = props.is_streaming
         if was_streaming:
             bpy.ops.ogc3dtiles.stop_stream()       # the old tiles go at the next Start
+        # latitude / longitude at once (a Start pressed meanwhile lands at the
+        # place); the height follows and restarts a stream started meanwhile
+        props.origin_lat, props.origin_lon = p["lat"], p["lon"]
+        props.origin_valid = True
         props.origin_place = p["label"]
         props.place_status = "Fetching the ground height..."
         # the height lookup downloads a terrain tile (and the geoid grid the
@@ -718,7 +722,10 @@ class OGC3D_OT_PlacePick(Operator):
             print(f"[3DTiles] Scene origin: {p['label']} lat={p['lat']:.5f} lon={p['lon']:.5f} "
                   f"h={h:.1f} m (ground {msl:.1f} + geoid {n:.1f})")
             _look_at_origin(bpy.context)
-            if was_streaming:
+            if pr.is_streaming:                    # started while the height was pending
+                bpy.ops.ogc3dtiles.stop_stream()
+                bpy.app.timers.register(lambda: _start_stream_in_view(), first_interval=0.3)
+            elif was_streaming:
                 _start_stream_in_view()
             for window in bpy.context.window_manager.windows:
                 for area in window.screen.areas:

@@ -330,7 +330,7 @@ def _start_stream(scene, props, st, choice, cache) -> None:
         backend.set_root(root_tile)
         st["root_tile"] = root_tile
         cx, cy, cz, root_r = root_tile.sphere_ecef()
-        _decide_origin(props, (cx, cy, cz))
+        _decide_origin(props, (cx, cy, cz), root_r)
         if not bpy.app.background:
             fit_clip_range(root_r)
         st["download_mgr"] = TileDownloadManager(
@@ -350,13 +350,25 @@ def _start_stream(scene, props, st, choice, cache) -> None:
     st["backend"] = backend
 
 
-def _decide_origin(props, center_ecef) -> None:
+def _decide_origin(props, center_ecef, radius_m=None) -> None:
     """Scene-origin policy, evaluated when a tileset's centre becomes known.
     Only the first tileset of a session can move the origin; afterwards every
     stream shares it."""
     if _state["origin_set"]:
         return
     cx, cy, cz = center_ecef
+    near_centre = math.dist((cx, cy, cz), (0.0, 0.0, 0.0)) < LOCAL_TILESET_RADIUS_M
+    if near_centre and (radius_m is None or radius_m >= LOCAL_TILESET_RADIUS_M):
+        # a global tileset (Google, a terrain layer): its centre is the Earth's
+        # centre, which is no origin. Keep whatever origin is set, else the
+        # lat/lon/h in the panel (use Custom to pick the place of interest)
+        print("[3DTiles] Global tileset: origin kept at "
+              f"{props.origin_lat:.4f}, {props.origin_lon:.4f} (set a Custom origin to move)")
+        props.origin_valid = True
+        _state["origin_set"] = True
+        for other in _state["streams"].values():
+            other["last_sig"] = None
+        return
     if props.origin_mode == "AUTO" and props.origin_valid:
         ox, oy, oz = geodetic_to_ecef(props.origin_lat, props.origin_lon, props.origin_height)
         d_km = math.dist((cx, cy, cz), (ox, oy, oz)) / 1000.0
@@ -368,7 +380,7 @@ def _decide_origin(props, center_ecef) -> None:
             return
         print(f"[3DTiles] Scene origin re-centred: tileset centre {d_km:.1f} km "
               f"> {props.origin_reuse_km:g} km")
-    if math.dist((cx, cy, cz), (0.0, 0.0, 0.0)) < LOCAL_TILESET_RADIUS_M:
+    if near_centre:
         _set_origin_local(props, cz)
     else:
         _set_origin_from_ecef(props, cx, cy, cz)
@@ -850,7 +862,7 @@ def _tick_native(scene, props, st, now) -> bool:
         if c is None:
             st["pending"] = 0
             return False
-        _decide_origin(props, c)
+        _decide_origin(props, c, backend.root_radius_m())
     if not st.get("clip_fit"):
         r = backend.root_radius_m()
         if r is not None:

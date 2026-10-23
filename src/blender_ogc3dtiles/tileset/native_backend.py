@@ -462,6 +462,7 @@ class CesiumNativeBackend:
         self._freed = []
         self._overlay_events = []
         self._overlays = {}                     # uid -> RasterOverlay
+        self._globe = False                     # procedural ellipsoid tileset
         self._rendered = set()
         self._counter = 0
         self._tmpdir = tempfile.mkdtemp(prefix="ogc3dtiles_native_")
@@ -531,6 +532,7 @@ class CesiumNativeBackend:
             # procedural WGS84 ellipsoid (quadtree of ellipsoid patches), the
             # surface raster overlays are draped on when there is no tileset
             self._tileset = sel.EllipsoidTilesetLoader.create_tileset(ext, opts)
+            self._globe = True
         elif u.startswith("ion://"):
             self._tileset = sel.Tileset(ext, int(u[6:]), ion_token or "", opts)
         elif u.isdigit() and ion_token:
@@ -645,6 +647,8 @@ class CesiumNativeBackend:
         """Bounding-sphere radius (m) of the root volume, None when unknown."""
         if self._tileset is None or self._tileset.root_tile is None:
             return None
+        if self._globe:                 # the root region spans the whole ellipsoid
+            return 6378137.0
         root = self._tileset.root_tile
         if root.child_count == 1 and root.geometric_error == float("inf"):
             root = root.children[0]
@@ -663,6 +667,8 @@ class CesiumNativeBackend:
         """ECEF centre of the root bounding volume once tileset.json is in."""
         if self._tileset is None or self._tileset.root_tile is None:
             return None
+        if self._globe:
+            return (0.0, 0.0, 0.0)      # a global tileset: the origin policy keeps the user's origin
         root = self._tileset.root_tile
         # cesium-native wraps tileset.json in an extra root (ge=inf); use the
         # real root's volume when there is exactly one child

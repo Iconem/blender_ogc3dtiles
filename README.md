@@ -289,6 +289,8 @@ tiles (meshes); point clouds and Gaussian splat tiles have no texture
 coordinates.  The raster images are packed into the .blend, so a saved scene
 keeps its drape.
 
+![WGS84 globe entry with the OpenStreetMap overlay ticked live, over Rome](docs/img/globe_osm.jpg)
+
 **WGS84 globe.** A tileset entry of type *WGS84 globe* streams
 cesium-native's procedural ellipsoid instead of a tileset.json: a bare
 globe, subdivided as the camera approaches, to drape imagery on when there

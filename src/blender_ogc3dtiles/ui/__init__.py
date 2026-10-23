@@ -608,6 +608,15 @@ class OGC3D_OT_PlacePick(Operator):
 
     index: bpy.props.IntProperty(default=0)
 
+    @classmethod
+    def description(cls, context, properties):
+        if 0 <= properties.index < len(_places):
+            pl = _places[properties.index]
+            kind = f" ({pl['kind'].replace('_', ' ')})" if pl["kind"] else ""
+            return (f"{pl['label']}{kind}\n{pl['lat']:.5f}, {pl['lon']:.5f}\n"
+                    "Put the scene origin here")
+        return cls.__doc__
+
     def execute(self, context):
         from .. import geosearch
         from ..io import default_cache_dir
@@ -1480,8 +1489,7 @@ class OGC3D_PT_OriginPanel(_OGC3DSidebar, Panel):
                 box = layout.box()
                 col = box.column(align=True)
                 for i, pl in enumerate(_places):
-                    op = col.operator("ogc3dtiles.place_pick",
-                                      text=f"{pl['label']}" + (f"  ({pl['kind']})" if pl["kind"] else ""),
+                    op = col.operator("ogc3dtiles.place_pick", text=pl["label"],
                                       icon="PINNED" if pl["label"] == props.origin_place else "UNPINNED")
                     op.index = i
             if props.place_status:

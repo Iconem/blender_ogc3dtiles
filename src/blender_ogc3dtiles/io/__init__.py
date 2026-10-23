@@ -650,6 +650,8 @@ def build_tile_from_payload(payload: dict, key: str, scene: bpy.types.Scene,
             na.data.foreach_set("vector", np.ascontiguousarray(nrm, dtype=np.float32).ravel())
         except Exception:
             pass
+    if payload.get("splats"):
+        _store_splat_attributes(me, payload)
     cols = payload.get("colors")
     if cols is not None and len(cols) == n_v:
         attr = me.color_attributes.new("Col", "FLOAT_COLOR", "POINT")
@@ -687,7 +689,12 @@ def build_tile_from_payload(payload: dict, key: str, scene: bpy.types.Scene,
     obj.parent = root
     obj.matrix_parent_inverse = Matrix.Identity(4)
     obj.matrix_world = root.matrix_world @ Matrix(apply_payload_offset(matrix_rows, payload))
-    if payload.get("points"):
+    if payload.get("splats") and splats_supported():
+        obj["splats"] = True
+        _add_splats_modifier(obj)
+    elif payload.get("points"):
+        if payload.get("splats"):
+            obj["splats"] = True            # shown as coloured points below Blender 5.3
         spacing = float(payload.get("point_spacing") or 0.0)
         obj["point_radius_auto"] = min(max(0.6 * spacing, 0.01), 2.0) if spacing > 0 else 0.05
         _add_points_modifier(obj, point_radius_for(scene, payload),
@@ -842,6 +849,72 @@ POINTS_NODEGROUP = "OGC3D Points"
 POINTS_MESH_NODEGROUP = "OGC3D Points (Mesh)"
 POINTS_DISC_NODEGROUP = "OGC3D Points (Discs)"
 OVERLAY_UV_PREFIX = "_CESIUMOVERLAY_"
+SPLATS_NODEGROUP = "OGC3D Splats"          # Mesh → Points → 3D Gaussian Splat (Blender 5.3+)
+SPLAT_SH_C0 = 0.28209479177387814          # Y00: colour = 0.5 + C0 * dc
+
+
+def splats_supported() -> bool:
+    """Blender 5.3 added the Gaussian splat point cloud type and the Set
+    Point Cloud Type node."""
+    return tuple(bpy.app.version) >= (5, 3, 0) and hasattr(bpy.types, "GeometryNodePointsSetType")
+
+
+def _store_splat_attributes(me, payload) -> None:
+    """Blender's native splat attributes on the vertex-only mesh: they survive
+    Mesh → Points. radiance:base = spherical-harmonic DC term + opacity, scale
+    in metres, rotation as (w, x, y, z), radiance:sh_n for higher degrees."""
+    import numpy as np
+    n = len(me.vertices)
+    rot, scl = payload.get("splat_rotation"), payload.get("splat_scale")
+    cols = payload.get("colors")
+    if rot is None or scl is None or len(rot) != n or len(scl) != n:
+        return
+    if cols is not None and len(cols) == n:
+        rgb, alpha = cols[:, :3], cols[:, 3:4]
+    else:
+        rgb, alpha = np.full((n, 3), 0.5, np.float32), np.ones((n, 1), np.float32)
+    base = np.concatenate([(rgb - 0.5) / SPLAT_SH_C0, alpha], axis=1).astype(np.float32)
+    for name, dtype, key, arr in (("radiance:base", "FLOAT4", "vector", base),
+                                  ("scale", "FLOAT_VECTOR", "vector", scl),
+                                  ("rotation", "QUATERNION", "value", rot)):
+        a = me.attributes.get(name) or me.attributes.new(name, dtype, "POINT")
+        a.data.foreach_set(key, np.ascontiguousarray(arr, dtype=np.float32).ravel())
+    for i, coef in enumerate(payload.get("splat_sh") or []):
+        if len(coef) != n:
+            break
+        a = me.attributes.new(f"radiance:sh_{i}", "FLOAT_VECTOR", "POINT")
+        a.data.foreach_set("vector", np.ascontiguousarray(coef, dtype=np.float32).ravel())
+
+
+def _splats_nodegroup():
+    ng = bpy.data.node_groups.get(SPLATS_NODEGROUP)
+    if ng is not None:
+        return ng
+    ng = bpy.data.node_groups.new(SPLATS_NODEGROUP, "GeometryNodeTree")
+    ng.is_modifier = True
+    ng.interface.new_socket("Geometry", in_out="INPUT", socket_type="NodeSocketGeometry")
+    ng.interface.new_socket("Geometry", in_out="OUTPUT", socket_type="NodeSocketGeometry")
+    gi = ng.nodes.new("NodeGroupInput")
+    gi.location = (-400, 0)
+    m2p = ng.nodes.new("GeometryNodeMeshToPoints")
+    m2p.location = (-150, 0)
+    st = ng.nodes.new("GeometryNodePointsSetType")
+    st.location = (100, 0)
+    st.inputs["Type"].default_value = "3D Gaussian Splat"
+    go = ng.nodes.new("NodeGroupOutput")
+    go.location = (350, 0)
+    ng.links.new(gi.outputs[0], m2p.inputs["Mesh"])
+    ng.links.new(m2p.outputs[0], st.inputs[0])
+    ng.links.new(st.outputs[0], go.inputs[0])
+    return ng
+
+
+def _add_splats_modifier(obj) -> None:
+    try:
+        mod = obj.modifiers.new("Splats", "NODES")
+        mod.node_group = _splats_nodegroup()
+    except Exception as e:                           # noqa: BLE001
+        print(f"[3DTiles] splats modifier failed: {e}")
 POINT_GROUPS = (POINTS_NODEGROUP, POINTS_MESH_NODEGROUP, POINTS_DISC_NODEGROUP)
 _GROUP_FOR_MODE = {"POINTS": POINTS_NODEGROUP, "MESH": POINTS_MESH_NODEGROUP,
                    "DISCS": POINTS_DISC_NODEGROUP}
@@ -1255,12 +1328,13 @@ def _add_points_modifier(obj, radius: float = 0.04, mesh_mode=False):
 
 
 def apply_point_display(mode: str) -> int:
-    """Switch every point tile between the point / tetrahedra / disc groups."""
+    """Switch every point tile between the point / tetrahedra / disc groups
+    (Gaussian splat tiles keep their own group)."""
     ng = _points_nodegroup(_display_mode(mode))
     n = 0
     for o in bpy.data.objects:
         mod = o.modifiers.get("Points") if o.type == "MESH" else None
-        if mod is None or mod.type != "NODES" or mod.node_group is ng:
+        if mod is None or mod.type != "NODES" or mod.node_group is ng or o.get("splats"):
             continue
         mod.node_group = ng
         mat = o.data.materials[0] if o.data.materials else None

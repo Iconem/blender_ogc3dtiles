@@ -226,6 +226,95 @@ def _image_payload(cs, model, image_index: int):
 
 
 OVERLAY_UV_PREFIX = "_CESIUMOVERLAY_"    # RasterOverlayUtilities default base name
+# KHR_gaussian_splatting (spec names; cesium-native decodes the SPZ-compressed
+# form into these attributes as well; older converters used the underscored
+# names, both are accepted)
+_SPLAT_ROTATION = ("KHR_gaussian_splatting:ROTATION", "_ROTATION")
+_SPLAT_SCALE = ("KHR_gaussian_splatting:SCALE", "_SCALE")
+_SPLAT_SH = "SH_DEGREE_"
+
+
+def _first_attr(prim, names):
+    for n in names:
+        ai = prim.attributes.get(n)
+        if ai is not None:
+            return ai
+    return None
+
+
+def _quat_from_matrix(R):
+    """Unit quaternion (x, y, z, w) of a 3x3 rotation matrix (Shepperd)."""
+    t = np.trace(R)
+    if t > 0:
+        s = np.sqrt(t + 1.0) * 2.0
+        return np.array([(R[2, 1] - R[1, 2]) / s, (R[0, 2] - R[2, 0]) / s,
+                         (R[1, 0] - R[0, 1]) / s, 0.25 * s])
+    i = int(np.argmax(np.diag(R)))
+    j, k = (i + 1) % 3, (i + 2) % 3
+    s = np.sqrt(1.0 + R[i, i] - R[j, j] - R[k, k]) * 2.0
+    q = np.zeros(4)
+    q[i] = 0.25 * s
+    q[j] = (R[j, i] + R[i, j]) / s
+    q[k] = (R[k, i] + R[i, k]) / s
+    q[3] = (R[k, j] - R[j, k]) / s
+    return q
+
+
+def _quat_mul(a, b):
+    """Hamilton product of (N,4) or (4,) quaternions in (x, y, z, w) order."""
+    ax, ay, az, aw = a[..., 0], a[..., 1], a[..., 2], a[..., 3]
+    bx, by, bz, bw = b[..., 0], b[..., 1], b[..., 2], b[..., 3]
+    return np.stack([aw * bx + ax * bw + ay * bz - az * by,
+                     aw * by - ax * bz + ay * bw + az * bx,
+                     aw * bz + ax * by - ay * bx + az * bw,
+                     aw * bw - ax * bx - ay * by - az * bz], axis=-1)
+
+
+def _splat_arrays(cs, model, prim, T, n):
+    """Rotation (N,4 as Blender w,x,y,z), scale (N,3 metres) and spherical
+    harmonics [(N,3) per coefficient, spec order] of a splat primitive,
+    expressed in Blender's Z-up tile frame, or None when the primitive is
+    not a splat cloud."""
+    ri, si = _first_attr(prim, _SPLAT_ROTATION), _first_attr(prim, _SPLAT_SCALE)
+    if ri is None or si is None:
+        return None
+    rot = _as_array(cs.gltf.AccessorViewVec4(model, ri), np.float64)
+    scl = _as_array(cs.gltf.AccessorViewVec3(model, si), np.float64)
+    if rot is None or scl is None or len(rot) != n or len(scl) != n:
+        return None
+    # node transform: rotation composes, a uniform scale scales the splats
+    R = T[:3, :3]
+    sT = np.linalg.norm(R, axis=0)
+    sT[sT == 0] = 1.0
+    Rn = R / sT
+    if not np.allclose(Rn, np.eye(3), atol=1e-6):
+        rot = _quat_mul(_quat_from_matrix(Rn)[None, :], rot)
+    scl = scl * float(np.cbrt(abs(np.linalg.det(R))) or 1.0)
+    # glTF Y-up -> Blender Z-up is the rotation (x, y, z) -> (x, -z, y); the
+    # ellipsoid is unchanged when the rotation is conjugated and the local
+    # scale axes permuted the same way (the unit sphere is rotation invariant)
+    rot = rot[:, [0, 2, 1, 3]] * np.array([1.0, -1.0, 1.0, 1.0])
+    scl = scl[:, [0, 2, 1]]
+    norm = np.linalg.norm(rot, axis=1, keepdims=True)
+    norm[norm == 0] = 1.0
+    rot = rot / norm
+    rot_wxyz = rot[:, [3, 0, 1, 2]].astype(np.float32)
+    sh = []
+    keys = []
+    for name, ai in prim.attributes.items():
+        if _SPLAT_SH in name:
+            try:
+                parts = name.split(_SPLAT_SH)[1].split("_COEF_")
+                keys.append((int(parts[0]), int(parts[1]), ai))
+            except (IndexError, ValueError):
+                continue
+    for _deg, _coef, ai in sorted(keys):
+        arr = _as_array(cs.gltf.AccessorViewVec3(model, ai), np.float32)
+        if arr is None or len(arr) != n:
+            sh = []
+            break
+        sh.append(arr)
+    return rot_wxyz, scl.astype(np.float32), sh
 
 
 def extract_mesh_payload(cs, model):
@@ -245,6 +334,8 @@ def extract_mesh_payload(cs, model):
     have_uvs = True
     have_colors = True
     all_points = True
+    splat_rot, splat_scale, splat_sh = [], [], []
+    all_splats = True
     mats_used = {}
     base = 0
     for prim, T in prims:
@@ -279,9 +370,17 @@ def extract_mesh_payload(cs, model):
             have_colors = False
 
         if mode == _MODE_POINTS:
+            sp = _splat_arrays(cs, model, prim, T, n)
+            if sp is not None:
+                splat_rot.append(sp[0])
+                splat_scale.append(sp[1])
+                splat_sh.append(sp[2])
+            else:
+                all_splats = False
             base += n
             continue
         all_points = False
+        all_splats = False
 
         idx_view = cs.gltf.get_index_accessor_view(model, prim)
         idx = _as_array(idx_view, np.int64) if idx_view is not None else np.arange(n, dtype=np.int64)
@@ -366,8 +465,18 @@ def extract_mesh_payload(cs, model):
                         m["image"] = src if images[src] is not None else None
         materials.append(m)
 
+    splats = all_points and all_splats and bool(splat_rot)
+    sh_out = None
+    if splats:
+        counts = {len(s) for s in splat_sh}
+        if len(counts) == 1 and splat_sh[0]:
+            sh_out = [np.concatenate([s[i] for s in splat_sh]) for i in range(len(splat_sh[0]))]
     return finalize_payload({
         "verts": V,
+        "splats": splats,
+        "splat_rotation": np.concatenate(splat_rot) if splats else None,
+        "splat_scale": np.concatenate(splat_scale) if splats else None,
+        "splat_sh": sh_out,
         "normals": np.concatenate(normals) if (have_normals and normals) else None,
         "faces": F,
         "uvs": np.concatenate(uvs) if (have_uvs and uvs and not all_points) else None,

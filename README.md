@@ -150,8 +150,19 @@ sequenceDiagram
 
 ### Several tilesets at once
 
-The sidebar holds a list of tilesets (add / remove, per-entry URL, ion token
-and SSE).  Every entry becomes its own stream with its own backend instance,
+The sidebar holds a list of tilesets (add / remove, per-entry type, source
+and SSE).  An entry is one of three types: **3D Tiles** (a `tileset.json`
+URL or local path), **Cesium ion** (asset id and access token; the token is
+only sent to Cesium ion) or **WGS84 globe** (cesium-native's procedural
+ellipsoid, a bare globe to drape imagery on).  Each entry has a *Raster
+overlays* checkbox, off for 3D Tiles and ion entries and switched on when
+the type becomes globe; the overlay list only shows when it is ticked, and
+ticking it while streaming adds or removes the overlays live.  Ion and globe
+entries need the cesium-native backend.
+
+![Entry types: WGS84 globe with an OpenStreetMap overlay, 3D Tiles URL with overlays off, Cesium ion asset](docs/img/tileset_types.png)
+
+Every entry becomes its own stream with its own backend instance,
 download manager, root Empty (`3D Tiles · <name>`) and sub-collection
 (`Tiles · <name>`), all sharing the scene origin and the viewport camera.
 Moving, rotating or scaling a root Empty is honoured by culling and SSE for

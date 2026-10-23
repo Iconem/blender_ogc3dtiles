@@ -99,6 +99,11 @@ def attach(mat, tex_id, image_name, translation, scale, alpha=1.0) -> bool:
     # consumers of the previous colour now read the mix
     for link in list(src.links):
         nt.links.new(mix.outputs[2], link.to_socket)
+    if not mix.outputs[2].links:
+        # untextured material: the base colour was a plain value, feed the BSDF
+        bsdf = next((n for n in nt.nodes if n.type == "BSDF_PRINCIPLED"), None)
+        if bsdf is not None:
+            nt.links.new(mix.outputs[2], bsdf.inputs["Base Color"])
     nt.links.new(src, mix.inputs[6])
     nt.links.new(tex.outputs["Color"], mix.inputs[7])
     return True

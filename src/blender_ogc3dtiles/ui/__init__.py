@@ -39,6 +39,7 @@ from ..io import (
     tile_world_matrix,
 )
 from ..tileset.backend import PythonBackend, make_backend, probe_cesium
+from ..tileset.native_backend import GLOBE_URL
 from ..tileset.traversal import (
     Tile,
     TileState,
@@ -123,9 +124,10 @@ def _enu_from_ecef(props):
 
 def _enabled_items(props):
     """Tileset list entries to stream; falls back to the single URL field."""
-    items = [(i, it) for i, it in enumerate(props.tilesets) if it.enabled and it.url.strip()]
+    items = [(i, it) for i, it in enumerate(props.tilesets)
+             if it.enabled and (it.url.strip() or it.kind == "GLOBE")]
     if not items and props.tileset_url.strip():
-        empty = next((x for x in props.tilesets if not x.url.strip()), None)
+        empty = next((x for x in props.tilesets if not x.url.strip() and x.kind != "GLOBE"), None)
         it = empty if empty is not None else props.tilesets.add()
         it.name = _short_label(props.tileset_url)
         it.url = props.tileset_url.strip()
@@ -201,11 +203,34 @@ class OGC3D_OT_TilesetAdd(Operator):
         return {"FINISHED"}
 
 
-def _overlay_specs(item) -> list:
+def overlay_live_toggle(scene, ov) -> None:
+    """OverlayItem.enabled changed: mirror it on the running backend."""
+    props = scene.ogc3dtiles
+    for it in props.tilesets:
+        if any(o == ov for o in it.overlays):
+            break
+    else:
+        return
+    st = _state["streams"].get(it.uid) if it.uid else None
+    backend = st.get("backend") if st else None
+    if backend is None or not hasattr(backend, "add_overlay"):
+        return
+    if not ov.uid:
+        ov.uid = f"ov_{uuid.uuid4().hex[:8]}"
+    if ov.enabled:
+        spec = _overlay_specs(it, only=ov)
+        if spec:
+            backend.add_overlay(spec[0])
+    else:
+        backend.remove_overlay(ov.uid)
+    st["overlays"] = _overlay_specs(it)
+
+
+def _overlay_specs(item, only=None) -> list:
     """Backend specs for the enabled overlays of a tileset list entry."""
     specs = []
     for ov in item.overlays:
-        if not ov.enabled:
+        if not ov.enabled or (only is not None and ov != only):
             continue
         if not ov.uid:
             ov.uid = f"ov_{uuid.uuid4().hex[:8]}"
@@ -384,8 +409,9 @@ class OGC3D_OT_StartStream(Operator):
 def _start_item(scene, props, item) -> dict:
     """Create and start the stream for one list entry; registers it in
     ``_state`` (with ``error`` set when the start failed)."""
-    st = _new_stream(_item_key(item), item.name or _short_label(item.url),
-                     item.url.strip(), item.ion_token, effective_sse(props, item))
+    url = GLOBE_URL if getattr(item, "kind", "TILESET") == "GLOBE" else item.url.strip()
+    st = _new_stream(_item_key(item), item.name or (_short_label(url) if url != GLOBE_URL else "WGS84 globe"),
+                     url, item.ion_token, effective_sse(props, item))
     st["overlays"] = _overlay_specs(item)
     try:
         _start_stream(scene, props, st, _state["choice"], _state["cache"])
@@ -425,6 +451,8 @@ def _start_stream(scene, props, st, choice, cache) -> None:
     st["root_obj"] = ensure_root_empty(scene, _root_name(label), sub).name
 
     if isinstance(backend, PythonBackend):
+        if st["url"] == GLOBE_URL:
+            raise RuntimeError("The WGS84 globe needs the cesium-native backend")
         headers = {}
         if st["token"]:
             headers["Authorization"] = f"Bearer {st['token']}"
@@ -707,13 +735,13 @@ def _sync_streams(scene, props, now) -> bool:
             changed = True
         elif st["backend"] is None:
             # failed earlier: retry when the entry changed or after a delay
-            if want and (st["url"] != item.url.strip()
+            if want and (st["url"] != (GLOBE_URL if item.kind == "GLOBE" else item.url.strip())
                          or now - _state["start_failed"].get(key, 0) > START_RETRY_S):
                 _state["streams"].pop(key, None)
                 st = _start_item(scene, props, item)
                 changed = True
             continue
-        if st["url"] != item.url.strip():
+        if st["url"] != (GLOBE_URL if item.kind == "GLOBE" else item.url.strip()):
             _state["streams"].pop(key, None)
             _teardown_stream(st, remove_objects=True)
             if want:
@@ -1215,8 +1243,12 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
         if 0 <= props.active_tileset < len(props.tilesets):
             it = props.tilesets[props.active_tileset]
             b = layout.box()
-            b.prop(it, "url", text="URL")
-            b.prop(it, "ion_token", text="Ion Token")
+            b.prop(it, "kind", text="Type")
+            if it.kind == "GLOBE":
+                b.label(text="Bare WGS84 ellipsoid: add raster overlays below", icon="WORLD")
+            else:
+                b.prop(it, "url", text="URL")
+                b.prop(it, "ion_token", text="Ion Token")
             row = b.row(align=True)
             row.prop(it, "use_own_sse", text="")
             sub = row.row(align=True)
@@ -1263,7 +1295,7 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
                 if st is not None and st.get("mode") == "python":
                     ob.label(text="Overlays need the cesium-native backend", icon="INFO")
                 elif st is not None:
-                    ob.label(text="Type / URL changes apply on the next Start", icon="INFO")
+                    ob.label(text="Tick / untick applies live; URL edits: untick, then tick", icon="INFO")
         else:
             layout.prop(props, "tileset_url", text="URL")
             layout.prop(props, "cesium_ion_token", text="Ion Token")

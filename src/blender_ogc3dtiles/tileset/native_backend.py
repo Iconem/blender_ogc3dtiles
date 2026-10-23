@@ -40,6 +40,9 @@ _YUP_TO_ZUP = np.array([[1, 0, 0, 0],
 _ZUP_TO_YUP = _YUP_TO_ZUP.T                                 # inverse (rotation)
 
 
+GLOBE_URL = "globe://wgs84"      # pseudo URL of the procedural ellipsoid tileset
+
+
 class ReadyTile(NamedTuple):
     key: str          # stable id (content URL or tile id)
     glb_path: str     # GLB on disk (plus side PNGs for ex-KTX2 textures)
@@ -524,7 +527,11 @@ class CesiumNativeBackend:
         opts.load_error_callback = _on_error
 
         u = url.strip()
-        if u.startswith("ion://"):
+        if u == GLOBE_URL:
+            # procedural WGS84 ellipsoid (quadtree of ellipsoid patches), the
+            # surface raster overlays are draped on when there is no tileset
+            self._tileset = sel.EllipsoidTilesetLoader.create_tileset(ext, opts)
+        elif u.startswith("ion://"):
             self._tileset = sel.Tileset(ext, int(u[6:]), ion_token or "", opts)
         elif u.isdigit() and ion_token:
             self._tileset = sel.Tileset(ext, int(u), ion_token, opts)

@@ -94,6 +94,14 @@ def _on_overlay_alpha(self, context):
     set_overlay_alpha(self.uid, self.alpha)
 
 
+def _on_overlay_enabled(self, context):
+    """Ticking an overlay while its tileset streams adds it to the running
+    cesium-native tileset (loaded tiles are reloaded with the new texture
+    coordinates); unticking removes it."""
+    from ..ui import overlay_live_toggle
+    overlay_live_toggle(context.scene, self)
+
+
 OVERLAY_KINDS = [
     ("URL", "URL template", "XYZ template with {z}/{x}/{y} (web mercator, y from the north: OSM, "
      "Esri, MapTiler...); write {-y} for TMS-ordered servers"),
@@ -125,15 +133,24 @@ class OverlayItem(PropertyGroup):
                                  default="image/png")
     min_level: IntProperty(name="Min level", default=0, min=0, max=30)
     max_level: IntProperty(name="Max level", default=19, min=0, max=30)
-    enabled: BoolProperty(name="Use", description="Drape this overlay (applies on Start)", default=True)
+    enabled: BoolProperty(name="Use", description="Drape this overlay (live: loaded tiles are "
+                          "reloaded with the overlay)", default=True, update=_on_overlay_enabled)
     alpha: FloatProperty(name="Opacity", description="Blend over the tile textures (live)",
                          default=1.0, min=0.0, max=1.0, update=_on_overlay_alpha)
     uid: StringProperty(default="", options={'HIDDEN'})
 
 
+TILESET_KINDS = [
+    ("TILESET", "3D Tiles", "tileset.json URL, local path or Cesium ion asset id"),
+    ("GLOBE", "WGS84 globe", "cesium-native's procedural ellipsoid: a bare globe to drape raster "
+     "overlays on (needs the cesium-native backend)"),
+]
+
+
 class TilesetItem(PropertyGroup):
     """One streamed tileset (list entry in the sidebar)."""
     name: StringProperty(name="Name", default="tileset")
+    kind: EnumProperty(name="Type", items=TILESET_KINDS, default="TILESET")
     url: StringProperty(name="Tileset URL", description="tileset.json URL or ion asset id", default="")
     ion_token: StringProperty(name="Ion Token", subtype='PASSWORD', default="")
     enabled: BoolProperty(

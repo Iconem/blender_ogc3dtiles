@@ -347,6 +347,7 @@ def _make_overlay(cs, spec):
     lo, hi = int(spec.get("min_level", 0)), int(spec.get("max_level", 19))
     headers = [("User-Agent", "blender_ogc3dtiles (cesium-native)")]
     oo = ro.RasterOverlayOptions()
+    oo.maximum_screen_space_error = float(spec.get("detail_px", 4.0))
     if kind == "DEBUG":
         return ro.DebugColorizeTilesRasterOverlay(uid, oo)
     if kind == "URL":
@@ -637,6 +638,15 @@ class CesiumNativeBackend:
         with self._lock:
             out, self._freed = self._freed, []
         return out
+
+    def set_main_thread_budget(self, ms):
+        """Live: cesium-native's per-update budget for main-thread tile work
+        (our mesh builds run inside it)."""
+        ms = float(ms)
+        if ms != self.main_thread_ms:
+            self.main_thread_ms = ms
+            if self._tileset is not None:
+                self._tileset.options.main_thread_loading_time_limit = ms
 
     def set_max_sse(self, v):
         self._max_sse = v

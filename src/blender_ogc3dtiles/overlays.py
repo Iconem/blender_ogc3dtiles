@@ -110,23 +110,17 @@ def attach(mat, tex_id, image_name, translation, scale, alpha=1.0) -> bool:
 
 
 def detach(mat, tex_id) -> bool:
+    """cesium-native detaches a raster when a finer one replaces it (and when
+    an overlay is removed). Keep the nodes and only drop the image: an Image
+    Texture without image reads alpha 0, so the mix shows the material's own
+    colour, and the next attach is a cheap image / mapping update instead of
+    a rebuilt node graph (which also made EEVEE recompile the material)."""
     if mat is None or not mat.use_nodes or mat.node_tree is None:
         return False
-    nt = mat.node_tree
-    nm = _names(tex_id)
-    mix = nt.nodes.get(nm["mix"])
-    if mix is None:
+    tex = mat.node_tree.nodes.get(_names(tex_id)["tex"])
+    if tex is None:
         return False
-    prev = mix.inputs[6].links[0].from_socket if mix.inputs[6].links else None
-    for link in list(mix.outputs[2].links):
-        if prev is not None:
-            nt.links.new(prev, link.to_socket)
-        else:
-            nt.links.remove(link)
-    for k in ("uv", "map", "tex", "fac", "mix"):
-        n = nt.nodes.get(nm[k])
-        if n is not None:
-            nt.nodes.remove(n)
+    tex.image = None
     return True
 
 

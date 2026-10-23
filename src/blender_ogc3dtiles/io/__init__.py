@@ -1367,21 +1367,49 @@ def set_tile_visible(holder_name: str, visible: bool) -> None:
             child.hide_render = hidden
 
 
+def remove_tiles(records, extra_objects=()) -> int:
+    """Delete tile objects (and their descendants) plus the data they created,
+    in one ``bpy.data.batch_remove``.  Removing IDs one by one is quadratic:
+    every ``objects.remove(do_unlink=True)`` and ``children_recursive``
+    scans all objects of the file, which froze Blender for seconds when a
+    stream with ~1000 tiles was torn down.  ``records``: (holder name,
+    data names) pairs."""
+    objs = bpy.data.objects
+    roots = [o for o in (objs.get(h) for h, _d in records) if o is not None]
+    roots += [o for o in extra_objects if o is not None]
+    if not roots and not any(d for _h, d in records):
+        return 0
+    ids, seen = [], set()
+
+    def add(idb):
+        if idb is not None and idb.as_pointer() not in seen:
+            seen.add(idb.as_pointer())
+            ids.append(idb)
+
+    if roots:
+        children = {}
+        for o in objs:                               # one scan for the whole batch
+            if o.parent is not None:
+                children.setdefault(o.parent.as_pointer(), []).append(o)
+        stack = list(roots)
+        while stack:
+            o = stack.pop()
+            add(o)
+            stack.extend(children.get(o.as_pointer(), ()))
+    for _h, data_names in records:
+        for n in data_names:
+            for store in (bpy.data.meshes, bpy.data.materials, bpy.data.images):
+                d = store.get(n)
+                if d is not None:
+                    add(d)
+                    break
+    if ids:
+        bpy.data.batch_remove(ids)
+    return len(roots)
+
+
 def remove_tile(holder_name: str, data_names: List[str]) -> None:
-    holder = bpy.data.objects.get(holder_name)
-    if holder is not None:
-        for child in list(holder.children_recursive):
-            bpy.data.objects.remove(child, do_unlink=True)
-        bpy.data.objects.remove(holder, do_unlink=True)
-    for n in data_names:
-        for store in (bpy.data.meshes, bpy.data.materials, bpy.data.images):
-            d = store.get(n)
-            if d is not None and d.users == 0:
-                try:
-                    store.remove(d)
-                except Exception:
-                    pass
-                break
+    remove_tiles([(holder_name, data_names)])
 
 
 def import_gltf_bytes(glb_data: bytes, tile: Tile, scene: bpy.types.Scene,

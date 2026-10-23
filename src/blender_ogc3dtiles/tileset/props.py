@@ -94,6 +94,13 @@ def _on_overlay_alpha(self, context):
     set_overlay_alpha(self.uid, self.alpha)
 
 
+def _on_overlay_edit(self, context):
+    """Type / URL / key / layer / levels edited: re-create the overlay on a
+    running tileset (cesium-native drops its rasters and loads the new ones)."""
+    from ..ui import overlay_live_refresh
+    overlay_live_refresh(context.scene, self)
+
+
 def _on_overlay_enabled(self, context):
     """Ticking an overlay while its tileset streams adds it to the running
     cesium-native tileset (loaded tiles are reloaded with the new texture
@@ -123,21 +130,27 @@ def _on_place_query(self, context):
 class OverlayItem(PropertyGroup):
     """A raster overlay draped on one tileset (cesium-native backend)."""
     name: StringProperty(name="Name", default="overlay")
-    kind: EnumProperty(name="Type", items=OVERLAY_KINDS, default="URL")
+    kind: EnumProperty(name="Type", items=OVERLAY_KINDS, default="URL", update=_on_overlay_edit)
     url: StringProperty(name="URL", description="Service URL / template / TMS root / WMTS "
-                        "or WMS endpoint; ion asset id for Cesium ion", default="")
+                        "or WMS endpoint; ion asset id for Cesium ion", default="", update=_on_overlay_edit)
     key: StringProperty(name="Key / token", description="API key or access token",
-                        subtype='PASSWORD', default="")
+                        subtype='PASSWORD', default="", update=_on_overlay_edit)
     layer: StringProperty(name="Layer", description="WMTS layer / WMS layers / Bing style "
                           "(Aerial, AerialWithLabels, Road) / Google map type (satellite, roadmap)",
-                          default="")
-    style: StringProperty(name="Style", description="WMTS style (default 'default')", default="default")
+                          default="", update=_on_overlay_edit)
+    style: StringProperty(name="Style", description="WMTS style (default 'default')", default="default", update=_on_overlay_edit)
     matrix_set: StringProperty(name="Matrix set", description="WMTS tile matrix set id "
-                               "(e.g. GoogleMapsCompatible, EPSG:3857)", default="")
+                               "(e.g. GoogleMapsCompatible, EPSG:3857)", default="", update=_on_overlay_edit)
     image_format: StringProperty(name="Format", description="WMTS / WMS image MIME type",
-                                 default="image/png")
-    min_level: IntProperty(name="Min level", default=0, min=0, max=30)
-    max_level: IntProperty(name="Max level", default=19, min=0, max=30)
+                                 default="image/png", update=_on_overlay_edit)
+    min_level: IntProperty(name="Min level", default=0, min=0, max=30, update=_on_overlay_edit)
+    max_level: IntProperty(name="Max level", default=19, min=0, max=30, update=_on_overlay_edit)
+    detail_px: FloatProperty(
+        name="Raster detail (px)",
+        description="Imagery resolution target: one raster pixel covers at most this many screen "
+                    "pixels (cesium-native's raster screen-space error; Cesium's default is 2). "
+                    "Higher = coarser imagery, far fewer downloads, tiles show sooner. Live",
+        default=4.0, min=1.0, max=64.0, update=_on_overlay_edit)
     enabled: BoolProperty(name="Use", description="Drape this overlay (live: loaded tiles are "
                           "reloaded with the overlay)", default=True, update=_on_overlay_enabled)
     alpha: FloatProperty(name="Opacity", description="Blend over the tile textures (live)",
@@ -307,8 +320,15 @@ class TilesSceneProps(PropertyGroup):
     imports_per_tick: IntProperty(
         name="Imports per tick",
         description="Tiles built per 50 ms timer tick (lower keeps the UI smoother "
-                    "while loading, higher fills the view faster)",
+                    "while loading, higher fills the view faster). Live",
         default=4, min=1, max=16,
+    )
+    nav_build_ms: FloatProperty(
+        name="Build budget while navigating (ms)",
+        description="While the view moves (and 0.3 s after), tile building gets this many "
+                    "milliseconds per tick instead of the Imports / tick budget, so orbiting "
+                    "stays fluid; loading catches up once the view rests. 0 = no change",
+        default=8.0, min=0.0, max=200.0,
     )
     auto_relight: BoolProperty(
         name="Relight new tiles",

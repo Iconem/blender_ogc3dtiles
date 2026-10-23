@@ -34,7 +34,7 @@ from ..io import (
     http_get,
     build_tile_from_payload,
     import_glb_file,
-    remove_tile,
+    remove_tiles,
     set_tile_visible,
     tile_world_matrix,
 )
@@ -247,6 +247,25 @@ def overlays_live_toggle(scene, item) -> None:
     st["overlays"] = _overlay_specs(item)
 
 
+def overlay_live_refresh(scene, ov) -> None:
+    """An enabled overlay's settings changed while streaming: remove it and
+    add it again with the new settings."""
+    for it in scene.ogc3dtiles.tilesets:
+        if any(o == ov for o in it.overlays):
+            break
+    else:
+        return
+    st = _state["streams"].get(it.uid) if it.uid else None
+    backend = st.get("backend") if st else None
+    if backend is None or not hasattr(backend, "add_overlay") or not it.use_overlays or not ov.enabled:
+        return
+    backend.remove_overlay(ov.uid)
+    spec = _overlay_specs(it, only=ov)
+    if spec:
+        backend.add_overlay(spec[0])
+    st["overlays"] = _overlay_specs(it)
+
+
 def overlay_live_toggle(scene, ov) -> None:
     """OverlayItem.enabled changed: mirror it on the running backend."""
     props = scene.ogc3dtiles
@@ -283,7 +302,7 @@ def _overlay_specs(item, only=None) -> list:
         specs.append({"uid": ov.uid, "kind": ov.kind, "url": ov.url, "key": ov.key,
                       "layer": ov.layer, "style": ov.style, "matrix_set": ov.matrix_set,
                       "image_format": ov.image_format, "min_level": ov.min_level,
-                      "max_level": ov.max_level})
+                      "max_level": ov.max_level, "detail_px": ov.detail_px})
     return specs
 
 
@@ -601,24 +620,20 @@ def _on_place_query(self, context):
         area.tag_redraw()
 
 
-def _restart_stream_later():
-    """Stop now, Start once the modal stream has wound down (picked place
-    while streaming: tiles are placed with the origin at build time)."""
-    def _start():
-        try:
-            for window in bpy.context.window_manager.windows:
-                for area in window.screen.areas:
-                    if area.type == "VIEW_3D":
-                        region = next(r for r in area.regions if r.type == "WINDOW")
-                        with bpy.context.temp_override(window=window, screen=window.screen,
-                                                       area=area, region=region):
-                            bpy.ops.ogc3dtiles.start_stream()
-                        return None
-        except Exception as e:                       # noqa: BLE001
-            print(f"[3DTiles] restart after place pick failed: {e}")
-        return None
-    bpy.ops.ogc3dtiles.stop_stream()
-    bpy.app.timers.register(_start, first_interval=0.5)
+def _start_stream_in_view():
+    """Start streaming from a timer (no operator context): run Start in the
+    first 3D view."""
+    try:
+        for window in bpy.context.window_manager.windows:
+            for area in window.screen.areas:
+                if area.type == "VIEW_3D":
+                    region = next(r for r in area.regions if r.type == "WINDOW")
+                    with bpy.context.temp_override(window=window, screen=window.screen,
+                                                   area=area, region=region):
+                        bpy.ops.ogc3dtiles.start_stream()
+                    return
+    except Exception as e:                           # noqa: BLE001
+        print(f"[3DTiles] restart after place pick failed: {e}")
 
 
 def _look_at_origin(context):
@@ -664,29 +679,53 @@ class OGC3D_OT_PlacePick(Operator):
         return cls.__doc__
 
     def execute(self, context):
+        import threading
         from .. import geosearch
         from ..io import default_cache_dir
         if not (0 <= self.index < len(_places)):
             return {"CANCELLED"}
-        p = _places[self.index]
+        p = dict(_places[self.index])
         props = context.scene.ogc3dtiles
         prefs = _get_prefs(context)
-        h, msl, n, notes = geosearch.ellipsoid_height(
-            p["lat"], p["lon"], default_cache_dir(),
-            getattr(prefs, "terrain_tiles_url", geosearch.TERRARIUM_URL),
-            getattr(prefs, "geoid_url", geosearch.GEOID_URL))
-        props.origin_lat, props.origin_lon, props.origin_height = p["lat"], p["lon"], h
+        terrain = getattr(prefs, "terrain_tiles_url", geosearch.TERRARIUM_URL)
+        geoid = getattr(prefs, "geoid_url", geosearch.GEOID_URL)
+        cache = default_cache_dir()
+        was_streaming = props.is_streaming
+        if was_streaming:
+            bpy.ops.ogc3dtiles.stop_stream()       # the old tiles go at the next Start
         props.origin_place = p["label"]
-        props.origin_valid = True
-        props.place_status = (f"Ground {msl:.0f} m + geoid {n:+.0f} m = {h:.0f} m (ellipsoid)"
-                              + ("; " + "; ".join(notes) if notes else ""))
-        for msg in notes:
-            self.report({"WARNING"}, msg)
-        print(f"[3DTiles] Scene origin: {p['label']} lat={p['lat']:.5f} lon={p['lon']:.5f} "
-              f"h={h:.1f} m (ground {msl:.1f} + geoid {n:.1f})")
-        if props.is_streaming:
-            _restart_stream_later()
-        _look_at_origin(context)
+        props.place_status = "Fetching the ground height..."
+        # the height lookup downloads a terrain tile (and the geoid grid the
+        # first time): off the main thread, so Blender stays responsive
+        box = {}
+        threading.Thread(target=lambda: box.update(
+            r=geosearch.ellipsoid_height(p["lat"], p["lon"], cache, terrain, geoid)),
+            daemon=True).start()
+        scene_name = context.scene.name
+
+        def _apply():
+            if "r" not in box:
+                return 0.1
+            scene = bpy.data.scenes.get(scene_name)
+            if scene is None:
+                return None
+            pr = scene.ogc3dtiles
+            h, msl, n, notes = box["r"]
+            pr.origin_lat, pr.origin_lon, pr.origin_height = p["lat"], p["lon"], h
+            pr.origin_valid = True
+            pr.place_status = (f"Ground {msl:.0f} m + geoid {n:+.0f} m = {h:.0f} m (ellipsoid)"
+                               + ("; " + "; ".join(notes) if notes else ""))
+            print(f"[3DTiles] Scene origin: {p['label']} lat={p['lat']:.5f} lon={p['lon']:.5f} "
+                  f"h={h:.1f} m (ground {msl:.1f} + geoid {n:.1f})")
+            _look_at_origin(bpy.context)
+            if was_streaming:
+                _start_stream_in_view()
+            for window in bpy.context.window_manager.windows:
+                for area in window.screen.areas:
+                    area.tag_redraw()
+            return None
+
+        bpy.app.timers.register(_apply, first_interval=0.05)
         return {"FINISHED"}
 
 
@@ -749,15 +788,9 @@ def _teardown_stream(st, remove_objects: bool):
             pass
     st["backend"] = None
     if remove_objects:
-        for rec in list(st["tiles"].values()):
-            remove_tile(rec.holder, rec.data)
-        st["tiles"].clear()
         root = bpy.data.objects.get(st.get("root_obj") or "")
-        if root is not None:
-            for c in list(root.children_recursive):
-                if c.name in bpy.data.objects:
-                    bpy.data.objects.remove(c, do_unlink=True)
-            bpy.data.objects.remove(root, do_unlink=True)
+        remove_tiles([(rec.holder, rec.data) for rec in st["tiles"].values()], extra_objects=[root])
+        st["tiles"].clear()
         coll = bpy.data.collections.get(st.get("coll") or "")
         if coll is not None and not coll.objects and not coll.children:
             bpy.data.collections.remove(coll)
@@ -767,7 +800,9 @@ class OGC3D_OT_ClearTiles(Operator):
     """Remove all loaded tile objects and their mesh data from scene"""
     bl_idname = "ogc3dtiles.clear_tiles"
     bl_label = "Clear All Tiles"
-    bl_options = {"REGISTER", "UNDO"}
+    # no UNDO: an undo step would snapshot every tile mesh and image, and
+    # undoing would bring back tiles no stream owns any more
+    bl_options = {"REGISTER"}
 
     def execute(self, context):
         if context.scene.ogc3dtiles.is_streaming:
@@ -777,16 +812,22 @@ class OGC3D_OT_ClearTiles(Operator):
             n += len(st["tiles"])
             _teardown_stream(st, remove_objects=True)
         _state["streams"].clear()
-        # anything left over from earlier sessions
-        for o in list(bpy.data.objects):
-            if "tile_url" in o or o.get("tile_bbox") or o.get("ogc3dtiles_root"):
-                for c in list(o.children_recursive):
-                    if c.name in bpy.data.objects:
-                        bpy.data.objects.remove(c, do_unlink=True)
-                if o.name in bpy.data.objects:
-                    bpy.data.objects.remove(o, do_unlink=True)
-                n += 1
-        bpy.ops.outliner.orphans_purge(do_local_ids=True, do_linked_ids=False, do_recursive=True)
+        # anything left over from earlier sessions (saved .blend): the tile
+        # objects, their meshes, materials and the images those use
+        left = [o for o in bpy.data.objects
+                if "tile_url" in o or o.get("tile_bbox") or o.get("ogc3dtiles_root")]
+        data = []
+        for o in left:
+            if o.type == "MESH" and o.data is not None:
+                data.append(o.data.name)
+                for m in o.data.materials:
+                    if m is None:
+                        continue
+                    data.append(m.name)
+                    if m.node_tree is not None:
+                        data += [nd.image.name for nd in m.node_tree.nodes
+                                 if nd.type == "TEX_IMAGE" and nd.image is not None]
+        n += remove_tiles([(o.name, []) for o in left] + [("", data)])
         context.scene.ogc3dtiles.tiles_loaded = 0
         self.report({"INFO"}, f"Removed {n} tile objects")
         return {"FINISHED"}
@@ -966,6 +1007,25 @@ def _update_view(scene, props):
         update_view_dir(vf.dir)
 
 
+NAV_SETTLE_S = 0.3          # the view counts as moving this long after its last change
+
+
+def _navigating(st, now) -> bool:
+    """True while the stream's view changes (and NAV_SETTLE_S after)."""
+    view = _view_for(st)
+    sig = view.signature if view is not None else None
+    if sig != st.get("nav_sig"):
+        st["nav_sig"] = sig
+        st["nav_t"] = now
+    return now - st.get("nav_t", 0.0) < NAV_SETTLE_S
+
+
+def _build_budget_ms(props, navigating: bool) -> float:
+    full = max(4.0, 12.0 * props.imports_per_tick)
+    nav = float(getattr(props, "nav_build_ms", 0.0))
+    return min(full, nav) if navigating and nav > 0 else full
+
+
 def _view_for(st):
     cam = _state["camera_adapter"]
     return cam.get_view_state(bpy.data.objects.get(st["root_obj"] or ""))
@@ -995,14 +1055,14 @@ def _evict(st, props, now) -> bool:
         return False
     victims = sorted((rec.last_wanted, k) for k, rec in tiles.items()
                      if not rec.visible and now - rec.last_wanted > EVICT_GRACE_S)
-    changed = False
+    batch = []
     for _t, k in victims[:over]:
         rec = tiles.pop(k)
-        remove_tile(rec.holder, rec.data)
+        batch.append((rec.holder, rec.data))
         if rec.tile is not None:
             rec.tile.state = TileState.UNLOADED
-        changed = True
-    return changed
+    remove_tiles(batch)
+    return bool(batch)
 
 
 def _root_and_coll(scene, st):
@@ -1050,7 +1110,8 @@ def _tick_python(scene, props, st, now) -> bool:
     imported = 0
     enu = _enu_from_ecef(props)
     root_obj, coll = _root_and_coll(scene, st)
-    while st["ready"] and imported < max(1, props.imports_per_tick):
+    per_tick = 1 if (getattr(props, "nav_build_ms", 0.0) > 0 and _navigating(st, now))         else max(1, props.imports_per_tick)
+    while st["ready"] and imported < per_tick:
         tile, parts, payloads = st["ready"].pop(0)
         key = _tile_key(tile)
         holders, data = [], []
@@ -1166,6 +1227,8 @@ def _make_native_builder(scene, props, st):
 def _tick_native(scene, props, st, now) -> bool:
     backend, tiles = st["backend"], st["tiles"]
     changed = False
+    if hasattr(backend, "set_main_thread_budget") and _state["origin_set"]:
+        backend.set_main_thread_budget(_build_budget_ms(props, _navigating(st, now)))
     backend.tick()      # dispatches cesium-native main-thread work → builds tiles via callback
 
     if not _state["origin_set"]:
@@ -1181,12 +1244,15 @@ def _tick_native(scene, props, st, now) -> bool:
             if not bpy.app.background:
                 fit_clip_range(r)
 
+    batch = []
     for key in backend.pop_freed():
         rec = tiles.pop(key, None)
         if rec is not None:
-            remove_tile(rec.holder, rec.data)
-            changed = True
+            batch.append((rec.holder, rec.data))
         st.get("pending_overlays", {}).pop(key, None)
+    if batch:
+        remove_tiles(batch)
+        changed = True
     if _process_overlay_events(scene, props, st):
         changed = True
 
@@ -1515,11 +1581,12 @@ def _draw_overlays(b, it, st) -> None:
             r = ob.row(align=True)
             r.prop(ov, "min_level", text="Min level")
             r.prop(ov, "max_level", text="Max level")
+        ob.prop(ov, "detail_px", text="Raster detail px")
         ob.prop(ov, "alpha", text="Opacity", slider=True)
         if st is not None and st.get("mode") == "python":
             ob.label(text="Overlays need the cesium-native backend", icon="INFO")
         elif st is not None:
-            ob.label(text="Tick / untick applies live; URL edits: untick, then tick", icon="INFO")
+            ob.label(text="Changes apply live", icon="INFO")
 
 
 class OGC3D_PT_OriginPanel(_OGC3DSidebar, Panel):
@@ -1585,6 +1652,7 @@ class OGC3D_PT_LodPanel(_OGC3DSidebar, Panel):
         sub_h.label(text="Advanced")
         if sub:
             sub.prop(props, "max_loaded_tiles", text="Max Tiles / tileset")
+            sub.prop(props, "nav_build_ms", text="Build ms while navigating")
             row = sub.row(align=True)
             row.prop(props, "foveated_cone", text="Foveation cone")
             row.prop(props, "foveated_relaxation", text="Edge SSE relax")

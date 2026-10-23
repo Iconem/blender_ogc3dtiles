@@ -222,6 +222,33 @@ Imports never touch the user's selection or active object. Every tile is
 parented to one root Empty per tileset inside the `3D Tiles` collection, so
 the whole dataset can be moved / rotated / scaled, hidden or folded as one.
 
+### What keeps Blender busy while streaming
+
+Everything that touches `bpy` runs on Blender's main thread, between
+redraws: building tile meshes and materials, attaching overlay rasters,
+deleting evicted tiles, and cesium-native's tile selection (about 20 ms per
+update for Google Photorealistic 3D Tiles).  Downloads and glTF decoding
+run in worker threads.  Measured on Google tiles over Rome, about 550 tiles
+on screen, Blender 5.3, orbiting view:
+
+| | redraw interval |
+|---|---|
+| streaming, default budget | 87 ms |
+| streaming, view moving (navigation budget 8 ms) | 36 ms |
+| stopped, Solid | 10 ms |
+| stopped, Material Preview | 23 ms |
+| stopped, Rendered (EEVEE) | 147 ms |
+
+The knobs: *Imports / tick* is the build budget when the view rests
+(12 ms per import); *Build ms while navigating* (LOD / Streaming > Advanced)
+is the budget while the view moves and 0.3 s after, so orbiting stays fluid
+and loading catches up when you stop; Solid shading draws fastest; with
+raster overlays, *Raster detail* trades imagery resolution for fewer
+downloads (cesium-native shows a tile only once all its rasters are in).
+Tiles are deleted in one `bpy.data.batch_remove` per tick (deleting them one
+by one is quadratic in the number of objects), so a restart or *Clear All
+Tiles* takes well under a second.
+
 ### Pure Python backend (`tileset/traversal.py`)
 
 - Tile `transform` matrices compose down the tree; `box`/`sphere` volumes

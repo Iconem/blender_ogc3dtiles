@@ -89,9 +89,68 @@ def _on_comp(self, context):
         pass
 
 
+def _on_overlay_alpha(self, context):
+    from ..overlays import set_overlay_alpha
+    set_overlay_alpha(self.uid, self.alpha)
+
+
+def _on_overlay_enabled(self, context):
+    """Ticking an overlay while its tileset streams adds it to the running
+    cesium-native tileset (loaded tiles are reloaded with the new texture
+    coordinates); unticking removes it."""
+    from ..ui import overlay_live_toggle
+    overlay_live_toggle(context.scene, self)
+
+
+OVERLAY_KINDS = [
+    ("URL", "URL template", "XYZ template with {z}/{x}/{y} (web mercator, y from the north: OSM, "
+     "Esri, MapTiler...); write {-y} for TMS-ordered servers"),
+    ("TMS", "TMS", "Tile Map Service root (tilemapresource.xml)"),
+    ("WMTS", "WMTS", "OGC Web Map Tile Service (KVP or REST url, layer, style, tile matrix set)"),
+    ("WMS", "WMS", "OGC Web Map Service (layers, format)"),
+    ("ION", "Cesium ion", "ion imagery asset id + token"),
+    ("BING", "Bing Maps", "Bing Maps imagery (key, style)"),
+    ("GOOGLE", "Google Map Tiles", "Google Map Tiles API 2D imagery (API key)"),
+    ("DEBUG", "Debug colours", "cesium-native's tile colouriser (no server)"),
+]
+
+
+class OverlayItem(PropertyGroup):
+    """A raster overlay draped on one tileset (cesium-native backend)."""
+    name: StringProperty(name="Name", default="overlay")
+    kind: EnumProperty(name="Type", items=OVERLAY_KINDS, default="URL")
+    url: StringProperty(name="URL", description="Service URL / template / TMS root / WMTS "
+                        "or WMS endpoint; ion asset id for Cesium ion", default="")
+    key: StringProperty(name="Key / token", description="API key or access token",
+                        subtype='PASSWORD', default="")
+    layer: StringProperty(name="Layer", description="WMTS layer / WMS layers / Bing style "
+                          "(Aerial, AerialWithLabels, Road) / Google map type (satellite, roadmap)",
+                          default="")
+    style: StringProperty(name="Style", description="WMTS style (default 'default')", default="default")
+    matrix_set: StringProperty(name="Matrix set", description="WMTS tile matrix set id "
+                               "(e.g. GoogleMapsCompatible, EPSG:3857)", default="")
+    image_format: StringProperty(name="Format", description="WMTS / WMS image MIME type",
+                                 default="image/png")
+    min_level: IntProperty(name="Min level", default=0, min=0, max=30)
+    max_level: IntProperty(name="Max level", default=19, min=0, max=30)
+    enabled: BoolProperty(name="Use", description="Drape this overlay (live: loaded tiles are "
+                          "reloaded with the overlay)", default=True, update=_on_overlay_enabled)
+    alpha: FloatProperty(name="Opacity", description="Blend over the tile textures (live)",
+                         default=1.0, min=0.0, max=1.0, update=_on_overlay_alpha)
+    uid: StringProperty(default="", options={'HIDDEN'})
+
+
+TILESET_KINDS = [
+    ("TILESET", "3D Tiles", "tileset.json URL, local path or Cesium ion asset id"),
+    ("GLOBE", "WGS84 globe", "cesium-native's procedural ellipsoid: a bare globe to drape raster "
+     "overlays on (needs the cesium-native backend)"),
+]
+
+
 class TilesetItem(PropertyGroup):
     """One streamed tileset (list entry in the sidebar)."""
     name: StringProperty(name="Name", default="tileset")
+    kind: EnumProperty(name="Type", items=TILESET_KINDS, default="TILESET")
     url: StringProperty(name="Tileset URL", description="tileset.json URL or ion asset id", default="")
     ion_token: StringProperty(name="Ion Token", subtype='PASSWORD', default="")
     enabled: BoolProperty(
@@ -106,6 +165,8 @@ class TilesetItem(PropertyGroup):
                            "this tileset when 'Own SSE' is ticked; lower = finer tiles. Live",
                            default=4.0, min=1.0, max=512.0, update=_on_item_sse)
     uid: StringProperty(default="", options={'HIDDEN'})
+    overlays: CollectionProperty(type=OverlayItem)
+    active_overlay: IntProperty(default=0)
 
 
 class TilesSceneProps(PropertyGroup):
@@ -423,6 +484,7 @@ class TilesSceneProps(PropertyGroup):
 
 def register():
     print("[OGC3DTiles] registering TilesSceneProps...")
+    bpy.utils.register_class(OverlayItem)
     bpy.utils.register_class(TilesetItem)
     bpy.utils.register_class(TilesSceneProps)
     bpy.types.Scene.ogc3dtiles = bpy.props.PointerProperty(type=TilesSceneProps)
@@ -433,3 +495,4 @@ def unregister():
     del bpy.types.Scene.ogc3dtiles
     bpy.utils.unregister_class(TilesSceneProps)
     bpy.utils.unregister_class(TilesetItem)
+    bpy.utils.unregister_class(OverlayItem)

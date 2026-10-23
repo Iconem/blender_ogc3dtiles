@@ -242,21 +242,145 @@ class _GlbPreparer:
                 except OSError:
                     pass
 
-    # raster overlays: not wired into Blender yet ---------------------------
-    def attach_raster_in_main_thread(self, *a, **k):
-        pass
-
-    def detach_raster_in_main_thread(self, *a, **k):
-        pass
-
+    # raster overlays ------------------------------------------------------
+    # cesium-native drapes an overlay by adding _CESIUMOVERLAY_<id> texture
+    # coordinates to each tile's glTF (carried by native_mesh) and calling
+    # these hooks with the raster tile that covers it; the Blender side (ui /
+    # overlays.py) consumes the events queued here.
     def prepare_raster_in_load_thread(self, image):
-        return None
+        """Worker thread: decoded raster → float RGBA rows bottom-up (Blender
+        image layout), no bpy here."""
+        try:
+            w, h, c = int(image.width), int(image.height), int(image.channels)
+            if w <= 0 or h <= 0 or int(image.bytes_per_channel) != 1 or c not in (1, 2, 3, 4):
+                return None
+            px = np.asarray(image.pixel_data, dtype=np.uint8)
+            if px.size < w * h * c:
+                return None
+            px = px[: w * h * c].reshape(h, w, c)
+            if c == 1:
+                px = np.repeat(px, 3, axis=2)
+                c = 3
+            elif c == 2:
+                px = np.concatenate([np.repeat(px[:, :, :1], 3, axis=2), px[:, :, 1:2]], axis=2)
+                c = 4
+            if c == 3:
+                px = np.concatenate([px, np.full((h, w, 1), 255, np.uint8)], axis=2)
+            f = (px[::-1].astype(np.float32) / 255.0).ravel()
+            return {"w": w, "h": h, "pixels": f}
+        except Exception as exc:          # noqa: BLE001
+            print("[3DTiles/native] raster prepare failed: %r" % (exc,))
+            return None
 
     def prepare_raster_in_main_thread(self, raster_tile, load_result):
-        return None
+        """Main thread (inside tick): the raster becomes a bpy Image."""
+        if not load_result:
+            return None
+        try:
+            import bpy  # noqa: PLC0415
+            name = "OGC3D Overlay %s" % self._owner._next_id()
+            img = bpy.data.images.new(name, load_result["w"], load_result["h"], alpha=True)
+            img.colorspace_settings.name = "sRGB"
+            img.pixels.foreach_set(load_result["pixels"])
+            try:
+                img.pack()                # survives save / reload of the .blend
+            except Exception:
+                pass
+            return {"image": img.name}
+        except Exception as exc:          # noqa: BLE001
+            print("[3DTiles/native] raster image failed: %r" % (exc,))
+            return None
+
+    @staticmethod
+    def _tile_key(tile):
+        try:
+            rr = tile.content.render_content.render_resources
+        except Exception:
+            return None
+        return rr.key if isinstance(rr, ReadyTile) else None
+
+    def attach_raster_in_main_thread(self, tile, tex_id, raster_tile, main_res, translation, scale):
+        key = self._tile_key(tile)
+        if key is None or not main_res:
+            return
+        try:
+            uid = raster_tile.overlay.name
+        except Exception:
+            uid = ""
+        with self._owner._lock:
+            self._owner._overlay_events.append(
+                ("attach", key, int(tex_id), uid, main_res["image"],
+                 (float(translation[0]), float(translation[1])),
+                 (float(scale[0]), float(scale[1]))))
+
+    def detach_raster_in_main_thread(self, tile, tex_id, raster_tile, main_res):
+        key = self._tile_key(tile)
+        if key is None:
+            return
+        with self._owner._lock:
+            self._owner._overlay_events.append(("detach", key, int(tex_id)))
 
     def free_raster(self, raster_tile, load_result, main_result):
-        pass
+        if main_result:
+            with self._owner._lock:
+                self._owner._overlay_events.append(("free", main_result["image"]))
+
+
+def xyz_template(url: str) -> str:
+    """XYZ convention ({y} = 0 at the north, as OSM / Esri / MapLibre templates
+    use it) to cesium-native's placeholders, whose {y} is TMS order (0 at the
+    south); the user writes {-y} for a TMS-ordered server."""
+    return url.replace("{y}", "{reverseY}").replace("{-y}", "{y}")
+
+
+def _make_overlay(cs, spec):
+    """cesium-native RasterOverlay for an overlay list entry (see props.OVERLAY_KINDS)."""
+    ro = cs.raster_overlays
+    uid = spec["uid"]
+    kind = spec.get("kind", "URL")
+    url = (spec.get("url") or "").strip()
+    key = (spec.get("key") or "").strip()
+    layer = (spec.get("layer") or "").strip()
+    lo, hi = int(spec.get("min_level", 0)), int(spec.get("max_level", 19))
+    headers = [("User-Agent", "blender_ogc3dtiles (cesium-native)")]
+    oo = ro.RasterOverlayOptions()
+    if kind == "DEBUG":
+        return ro.DebugColorizeTilesRasterOverlay(uid, oo)
+    if kind == "URL":
+        o = ro.UrlTemplateRasterOverlayOptions()
+        o.minimum_level, o.maximum_level = lo, hi
+        return ro.UrlTemplateRasterOverlay(uid, xyz_template(url), headers, o, oo)
+    if kind == "TMS":
+        o = ro.TileMapServiceRasterOverlayOptions()
+        o.minimum_level, o.maximum_level = lo, hi
+        return ro.TileMapServiceRasterOverlay(uid, url, headers, o, oo)
+    if kind == "WMTS":
+        o = ro.WebMapTileServiceRasterOverlayOptions()
+        o.layer = layer
+        o.style = spec.get("style") or "default"
+        o.tile_matrix_set_id = spec.get("matrix_set") or "GoogleMapsCompatible"
+        o.format = spec.get("image_format") or "image/png"
+        o.minimum_level, o.maximum_level = lo, hi
+        return ro.WebMapTileServiceRasterOverlay(uid, url, headers, o, oo)
+    if kind == "WMS":
+        o = ro.WebMapServiceRasterOverlayOptions()
+        o.layers = layer
+        o.format = spec.get("image_format") or "image/png"
+        o.minimum_level, o.maximum_level = lo, hi
+        return ro.WebMapServiceRasterOverlay(uid, url, headers, o, oo)
+    if kind == "ION":
+        return ro.IonRasterOverlay(uid, int(url), key, oo)
+    if kind == "BING":
+        return ro.BingMapsRasterOverlay(uid, url or "https://dev.virtualearth.net", key,
+                                        layer or "Aerial", "", oo)
+    if kind == "GOOGLE":
+        p = ro.GoogleMapTilesNewSessionParameters()
+        p.key = key
+        p.map_type = layer or "satellite"
+        p.language = "en-US"
+        p.region = "US"
+        return ro.GoogleMapTilesRasterOverlay(uid, p, oo)
+    return None
 
 
 _SHARED = {}          # cache_dir → (task_processor, async_system, accessor)
@@ -333,6 +457,8 @@ class CesiumNativeBackend:
         self._lock = threading.Lock()
         self._ready = []
         self._freed = []
+        self._overlay_events = []
+        self._overlays = {}                     # uid -> RasterOverlay
         self._rendered = set()
         self._counter = 0
         self._tmpdir = tempfile.mkdtemp(prefix="ogc3dtiles_native_")
@@ -404,6 +530,40 @@ class CesiumNativeBackend:
             self._tileset = sel.Tileset(ext, int(u), ion_token, opts)
         else:
             self._tileset = sel.Tileset(ext, u, opts)
+        for spec in options.get("overlays") or []:
+            self.add_overlay(spec)
+
+    # ------------------------------------------------------- raster overlays
+    def add_overlay(self, spec):
+        """spec: dict(uid, kind, url, key, layer, style, matrix_set,
+        image_format, min_level, max_level). The overlay is named by its uid
+        so raster tiles can be traced back to the list entry."""
+        if self._tileset is None:
+            return False
+        try:
+            ov = _make_overlay(self._cs, spec)
+        except Exception as exc:          # noqa: BLE001
+            self.last_error = "overlay %s: %r" % (spec.get("uid"), exc)
+            print("[3DTiles/native] " + self.last_error)
+            return False
+        if ov is None:
+            return False
+        self._tileset.overlays.add(ov)
+        self._overlays[spec["uid"]] = ov
+        return True
+
+    def remove_overlay(self, uid):
+        ov = self._overlays.pop(uid, None)
+        if ov is not None and self._tileset is not None:
+            try:
+                self._tileset.overlays.remove(ov)
+            except Exception as exc:      # noqa: BLE001
+                print("[3DTiles/native] overlay remove failed: %r" % (exc,))
+
+    def pop_overlay_events(self):
+        with self._lock:
+            out, self._overlay_events = self._overlay_events, []
+        return out
 
     # ------------------------------------------------------------- per tick
     def tick(self):

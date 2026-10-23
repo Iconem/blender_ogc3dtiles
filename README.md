@@ -267,6 +267,29 @@ which restores what the tile declared (glTF `doubleSided`; most
 photogrammetry exports are single-sided, which is why tiles used to vanish
 from behind).
 
+### Raster overlays
+
+With the cesium-native backend any streamed tileset can be draped with
+raster imagery, the way Cesium for Unreal / Unity do it: add entries under
+*Raster overlays* in the tileset box (URL template `{z}/{x}/{y}`, TMS, WMTS,
+WMS, Cesium ion imagery, Bing Maps, Google Map Tiles 2D, or cesium-native's
+debug colouriser) and press Start.  cesium-native projects each tile onto
+the overlay's tiling scheme, adds a `_CESIUMOVERLAY_<n>` texture-coordinate
+set to the tile and streams the raster tiles that cover it at a resolution
+matching the tile's screen size; the add-on turns each raster into a packed
+Blender image and inserts, per tile material, a *UV Map → Mapping → Image
+Texture → Mix* chain over the material's colour (also under the Relight
+group).  *Opacity* is live; type / URL changes apply on the next Start.
+Several overlays stack in list order.  Overlays only make sense on surface
+tiles (meshes); point clouds and Gaussian splat tiles have no texture
+coordinates.  The raster images are packed into the .blend, so a saved scene
+keeps its drape.
+
+Terrain: cesium-native streams quantized-mesh terrain (Cesium World Terrain
+on ion, or any `layer.json` server) as a tileset, so a globe or local
+terrain can be draped the same way; Terrarium / Terrain-RGB raster DEMs are
+not terrain providers in cesium-native and are out of scope here.
+
 ### Editing tile geometry
 
 **Shared geometry nodes** (Display section) puts one Geometry Nodes

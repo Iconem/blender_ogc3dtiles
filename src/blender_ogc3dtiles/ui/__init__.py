@@ -201,6 +201,109 @@ class OGC3D_OT_TilesetAdd(Operator):
         return {"FINISHED"}
 
 
+def _overlay_specs(item) -> list:
+    """Backend specs for the enabled overlays of a tileset list entry."""
+    specs = []
+    for ov in item.overlays:
+        if not ov.enabled:
+            continue
+        if not ov.uid:
+            ov.uid = f"ov_{uuid.uuid4().hex[:8]}"
+        specs.append({"uid": ov.uid, "kind": ov.kind, "url": ov.url, "key": ov.key,
+                      "layer": ov.layer, "style": ov.style, "matrix_set": ov.matrix_set,
+                      "image_format": ov.image_format, "min_level": ov.min_level,
+                      "max_level": ov.max_level})
+    return specs
+
+
+def _overlay_alpha_lookup(props):
+    table = {}
+    for it in props.tilesets:
+        for ov in it.overlays:
+            if ov.uid:
+                table[ov.uid] = float(ov.alpha)
+    return lambda uid: table.get(uid, 1.0)
+
+
+def _process_overlay_events(scene, props, st) -> bool:
+    """Apply the native backend's raster attach / detach / free events to the
+    tile objects; events for tiles not built yet wait in st['pending_overlays']."""
+    from .. import overlays as ovl
+    backend, tiles = st["backend"], st["tiles"]
+    events = backend.pop_overlay_events() if hasattr(backend, "pop_overlay_events") else []
+    if not events:
+        return False
+    pending = st.setdefault("pending_overlays", {})
+    alpha_for = _overlay_alpha_lookup(props)
+    for ev in events:
+        if ev[0] == "free":
+            img = bpy.data.images.get(ev[1])
+            if img is not None and img.users == 0:
+                bpy.data.images.remove(img)
+            continue
+        key, tid = ev[1], ev[2]
+        rec = tiles.get(key)
+        obj = bpy.data.objects.get(rec.holder) if rec is not None else None
+        if obj is None or obj.type != "MESH":
+            if ev[0] == "attach":
+                pending.setdefault(key, {})[tid] = ev
+            else:
+                pending.get(key, {}).pop(tid, None)
+            continue
+        try:
+            ovl.apply_event(obj, ev, alpha_for)
+        except Exception as e:                       # noqa: BLE001
+            print(f"[3DTiles] overlay {ev[0]} failed on {key}: {e}")
+    return True
+
+
+class OGC3D_OT_OverlayAdd(Operator):
+    """Add a raster overlay to the selected tileset (applied on the next Start)"""
+    bl_idname = "ogc3dtiles.overlay_add"
+    bl_label = "Add Overlay"
+
+    def execute(self, context):
+        props = context.scene.ogc3dtiles
+        if not (0 <= props.active_tileset < len(props.tilesets)):
+            return {"CANCELLED"}
+        it = props.tilesets[props.active_tileset]
+        ov = it.overlays.add()
+        ov.uid = f"ov_{uuid.uuid4().hex[:8]}"
+        ov.name = f"overlay {len(it.overlays)}"
+        it.active_overlay = len(it.overlays) - 1
+        return {"FINISHED"}
+
+
+class OGC3D_OT_OverlayRemove(Operator):
+    """Remove the selected overlay (its rasters are dropped from loaded tiles)"""
+    bl_idname = "ogc3dtiles.overlay_remove"
+    bl_label = "Remove Overlay"
+
+    def execute(self, context):
+        props = context.scene.ogc3dtiles
+        if not (0 <= props.active_tileset < len(props.tilesets)):
+            return {"CANCELLED"}
+        it = props.tilesets[props.active_tileset]
+        i = it.active_overlay
+        if not (0 <= i < len(it.overlays)):
+            return {"CANCELLED"}
+        uid = it.overlays[i].uid
+        st = _state["streams"].get(it.uid) if it.uid else None
+        if st is not None and st.get("backend") is not None and hasattr(st["backend"], "remove_overlay"):
+            st["backend"].remove_overlay(uid)
+        it.overlays.remove(i)
+        it.active_overlay = min(i, len(it.overlays) - 1)
+        return {"FINISHED"}
+
+
+class OGC3D_UL_Overlays(UIList):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
+        row = layout.row(align=True)
+        row.prop(item, "enabled", text="")
+        row.prop(item, "name", text="", emboss=False)
+        row.label(text=item.kind)
+
+
 class OGC3D_OT_TilesetRemove(Operator):
     """Remove the selected tileset entry (and its objects)"""
     bl_idname = "ogc3dtiles.tileset_remove"
@@ -283,6 +386,7 @@ def _start_item(scene, props, item) -> dict:
     ``_state`` (with ``error`` set when the start failed)."""
     st = _new_stream(_item_key(item), item.name or _short_label(item.url),
                      item.url.strip(), item.ion_token, effective_sse(props, item))
+    st["overlays"] = _overlay_specs(item)
     try:
         _start_stream(scene, props, st, _state["choice"], _state["cache"])
         if st["name"] != item.name:
@@ -345,7 +449,8 @@ def _start_stream(scene, props, st, choice, cache) -> None:
         backend.main_thread_ms = max(4.0, 12.0 * props.imports_per_tick)
         backend.on_main_thread_ready = _make_native_builder(scene, props, st)
         backend.load_tileset(url=st["url"], ion_token=st["token"],
-                             options={"request_headers": headers})
+                             options={"request_headers": headers,
+                                      "overlays": st.get("overlays") or []})
         st["mode"] = "native"
     st["backend"] = backend
 
@@ -822,6 +927,17 @@ def _build_native_tile(scene, props, st, rt) -> bool:
     if r:
         st["tiles"][rt.key] = _Rec(r[0], r[1])
         st["dirty"] = True
+        waiting = st.get("pending_overlays", {}).pop(rt.key, None)
+        if waiting:
+            from .. import overlays as ovl
+            obj = bpy.data.objects.get(r[0])
+            if obj is not None and obj.type == "MESH":
+                alpha_for = _overlay_alpha_lookup(props)
+                for ev in waiting.values():
+                    try:
+                        ovl.apply_event(obj, ev, alpha_for)
+                    except Exception as e:           # noqa: BLE001
+                        print(f"[3DTiles] overlay attach failed on {rt.key}: {e}")
         return True
     return False
 
@@ -860,6 +976,9 @@ def _tick_native(scene, props, st, now) -> bool:
         if rec is not None:
             remove_tile(rec.holder, rec.data)
             changed = True
+        st.get("pending_overlays", {}).pop(key, None)
+    if _process_overlay_events(scene, props, st):
+        changed = True
 
     # tiles that arrived before the origin was known (queued by the backend)
     imported = 0
@@ -1110,6 +1229,41 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
                     b.label(text=f"Root: {root.name}", icon="EMPTY_AXIS")
                 if st.get("error"):
                     b.label(text=st["error"][:60], icon="ERROR")
+            # raster overlays draped on this tileset (cesium-native backend)
+            hdr = b.row(align=True)
+            hdr.label(text="Raster overlays", icon="IMAGE_DATA")
+            row = b.row()
+            row.template_list("OGC3D_UL_Overlays", "", it, "overlays", it, "active_overlay", rows=2)
+            col = row.column(align=True)
+            col.operator("ogc3dtiles.overlay_add", icon="ADD", text="")
+            col.operator("ogc3dtiles.overlay_remove", icon="REMOVE", text="")
+            if 0 <= it.active_overlay < len(it.overlays):
+                ov = it.overlays[it.active_overlay]
+                ob = b.box()
+                ob.prop(ov, "kind", text="Type")
+                if ov.kind in ("URL", "TMS", "WMTS", "WMS", "BING"):
+                    ob.prop(ov, "url", text="URL")
+                if ov.kind == "ION":
+                    ob.prop(ov, "url", text="Asset id")
+                if ov.kind in ("ION", "BING", "GOOGLE"):
+                    ob.prop(ov, "key", text="Key / token")
+                if ov.kind in ("WMTS", "WMS", "BING", "GOOGLE"):
+                    ob.prop(ov, "layer", text={"WMTS": "Layer", "WMS": "Layers", "BING": "Style",
+                                               "GOOGLE": "Map type"}[ov.kind])
+                if ov.kind == "WMTS":
+                    ob.prop(ov, "style", text="Style")
+                    ob.prop(ov, "matrix_set", text="Matrix set")
+                if ov.kind in ("WMTS", "WMS"):
+                    ob.prop(ov, "image_format", text="Format")
+                if ov.kind in ("URL", "TMS", "WMTS", "WMS"):
+                    r = ob.row(align=True)
+                    r.prop(ov, "min_level", text="Min level")
+                    r.prop(ov, "max_level", text="Max level")
+                ob.prop(ov, "alpha", text="Opacity", slider=True)
+                if st is not None and st.get("mode") == "python":
+                    ob.label(text="Overlays need the cesium-native backend", icon="INFO")
+                elif st is not None:
+                    ob.label(text="Type / URL changes apply on the next Start", icon="INFO")
         else:
             layout.prop(props, "tileset_url", text="URL")
             layout.prop(props, "cesium_ion_token", text="Ion Token")
@@ -1559,6 +1713,9 @@ _classes = [
     OGC3D_OT_RenderConverged,
     OGC3D_OT_TilesetAdd,
     OGC3D_OT_TilesetRemove,
+    OGC3D_OT_OverlayAdd,
+    OGC3D_OT_OverlayRemove,
+    OGC3D_UL_Overlays,
     OGC3D_OT_StartStream,
     OGC3D_OT_StopStream,
     OGC3D_OT_OriginReset,

@@ -631,6 +631,11 @@ def build_tile_from_payload(payload: dict, key: str, scene: bpy.types.Scene,
         if uvs is not None and len(uvs) == n_f * 3:
             uv_layer = me.uv_layers.new(name="UVMap")
             uv_layer.data.foreach_set("uv", np.ascontiguousarray(uvs, dtype=np.float32).ravel())
+        for tid, ouv in sorted((payload.get("overlay_uvs") or {}).items()):
+            if len(ouv) != n_f * 3:
+                continue
+            layer = me.uv_layers.new(name=f"{OVERLAY_UV_PREFIX}{tid}", do_init=False)
+            layer.data.foreach_set("uv", np.ascontiguousarray(ouv, dtype=np.float32).ravel())
     me.update(calc_edges=True)
     me.validate(verbose=False)
     nrm = payload.get("normals")
@@ -836,6 +841,7 @@ def point_tiles_distance(scene, eye) -> float:
 POINTS_NODEGROUP = "OGC3D Points"
 POINTS_MESH_NODEGROUP = "OGC3D Points (Mesh)"
 POINTS_DISC_NODEGROUP = "OGC3D Points (Discs)"
+OVERLAY_UV_PREFIX = "_CESIUMOVERLAY_"
 POINT_GROUPS = (POINTS_NODEGROUP, POINTS_MESH_NODEGROUP, POINTS_DISC_NODEGROUP)
 _GROUP_FOR_MODE = {"POINTS": POINTS_NODEGROUP, "MESH": POINTS_MESH_NODEGROUP,
                    "DISCS": POINTS_DISC_NODEGROUP}

@@ -225,6 +225,9 @@ def _image_payload(cs, model, image_index: int):
     return None
 
 
+OVERLAY_UV_PREFIX = "_CESIUMOVERLAY_"    # RasterOverlayUtilities default base name
+
+
 def extract_mesh_payload(cs, model):
     """Flatten every primitive of ``model``'s default scene into one mesh.
     Returns None when something is unsupported (caller falls back to GLB)."""
@@ -235,6 +238,9 @@ def extract_mesh_payload(cs, model):
         return None
 
     verts, normals, faces, uvs, colors, face_mat = [], [], [], [], [], []
+    overlay_uvs = {}          # texture coordinate id -> [per-primitive loop uv]
+    overlay_missing = set()   # ids some primitive lacks: dropped at the end
+    n_tri_prims = 0
     have_normals = True
     have_uvs = True
     have_colors = True
@@ -304,6 +310,25 @@ def extract_mesh_payload(cs, model):
             uvs.append(loop_uv)
         else:
             have_uvs = False
+        # raster overlay texture coordinates cesium-native added for this tile
+        n_tri_prims += 1
+        seen = set()
+        for name, ai in prim.attributes.items():
+            if not name.startswith(OVERLAY_UV_PREFIX):
+                continue
+            try:
+                tid = int(name[len(OVERLAY_UV_PREFIX):])
+            except ValueError:
+                continue
+            ouv = _as_array(cs.gltf.AccessorViewVec2(model, ai), np.float32)
+            if ouv is None or len(ouv) != n:
+                overlay_missing.add(tid)
+                continue
+            overlay_uvs.setdefault(tid, []).append(ouv[tris.reshape(-1)])
+            seen.add(tid)
+        for tid in overlay_uvs:
+            if tid not in seen:
+                overlay_missing.add(tid)
 
         mi = prim.material if prim.material is not None and prim.material >= 0 else -1
         slot = mats_used.setdefault(mi, len(mats_used))
@@ -346,6 +371,8 @@ def extract_mesh_payload(cs, model):
         "normals": np.concatenate(normals) if (have_normals and normals) else None,
         "faces": F,
         "uvs": np.concatenate(uvs) if (have_uvs and uvs and not all_points) else None,
+        "overlay_uvs": {tid: np.concatenate(parts) for tid, parts in overlay_uvs.items()
+                        if tid not in overlay_missing and len(parts) == n_tri_prims} or None,
         "colors": np.concatenate(colors) if (have_colors and colors) else None,
         "face_mat": np.concatenate(face_mat) if face_mat else np.zeros(0, np.int32),
         "points": all_points,

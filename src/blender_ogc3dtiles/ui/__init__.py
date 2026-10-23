@@ -1190,7 +1190,7 @@ def _set_origin_local(props, cz):
     props.origin_lat = 90.0
     props.origin_lon = -90.0
     props.origin_height = -_WGS84_B + cz
-    print(f"[3DTiles] Scene origin: local (tileset is not georeferenced), identity frame")
+    print("[3DTiles] Scene origin: local (tileset is not georeferenced), identity frame")
 
 
 def is_local_origin(props) -> bool:

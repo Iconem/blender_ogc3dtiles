@@ -269,6 +269,8 @@ from behind).
 
 ### Placing the scene origin by name
 
+![Search place: origin on the Basilica di San Pietro (ground 62 m + geoid 48 m), WGS84 globe with OpenStreetMap](docs/img/place_search.jpg)
+
 Scene Origin > Mode > *Search place*: type a place (Enter) and pick one of
 the results; the origin moves there and a running stream restarts around it,
 which is the quickest way to look at a spot of a global tileset (Google

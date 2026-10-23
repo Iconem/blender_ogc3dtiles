@@ -22,7 +22,8 @@ from .tileset.backend import get_available_backends, probe_cesium
 
 def _get_prefs(context):
     """Safe prefs lookup — works for both legacy addon and Extension install."""
-    for key in ("blender_ogc3dtiles",
+    for key in (__package__,
+                "blender_ogc3dtiles",
                 "bl_ext.user_default.blender_ogc3dtiles",
                 "user_default.blender_ogc3dtiles"):
         try:
@@ -94,6 +95,25 @@ class OGC3DTilesPreferences(AddonPreferences):
                     "downloaded and pip-installed into Blender's Python",
         default="jo-chemla/cesium-native-python",
     )
+    # ── Place search (Scene Origin > Search place) ────────────────────────────
+    photon_url: StringProperty(
+        name="Photon geocoder",
+        description="Photon search endpoint (OpenStreetMap places; komoot's public instance or "
+                    "a self-hosted one). Queries are sent there when you search a place",
+        default="https://photon.komoot.io/api/",
+    )
+    terrain_tiles_url: StringProperty(
+        name="Terrain tiles",
+        description="Terrarium-encoded elevation tiles ({z}/{x}/{y}) used for the ground height "
+                    "of a searched place (default: AWS open-data Terrain Tiles)",
+        default="https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png",
+    )
+    geoid_url: StringProperty(
+        name="EGM96 geoid grid",
+        description="WW15MGH.DAC (2 MB, downloaded once into the cache): sea level to "
+                    "ellipsoid height",
+        default="https://raw.githubusercontent.com/CesiumGS/cesium-native/v0.59.0/data/WW15MGH.DAC",
+    )
     cesium_install_path: StringProperty(
         name="cesium-native-python source dir",
         description=(
@@ -156,6 +176,14 @@ class OGC3DTilesPreferences(AddonPreferences):
             row3.operator("ogc3dtiles.reset_perf_stats", icon="X", text="Reset Stats")
         else:
             box2.label(text="Start streaming to gather samples.", icon="INFO")
+
+        # ── Place search ───────────────────────────────────────────────────────
+        layout.separator()
+        boxp = layout.box()
+        boxp.label(text="Place search (Scene Origin)", icon="VIEWZOOM")
+        boxp.prop(self, "photon_url", text="Geocoder")
+        boxp.prop(self, "terrain_tiles_url", text="Terrain tiles")
+        boxp.prop(self, "geoid_url", text="Geoid grid")
 
         # ── 3. Developer ──────────────────────────────────────────────────────
         layout.separator()

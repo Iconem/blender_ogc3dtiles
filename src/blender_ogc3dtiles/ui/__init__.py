@@ -97,6 +97,9 @@ _state: dict = _fresh_state()
 
 
 class _FallbackPrefs:
+    photon_url = "https://photon.komoot.io/api/"
+    terrain_tiles_url = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"
+    geoid_url = "https://raw.githubusercontent.com/CesiumGS/cesium-native/v0.59.0/data/WW15MGH.DAC"
     traversal_backend = "AUTO"
     dev_mode = False
     show_coord_debug = True
@@ -104,7 +107,8 @@ class _FallbackPrefs:
 
 
 def _get_prefs(context):
-    for key in ("blender_ogc3dtiles",
+    for key in (__package__.rpartition(".")[0],      # the extension's own id
+                "blender_ogc3dtiles",
                 "bl_ext.user_default.blender_ogc3dtiles",
                 "user_default.blender_ogc3dtiles"):
         try:
@@ -381,8 +385,10 @@ class OGC3D_OT_StartStream(Operator):
         # origin stays; AUTO: decided per tileset in _decide_origin()
         if props.origin_mode == "CUSTOM":
             props.origin_valid = True
+        # SEARCH: a picked place is a custom origin; before any pick it
+        # behaves like Auto (centre on the tileset)
         _state["origin_set"] = props.origin_mode == "CUSTOM" or (
-            props.origin_mode == "KEEP" and props.origin_valid)
+            props.origin_mode in ("KEEP", "SEARCH") and props.origin_valid)
 
         started = 0
         for index, item in items:
@@ -521,6 +527,112 @@ def _decide_origin(props, center_ecef, radius_m=None) -> None:
     _state["origin_set"] = True
     for other in _state["streams"].values():
         other["last_sig"] = None
+
+
+# ── Place search (Photon) ─────────────────────────────────────────────────────
+_places: list = []          # last search results: {label, lat, lon, kind}
+
+
+def place_search(context) -> str:
+    """Run the Photon query in Scene Origin; returns a status text."""
+    from .. import geosearch
+    props = context.scene.ogc3dtiles
+    q = props.place_query.strip()
+    _places.clear()
+    if not q:
+        return ""
+    prefs = _get_prefs(context)
+    try:
+        _places.extend(geosearch.photon_search(q, getattr(prefs, "photon_url", geosearch.PHOTON_URL)))
+    except Exception as e:                           # noqa: BLE001
+        return f"Search failed: {e}"
+    return f"{len(_places)} place(s)" if _places else "No place found"
+
+
+def _on_place_query(self, context):
+    self.place_status = place_search(context)
+    for area in context.screen.areas if context.screen else []:
+        area.tag_redraw()
+
+
+def _restart_stream_later():
+    """Stop now, Start once the modal stream has wound down (picked place
+    while streaming: tiles are placed with the origin at build time)."""
+    def _start():
+        try:
+            for window in bpy.context.window_manager.windows:
+                for area in window.screen.areas:
+                    if area.type == "VIEW_3D":
+                        region = next(r for r in area.regions if r.type == "WINDOW")
+                        with bpy.context.temp_override(window=window, screen=window.screen,
+                                                       area=area, region=region):
+                            bpy.ops.ogc3dtiles.start_stream()
+                        return None
+        except Exception as e:                       # noqa: BLE001
+            print(f"[3DTiles] restart after place pick failed: {e}")
+        return None
+    bpy.ops.ogc3dtiles.stop_stream()
+    bpy.app.timers.register(_start, first_interval=0.5)
+
+
+def _look_at_origin(context):
+    """Point the 3D views at the new origin from 1.5 km, 60° down."""
+    import mathutils
+    for window in context.window_manager.windows:
+        for area in window.screen.areas:
+            if area.type != "VIEW_3D":
+                continue
+            r3d = area.spaces.active.region_3d
+            r3d.view_location = (0.0, 0.0, 0.0)
+            r3d.view_rotation = mathutils.Euler((math.radians(60), 0, 0), "XYZ").to_quaternion()
+            r3d.view_distance = 1500.0
+            area.tag_redraw()
+
+
+class OGC3D_OT_PlaceSearch(Operator):
+    """Search a place by name (Photon / OpenStreetMap)"""
+    bl_idname = "ogc3dtiles.place_search"
+    bl_label = "Search Place"
+
+    def execute(self, context):
+        props = context.scene.ogc3dtiles
+        props.place_status = place_search(context)
+        return {"FINISHED"}
+
+
+class OGC3D_OT_PlacePick(Operator):
+    """Put the scene origin at this place (ground height from terrain tiles + EGM96 geoid);
+    a running stream restarts there"""
+    bl_idname = "ogc3dtiles.place_pick"
+    bl_label = "Use Place"
+
+    index: bpy.props.IntProperty(default=0)
+
+    def execute(self, context):
+        from .. import geosearch
+        from ..io import default_cache_dir
+        if not (0 <= self.index < len(_places)):
+            return {"CANCELLED"}
+        p = _places[self.index]
+        props = context.scene.ogc3dtiles
+        prefs = _get_prefs(context)
+        h, msl, n, notes = geosearch.ellipsoid_height(
+            p["lat"], p["lon"], default_cache_dir(),
+            getattr(prefs, "terrain_tiles_url", geosearch.TERRARIUM_URL),
+            getattr(prefs, "geoid_url", geosearch.GEOID_URL))
+        props.origin_lat, props.origin_lon, props.origin_height = p["lat"], p["lon"], h
+        props.origin_place = p["label"]
+        props.origin_valid = True
+        props.place_status = (f"Ground {msl:.0f} m + geoid {n:+.0f} m = {h:.0f} m (ellipsoid)"
+                              + ("; " + "; ".join(notes) if notes else ""))
+        for msg in notes:
+            self.report({"WARNING"}, msg)
+        print(f"[3DTiles] Scene origin: {p['label']} lat={p['lat']:.5f} lon={p['lon']:.5f} "
+              f"h={h:.1f} m (ground {msl:.1f} + geoid {n:.1f})")
+        if props.is_streaming:
+            _restart_stream_later()
+        _look_at_origin(context)
+        return {"FINISHED"}
 
 
 class OGC3D_OT_OriginReset(Operator):
@@ -1360,6 +1472,22 @@ class OGC3D_PT_OriginPanel(_OGC3DSidebar, Panel):
         layout.prop(props, "origin_mode", text="Mode")
         if props.origin_mode == "AUTO":
             layout.prop(props, "origin_reuse_km")
+        if props.origin_mode == "SEARCH":
+            row = layout.row(align=True)
+            row.prop(props, "place_query", text="", icon="VIEWZOOM")
+            row.operator("ogc3dtiles.place_search", text="", icon="FILE_REFRESH")
+            if _places:
+                box = layout.box()
+                col = box.column(align=True)
+                for i, pl in enumerate(_places):
+                    op = col.operator("ogc3dtiles.place_pick",
+                                      text=f"{pl['label']}" + (f"  ({pl['kind']})" if pl["kind"] else ""),
+                                      icon="PINNED" if pl["label"] == props.origin_place else "UNPINNED")
+                    op.index = i
+            if props.place_status:
+                layout.label(text=props.place_status, icon="INFO")
+            if props.origin_place:
+                layout.label(text=props.origin_place, icon="WORLD")
         col = layout.column()
         col.enabled = props.origin_mode == "CUSTOM"
         col.prop(props, "origin_lat", text="Latitude °")
@@ -1796,6 +1924,8 @@ _classes = [
     OGC3D_OT_StartStream,
     OGC3D_OT_StopStream,
     OGC3D_OT_OriginReset,
+    OGC3D_OT_PlaceSearch,
+    OGC3D_OT_PlacePick,
     OGC3D_OT_RelationLines,
     OGC3D_OT_ClearTiles,
     OGC3D_OT_ClearCache,

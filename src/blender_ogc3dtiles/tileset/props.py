@@ -115,6 +115,11 @@ OVERLAY_KINDS = [
 ]
 
 
+def _on_place_query(self, context):
+    from ..ui import _on_place_query as cb
+    cb(self, context)
+
+
 class OverlayItem(PropertyGroup):
     """A raster overlay draped on one tileset (cesium-native backend)."""
     name: StringProperty(name="Name", default="overlay")
@@ -231,9 +236,16 @@ class TilesSceneProps(PropertyGroup):
              "new tileset is within 'Reuse within' km of it (CloudCompare-style)"),
             ("KEEP", "Keep current", "Never move the origin once it has been set"),
             ("CUSTOM", "Custom", "Use the latitude / longitude / height entered below"),
+            ("SEARCH", "Search place", "Find a place by name (Photon, OpenStreetMap) and put the "
+             "origin on the ground there; until a place is picked, behaves like Auto"),
         ],
         default="AUTO",
     )
+    place_query: StringProperty(
+        name="Place", description="Place name to search (Enter runs the search)",
+        default="", update=_on_place_query)
+    place_status: StringProperty(default="", options={'SKIP_SAVE'})
+    origin_place: StringProperty(name="Place", description="Name of the picked place", default="")
     origin_reuse_km: FloatProperty(
         name="Reuse within (km)",
         description="Auto mode: keep the existing origin if the new tileset centre is "

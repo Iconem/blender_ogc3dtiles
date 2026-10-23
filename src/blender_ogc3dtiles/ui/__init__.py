@@ -124,10 +124,9 @@ def _enu_from_ecef(props):
 
 def _enabled_items(props):
     """Tileset list entries to stream; falls back to the single URL field."""
-    items = [(i, it) for i, it in enumerate(props.tilesets)
-             if it.enabled and (it.url.strip() or it.kind == "GLOBE")]
+    items = [(i, it) for i, it in enumerate(props.tilesets) if it.enabled and item_url(it)]
     if not items and props.tileset_url.strip():
-        empty = next((x for x in props.tilesets if not x.url.strip() and x.kind != "GLOBE"), None)
+        empty = next((x for x in props.tilesets if not item_url(x)), None)
         it = empty if empty is not None else props.tilesets.add()
         it.name = _short_label(props.tileset_url)
         it.url = props.tileset_url.strip()
@@ -203,6 +202,47 @@ class OGC3D_OT_TilesetAdd(Operator):
         return {"FINISHED"}
 
 
+def item_url(item) -> str:
+    """What the backend loads for a list entry: a URL, ``ion://<id>`` or the globe."""
+    kind = getattr(item, "kind", "TILESET")
+    if kind == "GLOBE":
+        return GLOBE_URL
+    if kind == "ION":
+        return f"ion://{item.ion_asset_id}" if item.ion_asset_id > 0 else ""
+    return item.url.strip()
+
+
+def _is_ion_url(url: str) -> bool:
+    return url.startswith("ion://") or url.isdigit()
+
+
+def item_token(item, props) -> str:
+    """The ion token, for ion entries only (older files kept ion ids in the
+    URL field): never sent as a header to other servers."""
+    url = item_url(item)
+    if not _is_ion_url(url):
+        return ""
+    return item.ion_token.strip() or props.cesium_ion_token.strip()
+
+
+def overlays_live_toggle(scene, item) -> None:
+    """TilesetItem.use_overlays changed: add / remove its overlays live."""
+    st = _state["streams"].get(item.uid) if item.uid else None
+    backend = st.get("backend") if st else None
+    if backend is None or not hasattr(backend, "add_overlay"):
+        return
+    for ov in item.overlays:
+        if not ov.enabled:
+            continue
+        if item.use_overlays:
+            spec = _overlay_specs(item, only=ov)
+            if spec:
+                backend.add_overlay(spec[0])
+        else:
+            backend.remove_overlay(ov.uid)
+    st["overlays"] = _overlay_specs(item)
+
+
 def overlay_live_toggle(scene, ov) -> None:
     """OverlayItem.enabled changed: mirror it on the running backend."""
     props = scene.ogc3dtiles
@@ -213,7 +253,7 @@ def overlay_live_toggle(scene, ov) -> None:
         return
     st = _state["streams"].get(it.uid) if it.uid else None
     backend = st.get("backend") if st else None
-    if backend is None or not hasattr(backend, "add_overlay"):
+    if backend is None or not hasattr(backend, "add_overlay") or not it.use_overlays:
         return
     if not ov.uid:
         ov.uid = f"ov_{uuid.uuid4().hex[:8]}"
@@ -229,6 +269,8 @@ def overlay_live_toggle(scene, ov) -> None:
 def _overlay_specs(item, only=None) -> list:
     """Backend specs for the enabled overlays of a tileset list entry."""
     specs = []
+    if not getattr(item, "use_overlays", True):
+        return specs
     for ov in item.overlays:
         if not ov.enabled or (only is not None and ov != only):
             continue
@@ -409,9 +451,11 @@ class OGC3D_OT_StartStream(Operator):
 def _start_item(scene, props, item) -> dict:
     """Create and start the stream for one list entry; registers it in
     ``_state`` (with ``error`` set when the start failed)."""
-    url = GLOBE_URL if getattr(item, "kind", "TILESET") == "GLOBE" else item.url.strip()
-    st = _new_stream(_item_key(item), item.name or (_short_label(url) if url != GLOBE_URL else "WGS84 globe"),
-                     url, item.ion_token, effective_sse(props, item))
+    url = item_url(item)
+    default_name = ("WGS84 globe" if url == GLOBE_URL else
+                    f"ion {url[6:]}" if url.startswith("ion://") else _short_label(url))
+    st = _new_stream(_item_key(item), item.name or default_name,
+                     url, item_token(item, props), effective_sse(props, item))
     st["overlays"] = _overlay_specs(item)
     try:
         _start_stream(scene, props, st, _state["choice"], _state["cache"])
@@ -453,6 +497,8 @@ def _start_stream(scene, props, st, choice, cache) -> None:
     if isinstance(backend, PythonBackend):
         if st["url"] == GLOBE_URL:
             raise RuntimeError("The WGS84 globe needs the cesium-native backend")
+        if _is_ion_url(st["url"]):
+            raise RuntimeError("Cesium ion assets need the cesium-native backend")
         headers = {}
         if st["token"]:
             headers["Authorization"] = f"Bearer {st['token']}"
@@ -472,8 +518,8 @@ def _start_stream(scene, props, st, choice, cache) -> None:
         _add_root_bbox(scene, st)
     else:
         headers = {}
-        if st["token"] and not st["url"].isdigit():
-            headers["Authorization"] = f"Bearer {st['token']}"
+        # the ion token goes to Cesium ion through the Tileset constructor,
+        # never as a header to other servers
         backend.main_thread_ms = max(4.0, 12.0 * props.imports_per_tick)
         backend.on_main_thread_ready = _make_native_builder(scene, props, st)
         backend.load_tileset(url=st["url"], ion_token=st["token"],
@@ -750,13 +796,13 @@ def _sync_streams(scene, props, now) -> bool:
             changed = True
         elif st["backend"] is None:
             # failed earlier: retry when the entry changed or after a delay
-            if want and (st["url"] != (GLOBE_URL if item.kind == "GLOBE" else item.url.strip())
+            if want and (st["url"] != item_url(item)
                          or now - _state["start_failed"].get(key, 0) > START_RETRY_S):
                 _state["streams"].pop(key, None)
                 st = _start_item(scene, props, item)
                 changed = True
             continue
-        if st["url"] != (GLOBE_URL if item.kind == "GLOBE" else item.url.strip()):
+        if st["url"] != item_url(item):
             _state["streams"].pop(key, None)
             _teardown_stream(st, remove_objects=True)
             if want:
@@ -1283,9 +1329,13 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
             b.prop(it, "kind", text="Type")
             if it.kind == "GLOBE":
                 b.label(text="Bare WGS84 ellipsoid: add raster overlays below", icon="WORLD")
+            elif it.kind == "ION":
+                b.prop(it, "ion_asset_id", text="Asset id")
+                b.prop(it, "ion_token", text="Ion Token")
             else:
                 b.prop(it, "url", text="URL")
-                b.prop(it, "ion_token", text="Ion Token")
+                if _is_ion_url(it.url.strip()):          # entries from older versions
+                    b.prop(it, "ion_token", text="Ion Token")
             row = b.row(align=True)
             row.prop(it, "use_own_sse", text="")
             sub = row.row(align=True)
@@ -1299,40 +1349,10 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
                 if st.get("error"):
                     b.label(text=st["error"][:60], icon="ERROR")
             # raster overlays draped on this tileset (cesium-native backend)
-            hdr = b.row(align=True)
-            hdr.label(text="Raster overlays", icon="IMAGE_DATA")
-            row = b.row()
-            row.template_list("OGC3D_UL_Overlays", "", it, "overlays", it, "active_overlay", rows=2)
-            col = row.column(align=True)
-            col.operator("ogc3dtiles.overlay_add", icon="ADD", text="")
-            col.operator("ogc3dtiles.overlay_remove", icon="REMOVE", text="")
-            if 0 <= it.active_overlay < len(it.overlays):
-                ov = it.overlays[it.active_overlay]
-                ob = b.box()
-                ob.prop(ov, "kind", text="Type")
-                if ov.kind in ("URL", "TMS", "WMTS", "WMS", "BING"):
-                    ob.prop(ov, "url", text="URL")
-                if ov.kind == "ION":
-                    ob.prop(ov, "url", text="Asset id")
-                if ov.kind in ("ION", "BING", "GOOGLE"):
-                    ob.prop(ov, "key", text="Key / token")
-                if ov.kind in ("WMTS", "WMS", "BING", "GOOGLE"):
-                    ob.prop(ov, "layer", text={"WMTS": "Layer", "WMS": "Layers", "BING": "Style",
-                                               "GOOGLE": "Map type"}[ov.kind])
-                if ov.kind == "WMTS":
-                    ob.prop(ov, "style", text="Style")
-                    ob.prop(ov, "matrix_set", text="Matrix set")
-                if ov.kind in ("WMTS", "WMS"):
-                    ob.prop(ov, "image_format", text="Format")
-                if ov.kind in ("URL", "TMS", "WMTS", "WMS"):
-                    r = ob.row(align=True)
-                    r.prop(ov, "min_level", text="Min level")
-                    r.prop(ov, "max_level", text="Max level")
-                ob.prop(ov, "alpha", text="Opacity", slider=True)
-                if st is not None and st.get("mode") == "python":
-                    ob.label(text="Overlays need the cesium-native backend", icon="INFO")
-                elif st is not None:
-                    ob.label(text="Tick / untick applies live; URL edits: untick, then tick", icon="INFO")
+            b.prop(it, "use_overlays", text=(f"Raster overlays ({len(it.overlays)})"
+                                             if it.overlays else "Raster overlays"))
+            if it.use_overlays:
+                _draw_overlays(b, it, st)
         else:
             layout.prop(props, "tileset_url", text="URL")
             layout.prop(props, "cesium_ion_token", text="Ion Token")
@@ -1343,6 +1363,42 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
         else:
             row.operator("ogc3dtiles.stop_stream", icon="PAUSE", text="Stop")
         row.operator("ogc3dtiles.clear_tiles", icon="TRASH", text="Clear All Tiles")
+
+
+def _draw_overlays(b, it, st) -> None:
+    """Overlay list + the selected overlay's fields, inside the tileset box."""
+    row = b.row()
+    row.template_list("OGC3D_UL_Overlays", "", it, "overlays", it, "active_overlay", rows=2)
+    col = row.column(align=True)
+    col.operator("ogc3dtiles.overlay_add", icon="ADD", text="")
+    col.operator("ogc3dtiles.overlay_remove", icon="REMOVE", text="")
+    if 0 <= it.active_overlay < len(it.overlays):
+        ov = it.overlays[it.active_overlay]
+        ob = b.box()
+        ob.prop(ov, "kind", text="Type")
+        if ov.kind in ("URL", "TMS", "WMTS", "WMS", "BING"):
+            ob.prop(ov, "url", text="URL")
+        if ov.kind == "ION":
+            ob.prop(ov, "url", text="Asset id")
+        if ov.kind in ("ION", "BING", "GOOGLE"):
+            ob.prop(ov, "key", text="Key / token")
+        if ov.kind in ("WMTS", "WMS", "BING", "GOOGLE"):
+            ob.prop(ov, "layer", text={"WMTS": "Layer", "WMS": "Layers", "BING": "Style",
+                                       "GOOGLE": "Map type"}[ov.kind])
+        if ov.kind == "WMTS":
+            ob.prop(ov, "style", text="Style")
+            ob.prop(ov, "matrix_set", text="Matrix set")
+        if ov.kind in ("WMTS", "WMS"):
+            ob.prop(ov, "image_format", text="Format")
+        if ov.kind in ("URL", "TMS", "WMTS", "WMS"):
+            r = ob.row(align=True)
+            r.prop(ov, "min_level", text="Min level")
+            r.prop(ov, "max_level", text="Max level")
+        ob.prop(ov, "alpha", text="Opacity", slider=True)
+        if st is not None and st.get("mode") == "python":
+            ob.label(text="Overlays need the cesium-native backend", icon="INFO")
+        elif st is not None:
+            ob.label(text="Tick / untick applies live; URL edits: untick, then tick", icon="INFO")
 
 
 class OGC3D_PT_OriginPanel(_OGC3DSidebar, Panel):

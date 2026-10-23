@@ -141,18 +141,36 @@ class OverlayItem(PropertyGroup):
 
 
 TILESET_KINDS = [
-    ("TILESET", "3D Tiles", "tileset.json URL, local path or Cesium ion asset id"),
+    ("TILESET", "3D Tiles", "tileset.json URL or local path"),
+    ("ION", "Cesium ion", "Cesium ion asset (asset id + access token; needs the cesium-native backend)"),
     ("GLOBE", "WGS84 globe", "cesium-native's procedural ellipsoid: a bare globe to drape raster "
      "overlays on (needs the cesium-native backend)"),
 ]
 
 
+def _on_item_kind(self, context):
+    # a bare globe is only useful with imagery on it
+    if self.kind == "GLOBE":
+        self.use_overlays = True
+
+
+def _on_item_use_overlays(self, context):
+    from ..ui import overlays_live_toggle
+    overlays_live_toggle(context.scene, self)
+
+
 class TilesetItem(PropertyGroup):
     """One streamed tileset (list entry in the sidebar)."""
     name: StringProperty(name="Name", default="tileset")
-    kind: EnumProperty(name="Type", items=TILESET_KINDS, default="TILESET")
-    url: StringProperty(name="Tileset URL", description="tileset.json URL or ion asset id", default="")
-    ion_token: StringProperty(name="Ion Token", subtype='PASSWORD', default="")
+    kind: EnumProperty(name="Type", items=TILESET_KINDS, default="TILESET", update=_on_item_kind)
+    url: StringProperty(name="Tileset URL", description="tileset.json URL or local path", default="")
+    ion_asset_id: IntProperty(name="Asset id", description="Cesium ion asset id", default=0, min=0)
+    ion_token: StringProperty(name="Ion Token", description="Cesium ion access token (only sent "
+                              "to Cesium ion)", subtype='PASSWORD', default="")
+    use_overlays: BoolProperty(
+        name="Raster overlays",
+        description="Drape raster imagery on this entry (cesium-native backend). Live",
+        default=False, update=_on_item_use_overlays)
     enabled: BoolProperty(
         name="Stream",
         description="Stream this tileset. Unticked = paused: nothing is loaded or evicted "

@@ -269,6 +269,8 @@ from behind).
 
 ### Gaussian splat tiles
 
+![Gaussian splat tiles: Elevator sample streamed in Blender 5.3 (Solid and Rendered viewport), Cycles render, and a local 3dtiled tileset](docs/img/splat_tiles.jpg)
+
 Tiles whose glTF carries `KHR_gaussian_splatting` (SPZ-compressed through
 `KHR_gaussian_splatting_compression_spz_2`, as 3dtiled, the Cesium tilers
 and the 3DGS-PLY-3DTiles converter write them) stream through the

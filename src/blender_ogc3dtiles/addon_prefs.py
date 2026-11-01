@@ -114,6 +114,32 @@ class OGC3DTilesPreferences(AddonPreferences):
                     "ellipsoid height",
         default="https://raw.githubusercontent.com/CesiumGS/cesium-native/v0.59.0/data/WW15MGH.DAC",
     )
+    # ── Cache, local tilesets, library ────────────────────────────────────────
+    cache_dir: StringProperty(
+        name="Cache folder",
+        description="Where downloaded tiles are kept (cesium-native's sqlite HTTP cache and the "
+                    "Python backend's GLBs). Empty = %LOCALAPPDATA%/blender_ogc3dtiles/cache. "
+                    "Keep it on a local disk: sqlite locking is unreliable over SMB, and cache "
+                    "entries are keyed by URL, share-link tokens included",
+        subtype="DIR_PATH", default="")
+    cache_max_gb: FloatProperty(
+        name="Cache size cap (GB)",
+        description="Trimmed to this size, least recently used first, when the first stream of a "
+                    "session starts. 0 = no cap. cesium-native also keeps at most 4096 responses",
+        default=10.0, min=0.0, soft_max=200.0)
+    mapped_drives_as_unc: BoolProperty(
+        name="Mapped drives as UNC",
+        description="When browsing to a tileset on a mapped network drive (Z:), store its "
+                    "network share path (\\\\server\\share) instead, so the entry works on "
+                    "machines that map the "
+                    "share to another letter",
+        default=True)
+    library_files: StringProperty(
+        name="Tileset libraries",
+        description="Tileset library JSON files, separated by ';' (a personal one, a team one on "
+                    "the NAS...). Entries keep their URLs and keys there, out of the add-on and "
+                    "the repository",
+        default="")
     cesium_install_path: StringProperty(
         name="cesium-native-python source dir",
         description=(
@@ -176,6 +202,18 @@ class OGC3DTilesPreferences(AddonPreferences):
             row3.operator("ogc3dtiles.reset_perf_stats", icon="X", text="Reset Stats")
         else:
             box2.label(text="Start streaming to gather samples.", icon="INFO")
+
+        # ── Cache / library ───────────────────────────────────────────────────
+        layout.separator()
+        boxc = layout.box()
+        boxc.label(text="Cache, local tilesets, library", icon="FILE_CACHE")
+        boxc.prop(self, "cache_dir")
+        row = boxc.row(align=True)
+        row.prop(self, "cache_max_gb")
+        row.operator("ogc3dtiles.cache_trim", text="", icon="BRUSH_DATA")
+        boxc.prop(self, "mapped_drives_as_unc")
+        boxc.prop(self, "library_files", text="Libraries")
+        boxc.operator("ogc3dtiles.library_add_file", text="Add library file…", icon="FILEBROWSER")
 
         # ── Place search ───────────────────────────────────────────────────────
         layout.separator()

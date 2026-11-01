@@ -43,7 +43,21 @@ _YUP_TO_ZUP = [[1.0, 0.0, 0.0, 0.0], [0.0, 0.0, -1.0, 0.0],
 
 # ── disk cache ───────────────────────────────────────────────────────────────
 
+def addon_pref(name: str, default=None):
+    """A field of the add-on preferences (default outside Blender / unregistered)."""
+    try:
+        ad = bpy.context.preferences.addons.get(__package__.rpartition(".")[0])
+        return getattr(ad.preferences, name, default) if ad is not None else default
+    except Exception:          # noqa: BLE001
+        return default
+
+
 def default_cache_dir() -> str:
+    """Preferences' cache folder, else %LOCALAPPDATA%/blender_ogc3dtiles/cache
+    (~/.cache/... elsewhere): local, per user and shared by Blender versions."""
+    custom = (addon_pref("cache_dir", "") or "").strip()
+    if custom:
+        return os.path.abspath(bpy.path.abspath(custom))
     base = os.environ.get("LOCALAPPDATA") or os.path.join(os.path.expanduser("~"), ".cache")
     return os.path.join(base, "blender_ogc3dtiles", "cache")
 

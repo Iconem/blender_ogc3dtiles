@@ -167,7 +167,11 @@ class _GlbPreparer:
                 if payload is not None:
                     rtc = None
                     try:
-                        ext = model.ext_cesium_rtc()
+                        # a property in the binding (calling it raised and
+                        # dropped every b3dm RTC_CENTER on this path)
+                        ext = model.ext_cesium_rtc
+                        if callable(ext):
+                            ext = ext()
                         if ext is not None and len(ext.center) == 3:
                             rtc = [float(v) for v in ext.center]
                     except Exception:
@@ -350,6 +354,14 @@ def _make_overlay(cs, spec):
     oo.maximum_screen_space_error = float(spec.get("detail_px", 4.0))
     if kind == "DEBUG":
         return ro.DebugColorizeTilesRasterOverlay(uid, oo)
+    if kind == "CLIP":
+        # clipping mask: polygons rasterised to one channel, 255 inside (or
+        # outside with "invert"); the tile material turns it into transparency
+        geo = cs.geospatial
+        polys = [geo.CartographicPolygon(np.asarray(p, np.float64)) for p in spec["polygons"]]
+        oo.maximum_screen_space_error = float(spec.get("detail_px", 2.0))
+        return ro.RasterizedPolygonsOverlay(uid, polys, bool(spec.get("invert")),
+                                            geo.Ellipsoid.WGS84, geo.GeographicProjection(), oo)
     if kind == "URL":
         o = ro.UrlTemplateRasterOverlayOptions()
         o.minimum_level, o.maximum_level = lo, hi
@@ -463,6 +475,7 @@ class CesiumNativeBackend:
         self._freed = []
         self._overlay_events = []
         self._overlays = {}                     # uid -> RasterOverlay
+        self._excluders = {}                    # uid -> RasterizedPolygonsTileExcluder
         self._globe = False                     # procedural ellipsoid tileset
         self._rendered = set()
         self._counter = 0
@@ -560,15 +573,29 @@ class CesiumNativeBackend:
             return False
         self._tileset.overlays.add(ov)
         self._overlays[spec["uid"]] = ov
+        if spec.get("exclude"):
+            # tiles entirely on the clipped side of the polygons are never loaded
+            self._excluders[spec["uid"]] = self._cs.tiles.selection.RasterizedPolygonsTileExcluder(ov)
+            self._push_excluders()
         return True
 
     def remove_overlay(self, uid):
         ov = self._overlays.pop(uid, None)
+        if self._excluders.pop(uid, None) is not None:
+            self._push_excluders()
         if ov is not None and self._tileset is not None:
             try:
                 self._tileset.overlays.remove(ov)
             except Exception as exc:      # noqa: BLE001
                 print("[3DTiles/native] overlay remove failed: %r" % (exc,))
+
+    def _push_excluders(self):
+        if self._tileset is None:
+            return
+        try:
+            self._tileset.options.excluders = list(self._excluders.values())
+        except Exception as exc:          # noqa: BLE001
+            print("[3DTiles/native] excluders update failed: %r" % (exc,))
 
     def pop_overlay_events(self):
         with self._lock:

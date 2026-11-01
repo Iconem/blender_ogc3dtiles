@@ -213,7 +213,17 @@ def item_url(item) -> str:
         return GLOBE_URL
     if kind == "ION":
         return f"ion://{item.ion_asset_id}" if item.ion_asset_id > 0 else ""
-    return item.url.strip()
+    return resolve_url(item.url)
+
+
+def resolve_url(url: str) -> str:
+    """Entry URL → what the backend loads: blend-relative ``//...`` and plain
+    local / UNC paths become ``file:`` URLs (curl rejects bare paths)."""
+    from .. import paths
+    u = url.strip()
+    if u.startswith("//") and not u.startswith("///"):
+        u = bpy.path.abspath(u)
+    return paths.path_to_url(u) if paths.is_local_path(u) else u
 
 
 def _is_ion_url(url: str) -> bool:
@@ -394,6 +404,143 @@ class OGC3D_UL_Overlays(UIList):
         row.label(text=item.kind)
 
 
+# ── Clipping polygons ─────────────────────────────────────────────────────────
+CLIP_SETTLE_S = 0.35        # rebuild the masks this long after the last edit
+
+
+def clip_mark_dirty(scene, item) -> None:
+    """Clipping settings of an entry changed: rebuild its masks soon."""
+    st = _state["streams"].get(item.uid) if getattr(item, "uid", "") else None
+    if st is not None:
+        st["clip_dirty_t"] = time.monotonic()
+
+
+def _clip_polygons(scene, props, item, st) -> list:
+    from .. import clipping
+    if not item.use_clipping:
+        return []
+    root = bpy.data.objects.get(st.get("root_obj") or "")
+    to_tileset = root.matrix_world.inverted() if root is not None else None
+    dg = bpy.context.evaluated_depsgraph_get()
+    loops = []
+    for cp in item.clip_polygons:
+        if cp.enabled and cp.obj is not None:
+            loops.extend(clipping.object_loops(cp.obj, dg, to_tileset))
+    return clipping.loops_to_lonlat(loops, (props.origin_lat, props.origin_lon, props.origin_height))
+
+
+def _refresh_clip(scene, props, st, item) -> None:
+    from .. import clipping
+    backend = st.get("backend")
+    if backend is None or not hasattr(backend, "add_overlay"):
+        return
+    for uid in st.get("clip_uids", []):
+        backend.remove_overlay(uid)
+    st["clip_uids"] = []
+    try:
+        specs = clipping.clip_specs(item, _clip_polygons(scene, props, item, st))
+    except Exception as e:                           # noqa: BLE001
+        print(f"[3DTiles] clipping polygons: {e}")
+        specs = []
+    for spec in specs:
+        if backend.add_overlay(spec):
+            st["clip_uids"].append(spec["uid"])
+    st["last_sig"] = None
+
+
+def _tick_clip(scene, props, st, now) -> None:
+    t = st.get("clip_dirty_t")
+    if t is None or now - t < CLIP_SETTLE_S or not _state.get("origin_set"):
+        return
+    st["clip_dirty_t"] = None
+    item = next((it for it in props.tilesets if it.uid == st["key"]), None)
+    if item is not None:
+        _refresh_clip(scene, props, st, item)
+
+
+def _clip_depsgraph_watch(scene, depsgraph):
+    """A clipping object moved or was edited: rebuild that tileset's masks."""
+    if not _state["streams"]:
+        return
+    props = getattr(scene, "ogc3dtiles", None)
+    if props is None:
+        return
+    watched = {}
+    for it in props.tilesets:
+        if it.use_clipping and it.uid in _state["streams"]:
+            for cp in it.clip_polygons:
+                if cp.enabled and cp.obj is not None:
+                    watched.setdefault(cp.obj.name, []).append(it)
+    if not watched:
+        return
+    for u in depsgraph.updates:
+        idb = u.id
+        name = getattr(idb, "name", None)
+        if isinstance(idb, bpy.types.Object) and name in watched and (
+                u.is_updated_transform or u.is_updated_geometry):
+            for it in watched[name]:
+                clip_mark_dirty(scene, it)
+        elif isinstance(idb, (bpy.types.Mesh, bpy.types.Curve)):
+            for oname, its in watched.items():
+                o = bpy.data.objects.get(oname)
+                if o is not None and o.data is not None and o.data.name == name:
+                    for it in its:
+                        clip_mark_dirty(scene, it)
+
+
+_clip_depsgraph_watch._bpy_persistent = True       # = @bpy.app.handlers.persistent
+
+
+class OGC3D_OT_ClipAdd(Operator):
+    """Add the selected mesh / curve objects as clipping polygons of the active
+    tileset (an empty slot when none is selected)"""
+    bl_idname = "ogc3dtiles.clip_add"
+    bl_label = "Add Clipping Polygon"
+
+    def execute(self, context):
+        props = context.scene.ogc3dtiles
+        if not (0 <= props.active_tileset < len(props.tilesets)):
+            return {"CANCELLED"}
+        it = props.tilesets[props.active_tileset]
+        have = {cp.obj for cp in it.clip_polygons if cp.obj is not None}
+        sel = [o for o in context.selected_objects
+               if o.type in {"MESH", "CURVE"} and "tile_url" not in o and o not in have]
+        for o in sel or [None]:
+            cp = it.clip_polygons.add()
+            if o is not None:
+                cp.obj = o
+        it.active_clip = len(it.clip_polygons) - 1
+        it.use_clipping = True
+        clip_mark_dirty(context.scene, it)
+        return {"FINISHED"}
+
+
+class OGC3D_OT_ClipRemove(Operator):
+    """Remove the selected clipping polygon"""
+    bl_idname = "ogc3dtiles.clip_remove"
+    bl_label = "Remove Clipping Polygon"
+
+    def execute(self, context):
+        props = context.scene.ogc3dtiles
+        if not (0 <= props.active_tileset < len(props.tilesets)):
+            return {"CANCELLED"}
+        it = props.tilesets[props.active_tileset]
+        i = it.active_clip
+        if not (0 <= i < len(it.clip_polygons)):
+            return {"CANCELLED"}
+        it.clip_polygons.remove(i)
+        it.active_clip = max(0, min(i, len(it.clip_polygons) - 1))
+        clip_mark_dirty(context.scene, it)
+        return {"FINISHED"}
+
+
+class OGC3D_UL_ClipPolygons(UIList):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
+        row = layout.row(align=True)
+        row.prop(item, "enabled", text="")
+        row.prop(item, "obj", text="")
+
+
 class OGC3D_OT_TilesetRemove(Operator):
     """Remove the selected tileset entry (and its objects)"""
     bl_idname = "ogc3dtiles.tileset_remove"
@@ -441,6 +588,9 @@ class OGC3D_OT_StartStream(Operator):
         prefs = _get_prefs(context)
         _state["choice"] = getattr(prefs, "traversal_backend", "AUTO") or "AUTO"
         _state["cache"] = DiskCache(default_cache_dir(), enabled=props.use_disk_cache)
+        if props.use_disk_cache:
+            from .extras import trim_cache_once
+            trim_cache_once(_state["cache"].root)
         _state["camera_adapter"] = CesiumCameraAdapter(scene)
         # CUSTOM: the user's lat/lon/h is the origin; KEEP: a previously set
         # origin stays; AUTO: decided per tileset in _decide_origin()
@@ -482,6 +632,8 @@ def _start_item(scene, props, item) -> dict:
     st = _new_stream(_item_key(item), item.name or default_name,
                      url, item_token(item, props), effective_sse(props, item))
     st["overlays"] = _overlay_specs(item)
+    if item.use_clipping:
+        st["clip_dirty_t"] = 0.0          # masks once the scene origin is known
     try:
         _start_stream(scene, props, st, _state["choice"], _state["cache"])
         if st["name"] != item.name:
@@ -921,6 +1073,7 @@ def stream_tick(context) -> bool:
             loaded += len(st["tiles"])
             continue
         if st["mode"] == "native":
+            _tick_clip(scene, props, st, now)
             changed |= _tick_native(scene, props, st, now)
         else:
             changed |= _tick_python(scene, props, st, now)
@@ -1517,6 +1670,8 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
         col = row.column(align=True)
         col.operator("ogc3dtiles.tileset_add", icon="ADD", text="")
         col.operator("ogc3dtiles.tileset_remove", icon="REMOVE", text="")
+        col.separator()
+        col.operator("ogc3dtiles.library_add", icon="BOOKMARKS", text="")
         if 0 <= props.active_tileset < len(props.tilesets):
             it = props.tilesets[props.active_tileset]
             b = layout.box()
@@ -1527,9 +1682,13 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
                 b.prop(it, "ion_asset_id", text="Asset id")
                 b.prop(it, "ion_token", text="Ion Token")
             else:
-                b.prop(it, "url", text="URL")
+                row = b.row(align=True)
+                row.prop(it, "url", text="URL")
+                row.operator("ogc3dtiles.tileset_browse", text="", icon="FILEBROWSER")
                 if _is_ion_url(it.url.strip()):          # entries from older versions
                     b.prop(it, "ion_token", text="Ion Token")
+            from .extras import draw_entry_tools
+            draw_entry_tools(b, it)
             row = b.row(align=True)
             row.prop(it, "use_own_sse", text="")
             sub = row.row(align=True)
@@ -1547,6 +1706,10 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
                                              if it.overlays else "Raster overlays"))
             if it.use_overlays:
                 _draw_overlays(b, it, st)
+            b.prop(it, "use_clipping", text=(f"Clipping polygons ({len(it.clip_polygons)})"
+                                             if it.clip_polygons else "Clipping polygons"))
+            if it.use_clipping:
+                _draw_clipping(b, it, st)
         else:
             layout.prop(props, "tileset_url", text="URL")
             layout.prop(props, "cesium_ion_token", text="Ion Token")
@@ -1594,6 +1757,19 @@ def _draw_overlays(b, it, st) -> None:
             ob.label(text="Overlays need the cesium-native backend", icon="INFO")
         elif st is not None:
             ob.label(text="Changes apply live", icon="INFO")
+
+
+def _draw_clipping(b, it, st) -> None:
+    b.prop(it, "clip_mode", text="Cut")
+    row = b.row()
+    row.template_list("OGC3D_UL_ClipPolygons", "", it, "clip_polygons", it, "active_clip", rows=2)
+    col = row.column(align=True)
+    col.operator("ogc3dtiles.clip_add", icon="ADD", text="")
+    col.operator("ogc3dtiles.clip_remove", icon="REMOVE", text="")
+    if st is not None and st.get("mode") == "python":
+        b.label(text="Clipping needs the cesium-native backend", icon="INFO")
+    elif not it.clip_polygons:
+        b.label(text="+ adds the selected meshes / curves", icon="INFO")
 
 
 class OGC3D_PT_OriginPanel(_OGC3DSidebar, Panel):
@@ -2060,6 +2236,9 @@ _classes = [
     OGC3D_OT_OverlayAdd,
     OGC3D_OT_OverlayRemove,
     OGC3D_UL_Overlays,
+    OGC3D_OT_ClipAdd,
+    OGC3D_OT_ClipRemove,
+    OGC3D_UL_ClipPolygons,
     OGC3D_OT_StartStream,
     OGC3D_OT_StopStream,
     OGC3D_OT_OriginReset,
@@ -2106,13 +2285,19 @@ def register():
     _refresh_cesium_status()
     for cls in _classes:
         bpy.utils.register_class(cls)
+    from . import extras
+    extras.register()
     if not bpy.app.background and not bpy.app.timers.is_registered(_eye_tick):
         bpy.app.timers.register(_eye_tick, first_interval=1.0, persistent=True)
+    if _clip_depsgraph_watch not in bpy.app.handlers.depsgraph_update_post:
+        bpy.app.handlers.depsgraph_update_post.append(_clip_depsgraph_watch)
 
 
 def unregister():
     if bpy.app.timers.is_registered(_eye_tick):
         bpy.app.timers.unregister(_eye_tick)
+    if _clip_depsgraph_watch in bpy.app.handlers.depsgraph_update_post:
+        bpy.app.handlers.depsgraph_update_post.remove(_clip_depsgraph_watch)
     for st in _state["streams"].values():
         dm = st.get("download_mgr")
         if dm:
@@ -2120,5 +2305,7 @@ def unregister():
                 dm.shutdown()
             except Exception:
                 pass
+    from . import extras
+    extras.unregister()
     for cls in reversed(_classes):
         bpy.utils.unregister_class(cls)

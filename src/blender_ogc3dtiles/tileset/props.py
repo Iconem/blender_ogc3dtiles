@@ -166,6 +166,34 @@ TILESET_KINDS = [
 ]
 
 
+def _on_clip_edit(self, context):
+    """Clipping list / mode edited: rebuild the masks of a running tileset."""
+    from ..ui import clip_mark_dirty
+    clip_mark_dirty(context.scene, self)
+
+
+def _clip_object_poll(self, obj):
+    return obj.type in {"MESH", "CURVE"} and "tile_url" not in obj
+
+
+class ClipPolygonItem(PropertyGroup):
+    """A Blender object whose outline (seen from above) clips a tileset."""
+    obj: bpy.props.PointerProperty(
+        name="Object", type=bpy.types.Object, poll=_clip_object_poll,
+        description="Mesh or curve: each closed outline (boundary edges, or the edges of a "
+                    "face-less mesh / curve), seen from above, is one polygon. Moving or "
+                    "editing it updates the cut",
+        update=_on_clip_edit)
+    enabled: BoolProperty(name="Use", default=True, update=_on_clip_edit)
+
+
+CLIP_MODES = [
+    ("INSIDE_ANY", "Inside any", "Cut where the tileset is inside at least one polygon"),
+    ("INSIDE_ALL", "Inside all", "Cut only where the tileset is inside every polygon"),
+    ("OUTSIDE", "Outside", "Keep only what is inside the polygons"),
+]
+
+
 def _on_item_kind(self, context):
     # a bare globe is only useful with imagery on it
     if self.kind == "GLOBE":
@@ -203,6 +231,15 @@ class TilesetItem(PropertyGroup):
     uid: StringProperty(default="", options={'HIDDEN'})
     overlays: CollectionProperty(type=OverlayItem)
     active_overlay: IntProperty(default=0)
+    use_clipping: BoolProperty(
+        name="Clipping polygons",
+        description="Cut this tileset with the outlines of Blender objects (cesium-native "
+                    "backend). Live",
+        default=False, update=_on_clip_edit)
+    clip_mode: EnumProperty(name="Cut", items=CLIP_MODES, default="INSIDE_ANY",
+                            update=_on_clip_edit)
+    clip_polygons: CollectionProperty(type=ClipPolygonItem)
+    active_clip: IntProperty(default=0)
 
 
 class TilesSceneProps(PropertyGroup):
@@ -535,6 +572,7 @@ class TilesSceneProps(PropertyGroup):
 def register():
     print("[OGC3DTiles] registering TilesSceneProps...")
     bpy.utils.register_class(OverlayItem)
+    bpy.utils.register_class(ClipPolygonItem)
     bpy.utils.register_class(TilesetItem)
     bpy.utils.register_class(TilesSceneProps)
     bpy.types.Scene.ogc3dtiles = bpy.props.PointerProperty(type=TilesSceneProps)
@@ -545,4 +583,5 @@ def unregister():
     del bpy.types.Scene.ogc3dtiles
     bpy.utils.unregister_class(TilesSceneProps)
     bpy.utils.unregister_class(TilesetItem)
+    bpy.utils.unregister_class(ClipPolygonItem)
     bpy.utils.unregister_class(OverlayItem)

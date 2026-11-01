@@ -294,9 +294,14 @@ def _build_clip_group(ng):
     links.new(mul.outputs[0], out.inputs[0])
 
 
-def _surface_target(nt):
-    """Socket a material's final shader should feed: the clip mix when the
-    material is clipped, else the Material Output surface."""
+def surface_target(nt, include_poly=True):
+    """Socket a material's final shader should feed: the polygon clip mix,
+    else the viewport-region clip mix, else the Material Output surface."""
+    if include_poly:
+        from .overlays import POLY_MIX
+        mix = nt.nodes.get(POLY_MIX)
+        if mix is not None:
+            return mix.inputs[1]
     mix = nt.nodes.get(CLIP_MIX)
     if mix is not None:
         return mix.inputs[1]
@@ -457,7 +462,7 @@ def apply_relight(mat) -> bool:
     nt.links.new(albedo, grp.inputs["Albedo"])
     if alpha is not None:
         nt.links.new(alpha, grp.inputs["Alpha"])
-    nt.links.new(grp.outputs["BSDF"], _surface_target(nt))
+    nt.links.new(grp.outputs["BSDF"], surface_target(nt))
     return True
 
 
@@ -475,7 +480,7 @@ def remove_relight(mat) -> bool:
         bsdf.mute = False
         bsdf.hide = False
         bsdf.location.y += 400
-        tgt = _surface_target(nt)
+        tgt = surface_target(nt)
         if tgt is not None:
             nt.links.new(bsdf.outputs["BSDF"], tgt)
     return True

@@ -415,37 +415,66 @@ def clip_mark_dirty(scene, item) -> None:
         st["clip_dirty_t"] = time.monotonic()
 
 
-def _clip_polygons(scene, props, item, st) -> list:
+def _clip_volumes(scene, props, item, st):
+    """(prism loops in the tileset frame, [(box object name, centre, half size)])
+    of an entry's enabled clipping objects."""
     from .. import clipping
     if not item.use_clipping:
-        return []
+        return [], []
     root = bpy.data.objects.get(st.get("root_obj") or "")
     to_tileset = root.matrix_world.inverted() if root is not None else None
     dg = bpy.context.evaluated_depsgraph_get()
-    loops = []
+    loops, boxes = [], []
     for cp in item.clip_polygons:
-        if cp.enabled and cp.obj is not None:
+        if not cp.enabled or cp.obj is None:
+            continue
+        if cp.shape == "BOX":
+            c, h = clipping.box_extent(cp.obj.evaluated_get(dg).bound_box)
+            boxes.append((cp.obj.name, c, h))
+        else:
             loops.extend(clipping.object_loops(cp.obj, dg, to_tileset))
-    return clipping.loops_to_lonlat(loops, (props.origin_lat, props.origin_lon, props.origin_height))
+    return loops, boxes
 
 
 def _refresh_clip(scene, props, st, item) -> None:
-    from .. import clipping
+    """Rebuild an entry's clipping: cesium masks for the prisms (only when
+    they changed), box terms and the point / splat Geometry Nodes group."""
+    from .. import clip_nodes, clipping
     backend = st.get("backend")
-    if backend is None or not hasattr(backend, "add_overlay"):
-        return
-    for uid in st.get("clip_uids", []):
-        backend.remove_overlay(uid)
-    st["clip_uids"] = []
+    root = bpy.data.objects.get(st.get("root_obj") or "")
     try:
-        specs = clipping.clip_specs(item, _clip_polygons(scene, props, item, st))
+        loops, boxes = _clip_volumes(scene, props, item, st)
+        lonlat = clipping.loops_to_lonlat(loops, (props.origin_lat, props.origin_lon,
+                                                  props.origin_height))
+        specs = clipping.clip_specs(item, lonlat, n_boxes=len(boxes))
     except Exception as e:                           # noqa: BLE001
-        print(f"[3DTiles] clipping polygons: {e}")
-        specs = []
-    for spec in specs:
-        if backend.add_overlay(spec):
-            st["clip_uids"].append(spec["uid"])
-    st["last_sig"] = None
+        print(f"[3DTiles] clipping: {e}")
+        loops, boxes, specs = [], [], []
+    op, outside = clipping.mode_op(item.clip_mode)
+    sig = repr(specs)
+    if backend is not None and hasattr(backend, "add_overlay") and sig != st.get("clip_sig"):
+        for uid in st.get("clip_uids", []):
+            backend.remove_overlay(uid)
+        st["clip_uids"] = []
+        for spec in specs:
+            if backend.add_overlay(spec):
+                st["clip_uids"].append(spec["uid"])
+        st["clip_sig"] = sig
+        st["last_sig"] = None
+    if root is None:
+        return
+    try:
+        coll = root.users_collection[0] if root.users_collection else scene.collection
+        helper = clip_nodes.update_helper(item.uid, root, loops, coll)
+        cfg = None
+        if loops or boxes:
+            cfg = clip_nodes.make_cfg(item.uid, op, outside, boxes, len(lonlat),
+                                      helper.name if helper else "")
+        clip_nodes.apply_to_tileset(root, cfg)
+    except Exception as e:                           # noqa: BLE001
+        import traceback
+        traceback.print_exc()
+        print(f"[3DTiles] clipping nodes: {e}")
 
 
 def _tick_clip(scene, props, st, now) -> None:
@@ -465,19 +494,23 @@ def _clip_depsgraph_watch(scene, depsgraph):
     props = getattr(scene, "ogc3dtiles", None)
     if props is None:
         return
-    watched = {}
+    watched, prisms = {}, set()
     for it in props.tilesets:
         if it.use_clipping and it.uid in _state["streams"]:
             for cp in it.clip_polygons:
                 if cp.enabled and cp.obj is not None:
                     watched.setdefault(cp.obj.name, []).append(it)
+                    if cp.shape != "BOX":
+                        prisms.add(cp.obj.name)
     if not watched:
         return
     for u in depsgraph.updates:
         idb = u.id
         name = getattr(idb, "name", None)
+        # a box's transform reaches the nodes directly (Texture Coordinate /
+        # Object Info); prisms are baked, so they rebuild on a move too
         if isinstance(idb, bpy.types.Object) and name in watched and (
-                u.is_updated_transform or u.is_updated_geometry):
+                u.is_updated_geometry or (u.is_updated_transform and name in prisms)):
             for it in watched[name]:
                 clip_mark_dirty(scene, it)
         elif isinstance(idb, (bpy.types.Mesh, bpy.types.Curve)):
@@ -492,10 +525,10 @@ _clip_depsgraph_watch._bpy_persistent = True       # = @bpy.app.handlers.persist
 
 
 class OGC3D_OT_ClipAdd(Operator):
-    """Add the selected mesh / curve objects as clipping polygons of the active
-    tileset (an empty slot when none is selected)"""
+    """Add the selected mesh / curve objects as clipping volumes of the active
+    tileset (an empty slot when none is selected); cube-like meshes become boxes"""
     bl_idname = "ogc3dtiles.clip_add"
-    bl_label = "Add Clipping Polygon"
+    bl_label = "Add Clipping Volume"
 
     def execute(self, context):
         props = context.scene.ogc3dtiles
@@ -505,10 +538,14 @@ class OGC3D_OT_ClipAdd(Operator):
         have = {cp.obj for cp in it.clip_polygons if cp.obj is not None}
         sel = [o for o in context.selected_objects
                if o.type in {"MESH", "CURVE"} and "tile_url" not in o and o not in have]
+        from .. import clipping
         for o in sel or [None]:
             cp = it.clip_polygons.add()
             if o is not None:
                 cp.obj = o
+                if o.type == "MESH" and clipping.looks_like_box(len(o.data.vertices),
+                                                                 len(o.data.polygons)):
+                    cp.shape = "BOX"
         it.active_clip = len(it.clip_polygons) - 1
         it.use_clipping = True
         clip_mark_dirty(context.scene, it)
@@ -516,9 +553,9 @@ class OGC3D_OT_ClipAdd(Operator):
 
 
 class OGC3D_OT_ClipRemove(Operator):
-    """Remove the selected clipping polygon"""
+    """Remove the selected clipping volume"""
     bl_idname = "ogc3dtiles.clip_remove"
-    bl_label = "Remove Clipping Polygon"
+    bl_label = "Remove Clipping Volume"
 
     def execute(self, context):
         props = context.scene.ogc3dtiles
@@ -539,6 +576,7 @@ class OGC3D_UL_ClipPolygons(UIList):
         row = layout.row(align=True)
         row.prop(item, "enabled", text="")
         row.prop(item, "obj", text="")
+        row.prop(item, "shape", text="")
 
 
 class OGC3D_OT_TilesetRemove(Operator):
@@ -1706,8 +1744,8 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
                                              if it.overlays else "Raster overlays"))
             if it.use_overlays:
                 _draw_overlays(b, it, st)
-            b.prop(it, "use_clipping", text=(f"Clipping polygons ({len(it.clip_polygons)})"
-                                             if it.clip_polygons else "Clipping polygons"))
+            b.prop(it, "use_clipping", text=(f"Clipping ({len(it.clip_polygons)})"
+                                             if it.clip_polygons else "Clipping"))
             if it.use_clipping:
                 _draw_clipping(b, it, st)
         else:
@@ -1760,16 +1798,16 @@ def _draw_overlays(b, it, st) -> None:
 
 
 def _draw_clipping(b, it, st) -> None:
-    b.prop(it, "clip_mode", text="Cut")
+    b.prop(it, "clip_mode", text="")
     row = b.row()
     row.template_list("OGC3D_UL_ClipPolygons", "", it, "clip_polygons", it, "active_clip", rows=2)
     col = row.column(align=True)
     col.operator("ogc3dtiles.clip_add", icon="ADD", text="")
     col.operator("ogc3dtiles.clip_remove", icon="REMOVE", text="")
     if st is not None and st.get("mode") == "python":
-        b.label(text="Clipping needs the cesium-native backend", icon="INFO")
+        b.label(text="Prisms on meshes need the cesium-native backend", icon="INFO")
     elif not it.clip_polygons:
-        b.label(text="+ adds the selected meshes / curves", icon="INFO")
+        b.label(text="+ adds the selected meshes / curves (cubes as boxes)", icon="INFO")
 
 
 class OGC3D_PT_OriginPanel(_OGC3DSidebar, Panel):

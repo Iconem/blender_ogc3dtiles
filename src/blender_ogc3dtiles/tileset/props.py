@@ -176,21 +176,35 @@ def _clip_object_poll(self, obj):
     return obj.type in {"MESH", "CURVE"} and "tile_url" not in obj
 
 
+CLIP_SHAPES = [
+    ("PRISM", "Prism", "Each closed outline of the object, seen from above, extruded "
+     "vertically without limit (like Cesium's clipping polygons)"),
+    ("BOX", "Box", "The object's bounding box with its location, rotation and scale: "
+     "clips in 3D, so it can cut the top of a building only"),
+]
+
+
 class ClipPolygonItem(PropertyGroup):
-    """A Blender object whose outline (seen from above) clips a tileset."""
+    """A Blender object that clips a tileset: its outline seen from above
+    (prism) or its bounding box (box)."""
     obj: bpy.props.PointerProperty(
         name="Object", type=bpy.types.Object, poll=_clip_object_poll,
-        description="Mesh or curve: each closed outline (boundary edges, or the edges of a "
-                    "face-less mesh / curve), seen from above, is one polygon. Moving or "
-                    "editing it updates the cut",
+        description="Mesh or curve. Prism: each closed outline (boundary edges, or the edges "
+                    "of a face-less mesh / curve), seen from above, is one polygon. Box: the "
+                    "object's bounding box. Moving or editing it updates the cut",
         update=_on_clip_edit)
     enabled: BoolProperty(name="Use", default=True, update=_on_clip_edit)
+    shape: EnumProperty(name="Shape", items=CLIP_SHAPES, default="PRISM", update=_on_clip_edit)
 
 
+# value: (combine op over the volumes, term per volume)
 CLIP_MODES = [
-    ("INSIDE_ANY", "Inside any", "Cut where the tileset is inside at least one polygon"),
-    ("INSIDE_ALL", "Inside all", "Cut only where the tileset is inside every polygon"),
-    ("OUTSIDE", "Outside", "Keep only what is inside the polygons"),
+    ("CUT_ANY", "Cut inside any", "Remove what is inside at least one volume (their union)"),
+    ("CUT_ALL", "Cut inside all", "Remove only what is inside every volume (their overlap)"),
+    ("KEEP_ANY", "Keep inside any", "Keep what is inside at least one volume: removes what "
+     "is outside all of them"),
+    ("KEEP_ALL", "Keep inside all", "Keep only the overlap of the volumes: removes what is "
+     "outside any of them"),
 ]
 
 
@@ -232,11 +246,11 @@ class TilesetItem(PropertyGroup):
     overlays: CollectionProperty(type=OverlayItem)
     active_overlay: IntProperty(default=0)
     use_clipping: BoolProperty(
-        name="Clipping polygons",
-        description="Cut this tileset with the outlines of Blender objects (cesium-native "
-                    "backend). Live",
+        name="Clipping",
+        description="Cut this tileset with Blender objects: vertical prisms from their "
+                    "outlines, or 3D boxes. Meshes, point clouds and splats. Live",
         default=False, update=_on_clip_edit)
-    clip_mode: EnumProperty(name="Cut", items=CLIP_MODES, default="INSIDE_ANY",
+    clip_mode: EnumProperty(name="Mode", items=CLIP_MODES, default="CUT_ANY",
                             update=_on_clip_edit)
     clip_polygons: CollectionProperty(type=ClipPolygonItem)
     active_clip: IntProperty(default=0)

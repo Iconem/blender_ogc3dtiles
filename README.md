@@ -390,27 +390,49 @@ Tested with 3dtiled output and with the public sample of the
 (`data/Elevator-3dtiles/tileset.json` on raw.githubusercontent.com, degree-3
 spherical harmonics).
 
-### Clipping polygons
+### Clipping
 
-Each tileset entry has a **Clipping polygons** list (cesium-native backend):
-Blender meshes or curves whose outlines, seen from above, cut the tileset.
-**+** adds the selected objects. An outline is every closed loop of boundary
-edges, or every edge of a face-less mesh or curve, so one object can hold
-several polygons. **Cut** chooses *Inside any* (cut inside at least one
-polygon), *Inside all* (cut only where every polygon overlaps) or *Outside*
-(keep only what is inside the polygons). Moving or editing an object
-re-cuts the tileset 0.35 s after the last change. The polygon is extruded
-vertically, like Cesium's cartographic polygons.
+Each tileset entry has a **Clipping** list of Blender objects. **+** adds the
+selected meshes or curves; each one is either:
 
-Under the hood, the polygons become a cesium-native
-`RasterizedPolygonsOverlay`: a one-channel mask draped like imagery (255 on
-the cut side). The tile material turns it into a Transparent BSDF mix
-(nodes `OGC3D PolyClip …`, placed before the viewport-region clip). A
-`RasterizedPolygonsTileExcluder` skips tiles that lie entirely on the cut
-side, so they are never downloaded. *Inside all* uses one mask per polygon,
-combined with MIN in the shader, and has no excluder. The edge follows the
-mask resolution, so it can be a metre or two off on coarse tiles. Point
-clouds and splats are not clipped.
+- a **Prism**: its outlines seen from above, extruded vertically along the
+  scene's up axis (ENU up), like Cesium's clipping polygons. An outline is
+  every closed loop of boundary edges, or every edge of a face-less mesh or
+  curve, so one object can hold several polygons;
+- a **Box**: the object's bounding box with its location, rotation and
+  scale, so it clips in 3D (cut the top floors of a building, or a slab of a
+  point cloud). Cube-like meshes are added as boxes.
+
+The mode combines the volumes:
+
+| Mode | Removes | |
+|---|---|---|
+| Cut inside any | what is inside at least one volume | union cut |
+| Cut inside all | what is inside every volume | overlap cut |
+| Keep inside any | what is outside every volume (*outside all*) | union kept |
+| Keep inside all | what is outside at least one volume (*outside any*) | overlap kept |
+
+Meshes, point clouds and Gaussian splats are clipped. Moving, rotating or
+scaling a box updates the cut live; moving or editing a prism (or a box's
+mesh) re-cuts 0.35 s after the last change.
+
+Under the hood, per mesh tile material, every volume is one "term" node (1
+where the volume's condition holds), the terms are combined with MAX (any)
+or MIN (all), and the result drives a Transparent BSDF mix (nodes
+`OGC3D PolyClip …`, before the viewport-region clip):
+
+- prisms are cesium-native `RasterizedPolygonsOverlay` masks draped like
+  imagery (cesium-native backend), one for the union when the mode allows,
+  else one per polygon. The edge follows the mask resolution, so it can be
+  a metre or two off on coarse tiles. A `RasterizedPolygonsTileExcluder`
+  skips tiles that are cut whatever the other volumes say, so they are never
+  downloaded;
+- boxes are a Texture Coordinate (Object) test in the box's own space.
+
+Point and splat tiles get a Geometry Nodes modifier (`OGC3D Clip`, one group
+per tileset) that deletes the cut points: boxes test the point in the box's
+space, prisms cast a vertical ray onto a hidden helper mesh holding the
+flattened outlines (`OGC3D Clip Prisms …`).
 
 ### Local and network tilesets, libraries, copies
 
@@ -463,9 +485,13 @@ a coarsest *Finest error* (geometric error in metres, which drops deeper
 levels). Kept tiles are downloaded in parallel. A re-run resumes and skips
 files already there. *Stream the copy* points the entry at it when done.
 Query strings and share-link tokens are never written into the copy (its
-`export.json` records only scheme, host and file name). Google tiles (their
-terms forbid storing tiles offline), Cesium ion assets and implicit tilesets
-are refused.
+`export.json` records only scheme, host and file name). Google tiles work
+(the `key` and `session` parameters are carried down the tree, never written;
+Google's terms forbid storing tiles offline, so keep such copies to tests),
+as do Cesium ion assets (resolved with the entry's token, which never lands
+on disk). Implicit tilesets (quadtree / octree, binary or JSON subtrees) are
+written out as explicit ones, cropped while walking the subtrees; S2 volumes
+and subtree metadata are not supported.
 
 ### Editing tile geometry
 

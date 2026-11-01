@@ -36,7 +36,7 @@ class OGC3D_OT_TilesetBrowse(Operator):
     'Relative Path' is ticked, else as a file: URL (mapped drives as their UNC
     share, see Preferences)"""
     bl_idname = "ogc3dtiles.tileset_browse"
-    bl_label = "Browse Tileset"
+    bl_label = "Select Tileset"
     bl_options = {"REGISTER", "UNDO"}
 
     filepath: StringProperty(subtype="FILE_PATH")
@@ -278,8 +278,9 @@ def _extent_from_object(obj, props, root):
 
 class OGC3D_OT_TilesetCopy(Operator):
     """Copy the active tileset into a folder of the project (resumable), optionally
-    cropped to an object's box and to a coarsest geometric error. Google tiles and
-    Cesium ion assets cannot be copied"""
+    cropped to an object's box and to a coarsest geometric error. Works for Google
+    tiles and Cesium ion assets too (mind their terms on offline storage) and for
+    implicit tilesets (written out as explicit ones)"""
     bl_idname = "ogc3dtiles.tileset_copy"
     bl_label = "Copy Tileset into Project"
 
@@ -319,10 +320,11 @@ class OGC3D_OT_TilesetCopy(Operator):
 
     def execute(self, context):
         from ..io.tileset_export import export_tileset
-        from . import item_url, _state
+        from . import item_token, item_url, _state
         it = _active_item(context)
         props = context.scene.ogc3dtiles
         url = item_url(it)
+        ion_token = item_token(it, props)
         if not self.dest.strip():
             self.report({"ERROR"}, "Choose a destination folder")
             return {"CANCELLED"}
@@ -348,7 +350,7 @@ class OGC3D_OT_TilesetCopy(Operator):
         def run():
             try:
                 _export["result"] = export_tileset(
-                    url, dest, extent=extent, min_geometric_error=min_ge,
+                    url, dest, extent=extent, min_geometric_error=min_ge, ion_token=ion_token,
                     progress=progress, cancel=lambda: _export["cancel"])
             except Exception as exc:                 # noqa: BLE001
                 _export["error"] = str(exc) or exc.__class__.__name__

@@ -149,32 +149,37 @@ def set_overlay_alpha(uid, alpha) -> int:
     return n
 
 
-# ── clipping polygons ────────────────────────────────────────────────────────
-# A clipping overlay (uid ``clip_...``, see ui.clip_specs) is a one-channel
-# mask, 1 where the tile is cut away. Per material:
+# ── clipping volumes ─────────────────────────────────────────────────────────
+# Note: cesium-native gives all overlays sharing a projection the same
+# texture coordinate set, so clip nodes are keyed by overlay uid, not by set.
+# Every clipping volume of a mesh tile is one "term" node in its material,
+# 1 where the per-volume condition holds (inside, or outside, see
+# clipping.MODE_OPS):
 #
-#     UV Map → Mapping → Image Texture (mask) × Valid ─┐
-#     ... other clip masks (MAX for "inside any", MIN for "inside all") ─┤
-#         → Greater Than 0.5 → Mix Shader(surface, Transparent BSDF)
+#   prism (uid ``clip_...``, a cesium mask):  UV → Mapping → Image → Term
+#   box   (clip_nodes.set_box_terms):  Texture Coordinate (Object) → … → Term
 #
-# "Valid" drops to 0 on detach (an Image Texture without image reads pink, so
-# 1 in the red channel, which would cut the whole tile).
+#   Terms → MAX / MIN chain → Greater Than 0.5 → Mix Shader(surface, Transparent)
+#
+# The op is stored on the material (``ogc_clip_op``). A detached mask's nodes
+# are removed (a stale term would bias the MIN chain), and the whole chain
+# goes when no term is left.
 
 CLIP_PREFIX = "clip_"
 POLY_TAG = "OGC3D PolyClip"
 POLY_MIX = POLY_TAG + " Mix"
 POLY_STEP = POLY_TAG + " Step"
 POLY_TRANSPARENT = POLY_TAG + " Transparent"
+CLIP_OP_PROP = "ogc_clip_op"
 
 
 def is_clip_uid(uid) -> bool:
     return str(uid).startswith(CLIP_PREFIX)
 
 
-def _poly_names(tex_id):
-    b = f"{POLY_TAG} {tex_id}"
-    return {"uv": b + " UV", "map": b + " Map", "tex": b + " Tex", "valid": b + " Valid",
-            "comb": b + " Combine"}
+def _poly_names(uid):
+    b = f"{POLY_TAG} {uid}"
+    return {"uv": b + " UV", "map": b + " Map", "tex": b + " Tex", "term": b + " Term"}
 
 
 def _ensure_poly_mix(nt):
@@ -207,30 +212,41 @@ def _ensure_poly_mix(nt):
     return mix
 
 
-def _relink_poly_chain(nt, op):
-    """Combine every clip mask of the material into the step node."""
-    step = nt.nodes.get(POLY_STEP)
-    if step is None:
+def _is_term(n) -> bool:
+    return n.name.startswith(POLY_TAG) and n.name.endswith(" Term")
+
+
+def relink_clip_chain(mat, op=None) -> None:
+    """Combine every term of the material with ``op`` (MAXIMUM / MINIMUM;
+    default: the stored one) into the step node; no term: no clipping."""
+    if mat is None or mat.node_tree is None:
         return
-    valids = sorted((n for n in nt.nodes if n.name.startswith(POLY_TAG) and n.name.endswith(" Valid")),
-                    key=lambda n: n.name)
+    if op is not None:
+        mat[CLIP_OP_PROP] = op
+    op = mat.get(CLIP_OP_PROP, "MAXIMUM")
+    nt = mat.node_tree
     for n in [n for n in nt.nodes if n.name.startswith(POLY_TAG) and n.name.endswith(" Combine")]:
         nt.nodes.remove(n)
-    if not valids:
+    terms = sorted((n for n in nt.nodes if _is_term(n)), key=lambda n: n.name)
+    if not terms:
+        remove_poly_clip(mat)
         return
-    acc = valids[0].outputs[0]
-    for v in valids[1:]:
+    if _ensure_poly_mix(nt) is None:
+        return
+    step = nt.nodes.get(POLY_STEP)
+    acc = terms[0].outputs[0]
+    for t in terms[1:]:
         comb = nt.nodes.new("ShaderNodeMath")
-        comb.name = comb.label = v.name[: -len(" Valid")] + " Combine"
+        comb.name = comb.label = t.name[: -len(" Term")] + " Combine"
         comb.operation = op
-        comb.location = (v.location.x + 200, v.location.y)
+        comb.location = (t.location.x + 200, t.location.y)
         nt.links.new(acc, comb.inputs[0])
-        nt.links.new(v.outputs[0], comb.inputs[1])
+        nt.links.new(t.outputs[0], comb.inputs[1])
         acc = comb.outputs[0]
     nt.links.new(acc, step.inputs[0])
 
 
-def attach_clip(mat, tex_id, image_name, translation, scale, op="MAXIMUM") -> bool:
+def attach_clip(mat, tex_id, uid, image_name, translation, scale, op=None) -> bool:
     if mat is None or not mat.use_nodes or mat.node_tree is None:
         return False
     img = bpy.data.images.get(image_name)
@@ -239,13 +255,14 @@ def attach_clip(mat, tex_id, image_name, translation, scale, op="MAXIMUM") -> bo
     if img.colorspace_settings.name != "Non-Color":
         img.colorspace_settings.name = "Non-Color"
     nt = mat.node_tree
-    nm = _poly_names(tex_id)
-    tex, mp, valid = nt.nodes.get(nm["tex"]), nt.nodes.get(nm["map"]), nt.nodes.get(nm["valid"])
-    if tex is None or mp is None or valid is None:
+    nm = _poly_names(uid)
+    tex, mp, term = nt.nodes.get(nm["tex"]), nt.nodes.get(nm["map"]), nt.nodes.get(nm["term"])
+    if tex is None or mp is None or term is None:
         mix = _ensure_poly_mix(nt)
         if mix is None:
             return False
-        x0, y0 = mix.location.x - 1300, mix.location.y - 700 - 160 * tex_id
+        n_terms = sum(1 for n in nt.nodes if _is_term(n))
+        x0, y0 = mix.location.x - 1300, mix.location.y - 700 - 160 * n_terms
         uv = nt.nodes.new("ShaderNodeUVMap")
         uv.name = uv.label = nm["uv"]
         uv.uv_map = f"{OVERLAY_UV_PREFIX}{tex_id}"
@@ -259,31 +276,37 @@ def attach_clip(mat, tex_id, image_name, translation, scale, op="MAXIMUM") -> bo
         tex.extension = "EXTEND"
         tex.interpolation = "Linear"
         tex.location = (x0 + 450, y0)
-        valid = nt.nodes.new("ShaderNodeMath")
-        valid.name = valid.label = nm["valid"]
-        valid.operation = "MULTIPLY"
-        valid.location = (x0 + 750, y0)
+        term = nt.nodes.new("ShaderNodeMath")       # pass-through, the chain's handle
+        term.name = term.label = nm["term"]
+        term.operation = "ADD"
+        term.inputs[1].default_value = 0.0
+        term.location = (x0 + 750, y0)
         nt.links.new(uv.outputs["UV"], mp.inputs["Vector"])
         nt.links.new(mp.outputs["Vector"], tex.inputs["Vector"])
-        nt.links.new(tex.outputs["Color"], valid.inputs[0])
-        _relink_poly_chain(nt, op)
+        nt.links.new(tex.outputs["Color"], term.inputs[0])
+        relink_clip_chain(mat, op)
+    elif op is not None and mat.get(CLIP_OP_PROP) != op:
+        relink_clip_chain(mat, op)
+    uvn = nt.nodes.get(nm["uv"])
+    if uvn is not None and uvn.uv_map != f"{OVERLAY_UV_PREFIX}{tex_id}":
+        uvn.uv_map = f"{OVERLAY_UV_PREFIX}{tex_id}"
     tex.image = img
     mp.inputs["Location"].default_value = (translation[0], translation[1], 0.0)
     mp.inputs["Scale"].default_value = (scale[0], scale[1], 1.0)
-    valid.inputs[1].default_value = 1.0
     return True
 
 
-def detach_clip(mat, tex_id) -> bool:
+def detach_clip(mat, uid) -> bool:
     if mat is None or not mat.use_nodes or mat.node_tree is None:
         return False
-    nm = _poly_names(tex_id)
-    valid, tex = mat.node_tree.nodes.get(nm["valid"]), mat.node_tree.nodes.get(nm["tex"])
-    if valid is None:
+    nt = mat.node_tree
+    nodes = [nt.nodes.get(n) for n in _poly_names(uid).values()]
+    if not any(nodes):
         return False
-    valid.inputs[1].default_value = 0.0
-    if tex is not None:
-        tex.image = None
+    for n in nodes:
+        if n is not None:
+            nt.nodes.remove(n)
+    relink_clip_chain(mat)
     return True
 
 
@@ -293,16 +316,27 @@ def remove_poly_clip(mat) -> bool:
         return False
     nt = mat.node_tree
     mix = nt.nodes.get(POLY_MIX)
-    if mix is None:
-        return False
-    src = mix.inputs[1].links[0].from_socket if mix.inputs[1].links else None
-    dst = [lk.to_socket for lk in mix.outputs[0].links]
-    for n in [n for n in nt.nodes if n.name.startswith(POLY_TAG)]:
+    src = mix.inputs[1].links[0].from_socket if mix is not None and mix.inputs[1].links else None
+    dst = [lk.to_socket for lk in mix.outputs[0].links] if mix is not None else []
+    tagged = [n for n in nt.nodes if n.name.startswith(POLY_TAG)]
+    for n in tagged:
         nt.nodes.remove(n)
     if src is not None:
         for s in dst:
             nt.links.new(src, s)
-    return True
+    return bool(tagged)
+
+
+def _clip_op_for(obj):
+    root = obj.parent
+    cfg = root.get("ogc_clip") if root is not None else None
+    return cfg.get("op") if cfg else None
+
+
+def _shader_clipped(obj) -> bool:
+    """Mesh tiles with faces; point / splat tiles are clipped by Geometry
+    Nodes (their vertex-only mesh has no overlay UVs)."""
+    return obj.type == "MESH" and len(obj.data.polygons) > 0
 
 
 def apply_event(obj, ev, alpha_for_uid) -> None:
@@ -313,22 +347,21 @@ def apply_event(obj, ev, alpha_for_uid) -> None:
         ids[uid] = tid
         obj["overlay_ids"] = ids
         if is_clip_uid(uid):
-            clips = set(obj.get("clip_tex_ids") or [])
-            clips.add(int(tid))
-            obj["clip_tex_ids"] = sorted(clips)
-            op = "MINIMUM" if "_all_" in uid else "MAXIMUM"
-            for m in obj.data.materials:
-                attach_clip(m, tid, image, tr, sc, op)
+            if _shader_clipped(obj):
+                op = _clip_op_for(obj)
+                for m in obj.data.materials:
+                    attach_clip(m, tid, uid, image, tr, sc, op)
             return
-        if int(tid) in set(obj.get("clip_tex_ids") or []):    # set reused by an imagery overlay
-            obj["clip_tex_ids"] = [t for t in obj["clip_tex_ids"] if t != int(tid)]
         for m in obj.data.materials:
             attach(m, tid, image, tr, sc, alpha_for_uid(uid))
     elif ev[0] == "detach":
-        _, key, tid = ev
-        if int(tid) in set(obj.get("clip_tex_ids") or []):
+        tid, uid = ev[2], (ev[3] if len(ev) > 3 else "")
+        if is_clip_uid(uid):
+            ids = dict(obj.get("overlay_ids") or {})
+            ids.pop(uid, None)
+            obj["overlay_ids"] = ids
             for m in obj.data.materials:
-                detach_clip(m, tid)
+                detach_clip(m, uid)
             return
         for m in obj.data.materials:
             detach(m, tid)

@@ -324,8 +324,12 @@ class _GlbPreparer:
         key = self._tile_key(tile)
         if key is None:
             return
+        try:
+            uid = raster_tile.overlay.name
+        except Exception:
+            uid = ""
         with self._owner._lock:
-            self._owner._overlay_events.append(("detach", key, int(tex_id)))
+            self._owner._overlay_events.append(("detach", key, int(tex_id), uid))
 
     def free_raster(self, raster_tile, load_result, main_result):
         if main_result:

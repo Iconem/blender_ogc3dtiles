@@ -1323,6 +1323,10 @@ def _new_tile_hooks(scene, objs, mats):
     if getattr(props, "tile_geometry", False):
         for o in objs:
             apply_tile_geometry(o)
+    from ..clip_nodes import CFG_PROP, apply_to_tile
+    for o in objs:
+        if o is not None and o.parent is not None and CFG_PROP in o.parent:
+            apply_to_tile(o)
 
 
 def _add_points_modifier(obj, radius: float = 0.04, mesh_mode=False):

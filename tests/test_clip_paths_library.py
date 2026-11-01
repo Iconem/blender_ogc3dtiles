@@ -45,17 +45,44 @@ def test_loops_to_lonlat_around_origin():
 
 def test_clip_specs_modes():
     polys = [[[0, 0], [1, 0], [1, 1]], [[2, 2], [3, 2], [3, 3]]]
-    item = types.SimpleNamespace(uid="abc", clip_mode="INSIDE_ANY")
-    (s,) = clipping.clip_specs(item, polys)
-    assert s["uid"] == "clip_abc_any" and not s["invert"] and s["exclude"] and len(s["polygons"]) == 2
-    item.clip_mode = "OUTSIDE"
+    item = types.SimpleNamespace(uid="abc", clip_mode="CUT_ANY")
+    (s,) = clipping.clip_specs(item, polys)          # MAX of inside = inside the union
+    assert s["uid"] == "clip_abc_u" and not s["invert"] and s["exclude"] and len(s["polygons"]) == 2
+    (s,) = clipping.clip_specs(item, polys, n_boxes=1)
+    assert s["exclude"]                               # cut whatever the box says
+    item.clip_mode = "KEEP_ANY"                       # MIN of outside = outside the union
     (s,) = clipping.clip_specs(item, polys)
     assert s["invert"] and s["exclude"]
-    item.clip_mode = "INSIDE_ALL"
+    (s,) = clipping.clip_specs(item, polys, n_boxes=1)
+    assert not s["exclude"]                           # a box may still keep the tile
+    item.clip_mode = "CUT_ALL"
     specs = clipping.clip_specs(item, polys)
-    assert [x["uid"] for x in specs] == ["clip_abc_all_0", "clip_abc_all_1"]
-    assert not any(x["exclude"] for x in specs)
+    assert [x["uid"] for x in specs] == ["clip_abc_p0", "clip_abc_p1"]
+    assert not any(x["exclude"] or x["invert"] for x in specs)
+    item.clip_mode = "KEEP_ALL"
+    specs = clipping.clip_specs(item, polys, n_boxes=2)
+    assert len(specs) == 2 and all(x["exclude"] and x["invert"] for x in specs)
+    (s,) = clipping.clip_specs(item, polys[:1])       # one polygon: union == per polygon
+    assert s["uid"] == "clip_abc_u" and s["invert"] and s["exclude"]
     assert clipping.clip_specs(item, []) == []
+
+
+def test_clip_mode_semantics():
+    """Brute-force each mode on two overlapping intervals + the combine ops."""
+    inside = {"A": lambda x: 0 <= x <= 2, "B": lambda x: 1 <= x <= 3}
+    expect = {"CUT_ANY": {0.5, 1.5, 2.5}, "CUT_ALL": {1.5},
+              "KEEP_ANY": {-1, 4}, "KEEP_ALL": {-1, 0.5, 2.5, 4}}
+    for mode, cut_set in expect.items():
+        op, outside = clipping.mode_op(mode)
+        comb = max if op == "MAXIMUM" else min
+        for x in (-1, 0.5, 1.5, 2.5, 4):
+            terms = [(not f(x)) if outside else f(x) for f in inside.values()]
+            assert bool(comb(terms)) == (x in cut_set), (mode, x)
+
+
+def test_box_extent():
+    c, h = clipping.box_extent([(-1, -2, 0), (3, 2, 0)] * 4)
+    assert c == (1, 0, 0) and h[0] == 2 and h[1] == 2 and h[2] == 1e-6
 
 
 # ── paths ─────────────────────────────────────────────────────────────────────

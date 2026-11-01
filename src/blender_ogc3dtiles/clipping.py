@@ -1,20 +1,27 @@
-"""Clipping polygons: Blender objects that cut holes in a tileset.
+"""Clipping volumes: Blender objects that cut a tileset.
 
-Each tileset entry lists objects (meshes or curves). Their outlines, seen
-from above (the polygon is extruded vertically, like Cesium's cartographic
-polygons), become cesium-native ``RasterizedPolygonsOverlay`` masks; the
-tile material turns the mask into transparency (overlays.attach_clip) and a
-``RasterizedPolygonsTileExcluder`` skips tiles entirely on the cut side.
+Each tileset entry lists objects (meshes or curves), each used either as a
+**prism** (its closed outlines seen from above, extruded vertically along the
+scene's up axis, like Cesium's cartographic polygons) or as a **box** (its
+bounding box with its full transform, so it can cut in 3D).
 
-Modes:
-  * INSIDE_ANY — cut where a point is inside at least one polygon;
-  * INSIDE_ALL — cut only where it is inside every polygon (one mask per
-    polygon, combined with MIN in the shader; no tile exclusion);
-  * OUTSIDE    — keep only what is inside the polygons.
+Modes, as (combine op, per-volume term) where a point is cut when the
+combined term is 1:
+  * CUT_ANY  — MAX of "inside":  cut inside the union;
+  * CUT_ALL  — MIN of "inside":  cut inside the overlap only;
+  * KEEP_ANY — MIN of "outside": cut what is outside every volume;
+  * KEEP_ALL — MAX of "outside": cut what is outside any volume.
+
+Mesh tiles: prisms become cesium-native ``RasterizedPolygonsOverlay`` masks
+(one per prism, or one for the union when the mode allows), boxes an
+object-space test in the shader; both feed one chain in the tile material
+(overlays.attach_clip / clip_nodes). ``RasterizedPolygonsTileExcluder`` skips
+tiles that are cut whatever the other volumes say. Point and splat tiles: a
+Geometry Nodes modifier deletes the cut points (clip_nodes).
 
 An object's outline is every closed loop of its boundary edges (edges used
 by one face, or every edge of a face-less mesh or curve), so one object can
-hold several polygons. Cesium-native backend only.
+hold several polygons. Prisms need the cesium-native backend for meshes.
 """
 from __future__ import annotations
 
@@ -108,14 +115,45 @@ def object_loops(obj, depsgraph, to_tileset=None) -> list:
         ev.to_mesh_clear()
 
 
-def clip_specs(item, polygons, detail_px=2.0) -> list:
+MODE_OPS = {"CUT_ANY": ("MAXIMUM", False), "CUT_ALL": ("MINIMUM", False),
+            "KEEP_ANY": ("MINIMUM", True), "KEEP_ALL": ("MAXIMUM", True)}
+
+
+def mode_op(mode) -> tuple:
+    """(combine op, outside term?) of a clip mode."""
+    return MODE_OPS.get(mode, MODE_OPS["CUT_ANY"])
+
+
+def clip_specs(item, polygons, n_boxes=0, detail_px=2.0) -> list:
     """Backend overlay specs (native_backend._make_overlay kind CLIP) for a
-    tileset entry and its lon/lat polygons."""
+    tileset entry's lon/lat prisms. The mask of a spec is the per-volume
+    term (inside, or outside when inverted). One spec covers the union when
+    the combine op allows it (MAX of inside = inside the union, MIN of
+    outside = outside the union); otherwise one spec per polygon. A spec
+    also excludes whole tiles when its mask being 1 means "cut" whatever the
+    other volumes (boxes included) say."""
     if not polygons:
         return []
+    op, outside = mode_op(item.clip_mode)
     base = f"clip_{item.uid}"
-    if item.clip_mode == "INSIDE_ALL" and len(polygons) > 1:
-        return [{"uid": f"{base}_all_{i}", "kind": "CLIP", "polygons": [p], "invert": False,
-                 "exclude": False, "detail_px": detail_px} for i, p in enumerate(polygons)]
-    return [{"uid": f"{base}_any", "kind": "CLIP", "polygons": polygons,
-             "invert": item.clip_mode == "OUTSIDE", "exclude": True, "detail_px": detail_px}]
+    union = (op == "MAXIMUM") != outside or len(polygons) == 1
+    if union:
+        exclude = op == "MAXIMUM" or n_boxes == 0
+        return [{"uid": f"{base}_u", "kind": "CLIP", "polygons": polygons, "invert": outside,
+                 "exclude": exclude, "detail_px": detail_px}]
+    return [{"uid": f"{base}_p{i}", "kind": "CLIP", "polygons": [p], "invert": outside,
+             "exclude": op == "MAXIMUM", "detail_px": detail_px} for i, p in enumerate(polygons)]
+
+
+def box_extent(bound_box) -> tuple:
+    """Centre and half sizes (clamped away from 0) of an object's local
+    bounding box corners."""
+    xs, ys, zs = zip(*[tuple(c) for c in bound_box])
+    c = tuple((max(v) + min(v)) * 0.5 for v in (xs, ys, zs))
+    h = tuple(max((max(v) - min(v)) * 0.5, 1e-6) for v in (xs, ys, zs))
+    return c, h
+
+
+def looks_like_box(n_verts, n_faces) -> bool:
+    """Default shape for a newly added object: a cube-like mesh is a box."""
+    return n_verts == 8 and n_faces == 6

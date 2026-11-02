@@ -11,7 +11,7 @@ tags = ["Import-Export", "3D View"]
 
 blender_version_min = "4.2.0"
 
-license = ["SPDX:Apache-2.0"]
+license = ["SPDX:MIT"]
 
 [permissions]
 network = "Fetch OGC 3D Tiles from remote HTTP/HTTPS endpoints"

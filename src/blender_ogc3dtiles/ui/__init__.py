@@ -325,6 +325,16 @@ def _overlay_alpha_lookup(props):
     return lambda uid: table.get(uid, 1.0)
 
 
+def _overlay_order_lookup(props):
+    """Layer position of an overlay in its entry's list."""
+    table = {}
+    for it in props.tilesets:
+        for i, ov in enumerate(it.overlays):
+            if ov.uid:
+                table[ov.uid] = i
+    return lambda uid: table.get(uid, 0)
+
+
 def _process_overlay_events(scene, props, st) -> bool:
     """Apply the native backend's raster attach / detach / free events to the
     tile objects; events for tiles not built yet wait in st['pending_overlays']."""
@@ -335,23 +345,24 @@ def _process_overlay_events(scene, props, st) -> bool:
         return False
     pending = st.setdefault("pending_overlays", {})
     alpha_for = _overlay_alpha_lookup(props)
+    order_for = _overlay_order_lookup(props)
     for ev in events:
         if ev[0] == "free":
             img = bpy.data.images.get(ev[1])
             if img is not None and img.users == 0:
                 bpy.data.images.remove(img)
             continue
-        key, tid = ev[1], ev[2]
+        key, uid = ev[1], ev[3]
         rec = tiles.get(key)
         obj = bpy.data.objects.get(rec.holder) if rec is not None else None
         if obj is None or obj.type != "MESH":
             if ev[0] == "attach":
-                pending.setdefault(key, {})[tid] = ev
+                pending.setdefault(key, {})[uid] = ev
             else:
-                pending.get(key, {}).pop(tid, None)
+                pending.get(key, {}).pop(uid, None)
             continue
         try:
-            ovl.apply_event(obj, ev, alpha_for)
+            ovl.apply_event(obj, ev, alpha_for, order_for)
         except Exception as e:                       # noqa: BLE001
             print(f"[3DTiles] overlay {ev[0]} failed on {key}: {e}")
     return True
@@ -446,10 +457,11 @@ def _refresh_clip(scene, props, st, item) -> None:
         loops, boxes = _clip_volumes(scene, props, item, st)
         lonlat = clipping.loops_to_lonlat(loops, (props.origin_lat, props.origin_lon,
                                                   props.origin_height))
-        specs = clipping.clip_specs(item, lonlat, n_boxes=len(boxes))
+        specs = clipping.clip_specs(item, lonlat)
+        excluders = clipping.clip_excluders(item, lonlat, n_boxes=len(boxes))
     except Exception as e:                           # noqa: BLE001
         print(f"[3DTiles] clipping: {e}")
-        loops, boxes, specs = [], [], []
+        loops, boxes, specs, excluders = [], [], [], []
     op, outside = clipping.mode_op(item.clip_mode)
     sig = repr(specs)
     if backend is not None and hasattr(backend, "add_overlay") and sig != st.get("clip_sig"):
@@ -461,6 +473,12 @@ def _refresh_clip(scene, props, st, item) -> None:
                 st["clip_uids"].append(spec["uid"])
         st["clip_sig"] = sig
         st["last_sig"] = None
+    sig = repr(excluders)
+    if backend is not None and hasattr(backend, "set_excluders") and sig != st.get("clip_ex_sig"):
+        backend.set_excluders(excluders)
+        st["clip_ex_sig"] = sig
+        st["last_sig"] = None
+    clip_nodes.set_mode(scene, item.uid, *clipping.mode_attrs(item.clip_mode))
     if root is None:
         return
     try:
@@ -469,7 +487,8 @@ def _refresh_clip(scene, props, st, item) -> None:
         cfg = None
         if loops or boxes:
             cfg = clip_nodes.make_cfg(item.uid, op, outside, boxes, len(lonlat),
-                                      helper.name if helper else "")
+                                      helper.name if helper else "",
+                                      [s["uid"] for s in specs], item.clip_geometry)
         clip_nodes.apply_to_tileset(root, cfg)
     except Exception as e:                           # noqa: BLE001
         import traceback
@@ -1402,9 +1421,10 @@ def _build_native_tile(scene, props, st, rt) -> bool:
             obj = bpy.data.objects.get(r[0])
             if obj is not None and obj.type == "MESH":
                 alpha_for = _overlay_alpha_lookup(props)
+                order_for = _overlay_order_lookup(props)
                 for ev in waiting.values():
                     try:
-                        ovl.apply_event(obj, ev, alpha_for)
+                        ovl.apply_event(obj, ev, alpha_for, order_for)
                     except Exception as e:           # noqa: BLE001
                         print(f"[3DTiles] overlay attach failed on {rt.key}: {e}")
         return True
@@ -1799,6 +1819,7 @@ def _draw_overlays(b, it, st) -> None:
 
 def _draw_clipping(b, it, st) -> None:
     b.prop(it, "clip_mode", text="")
+    b.prop(it, "clip_geometry")
     row = b.row()
     row.template_list("OGC3D_UL_ClipPolygons", "", it, "clip_polygons", it, "active_clip", rows=2)
     col = row.column(align=True)

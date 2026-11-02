@@ -7,11 +7,15 @@ or keys; the files that do are named below and stay out of git.
 
 - **Credentials.** Bearer credentials:
   - Iconem share links (`https://api.iconem.com/s/<token>/...`).
-  - Google Map Tiles keys. Pass them on the command line only.
+  - Google Map Tiles keys. The studio key lives only in the private library
+    below.
 
   Keep both out of commits, screenshots, PR text and issue text. The private
-  URL list lives in `%LOCALAPPDATA%\blender_ogc3dtiles\private\tileset_urls.md`
-  (outside every repo). Label share-link entries by asset id, never by token.
+  files live in `%LOCALAPPDATA%\blender_ogc3dtiles\private\` (outside every
+  repo): `tileset_urls.md` (everything recovered, with notes) and
+  `tilesets_library.json` (the add-on's library format: every streamable link,
+  each checked to answer, including Google with the key; set in the 5.3 beta's
+  add-on preferences). Label share-link entries by asset id, never by token.
   Mask the URL field in any screenshot of a Google entry.
 - **Repos.**
   - `jo-chemla/blender_ogc3dtiles` and `Iconem/blender_ogc3dtiles` are private.
@@ -96,17 +100,22 @@ or keys; the files that do are named below and stay out of git.
   Nodes delete. Fixed: overlays sharing a projection share one texture
   coordinate set in cesium-native, so clip nodes are keyed by overlay uid.
 - Copy into project: Google, Cesium ion and implicit tilesets (converted to
-  explicit) are no longer refused.
+  explicit) are no longer refused. A Google crop was copied for real with the
+  studio key, the key ended up nowhere on disk, and the copy streams.
+- Clipping, second pass (`docs/clipping.md`): mode switches touch no material
+  (two view-layer attributes), masks always per polygon, optional Cut Geometry.
+- Imagery overlays keyed by uid and mixed in list order: layers sharing a
+  projection coexist.
+- 3D Tiles of SPZ splats (`KHR_gaussian_splatting_compression_spz_2`) stream
+  and clip with no special code. `EXT_splat_opacity` is ignored.
 
 ### Known limitations and open threads
 
-- **Imagery overlays sharing a projection** (e.g. two Web Mercator layers on
-  one tileset) collide the same way clipping masks did: imagery nodes are
-  still keyed by texture coordinate set. Key them by overlay uid, keeping the
-  layer order.
-- **Mode switches recompile every tile material** (each tile has its own
-  material): on a globe with ~1300 tiles that is tens of seconds of "Compiling
-  shaders". Sharing materials per tileset where possible would help.
+- **Moving a prism reloads the tileset's tiles**: cesium-native reloads tiles
+  when an overlay is added or replaced. Boxes don't have this. A shader test
+  against the outline, like the boxes, would avoid it for meshes if it matters.
+- **`is_job_running("SHADER_COMPILATION")`** stayed true for minutes on large
+  scenes while the viewport was already correct. Don't use it to wait.
 - **Non-georeferenced tilesets** (3dtiled splat output, root near ECEF 0)
   only land at the scene origin when the origin is Auto. Seen on 2026-11-01
   with the San Pietro splats: with the view pivot at (5, -10, 0) and a 95 m

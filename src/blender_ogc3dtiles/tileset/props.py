@@ -252,6 +252,13 @@ class TilesetItem(PropertyGroup):
         default=False, update=_on_clip_edit)
     clip_mode: EnumProperty(name="Mode", items=CLIP_MODES, default="CUT_ANY",
                             update=_on_clip_edit)
+    clip_geometry: BoolProperty(
+        name="Cut Geometry",
+        description="Also delete the mesh faces that are entirely cut (Geometry Nodes), so "
+                    "Solid view, snapping and exports see the cut. Faces across the boundary "
+                    "stay whole outside the Material and Rendered views. Costs some viewport "
+                    "time per tile",
+        default=False, update=_on_clip_edit)
     clip_polygons: CollectionProperty(type=ClipPolygonItem)
     active_clip: IntProperty(default=0)
 

@@ -8,6 +8,9 @@
   vertex in the box's space; prisms cast a vertical ray onto a hidden helper
   mesh holding the flattened, filled outlines in the tileset frame (face
   attribute ``clip_poly`` = prism index).
+* Mesh tiles with Cut Geometry: the same test in a second group deletes the
+  faces whose vertices are all cut; the shader still trims the faces across
+  the boundary. Solid view, exports and snapping then see the cut.
 
 The per-tileset settings live on the tileset's root Empty (``ogc_clip``) so
 tiles built later pick them up (io._new_tile_hooks → apply_to_tile).
@@ -16,21 +19,23 @@ from __future__ import annotations
 
 import bpy
 
-from .overlays import POLY_TAG, _is_term, relink_clip_chain
+from .overlays import POLY_TAG, clip_attr_names, relink_clip_chain
 
 CFG_PROP = "ogc_clip"
 GN_MOD = "OGC3D Clip"
 GN_PREFIX = "OGC3D Clip "
+GN_FACES_PREFIX = "OGC3D Clip Faces "
 HELPER_PREFIX = "OGC3D Clip Prisms "
 POLY_ATTR = "clip_poly"
 RAY_Z = 1.0e5
 
 
 # ── config on the root Empty ─────────────────────────────────────────────────
-def make_cfg(uid, op, outside, boxes, n_prisms, helper_name) -> dict:
-    """boxes: [(object name, centre xyz, half size xyz)]."""
+def make_cfg(uid, op, outside, boxes, n_prisms, helper_name, masks=(), geometry=False) -> dict:
+    """boxes: [(object name, centre xyz, half size xyz)]; masks: uids of the
+    tileset's cesium masks; geometry: Cut Geometry on mesh tiles."""
     return {"uid": uid, "op": op, "outside": bool(outside), "n_prisms": int(n_prisms),
-            "helper": helper_name or "",
+            "helper": helper_name or "", "masks": list(masks), "geometry": bool(geometry),
             "boxes": [{"obj": n, "c": list(c), "h": list(h)} for n, c, h in boxes]}
 
 
@@ -52,9 +57,10 @@ def _box_names(i):
         {"term": f"{b} Term"}
 
 
-def set_box_terms(mat, boxes, outside, op) -> None:
-    """Make the material's box terms match ``boxes`` (cfg entries) and relink
-    the chain with ``op``. Existing nodes are updated in place."""
+def set_box_terms(mat, boxes, tileset_uid) -> None:
+    """Make the material's box terms match ``boxes`` (cfg entries). Existing
+    nodes are updated in place; the chain is only relinked when a term comes
+    or goes."""
     if mat is None or not mat.use_nodes or mat.node_tree is None:
         return
     nt = mat.node_tree
@@ -80,6 +86,7 @@ def set_box_terms(mat, boxes, outside, op) -> None:
             mxyz = N("ShaderNodeMath")
             mxyz.operation = "MAXIMUM"
             term = N("ShaderNodeMath")
+            term.operation = "LESS_THAN"
             for k, n in zip(("coord", "map", "abs", "sep", "mxy", "mxyz", "term"),
                             (coord, mp, ab, sep, mxy, mxyz, term)):
                 n.name = n.label = nm[k]
@@ -95,19 +102,16 @@ def set_box_terms(mat, boxes, outside, op) -> None:
             L(mxyz.outputs[0], term.inputs[0])
             term.inputs[1].default_value = 1.0
             changed = True
-        mp, term = nt.nodes[nm["map"]], nt.nodes[nm["term"]]
+        mp = nt.nodes[nm["map"]]
         if coord.object is not obj:
             coord.object = obj
         mp.inputs["Scale"].default_value = tuple(1.0 / v for v in h)
         mp.inputs["Location"].default_value = tuple(-cv / hv for cv, hv in zip(c, h))
-        want = "GREATER_THAN" if outside else "LESS_THAN"
-        if term.operation != want:
-            term.operation = want
     for n in [n for n in nt.nodes if n.name.startswith(f"{POLY_TAG} box") and n.name not in keep]:
         nt.nodes.remove(n)
         changed = True
-    if changed or mat.get("ogc_clip_op") != op:
-        relink_clip_chain(mat, op)
+    if changed:
+        relink_clip_chain(mat, tileset_uid)
 
 
 def clear_box_terms(mat) -> None:
@@ -117,7 +121,7 @@ def clear_box_terms(mat) -> None:
     boxes = [n for n in nt.nodes if n.name.startswith(f"{POLY_TAG} box")]
     for n in boxes:
         nt.nodes.remove(n)
-    if boxes or any(_is_term(n) for n in nt.nodes):
+    if boxes:
         relink_clip_chain(mat)
 
 
@@ -161,19 +165,20 @@ def update_helper(uid, root, loops_local, coll):
 
 
 # ── Geometry Nodes group for point / splat tiles ─────────────────────────────
-def _gn_signature(cfg) -> str:
-    return repr((cfg["op"], cfg["outside"], cfg["n_prisms"], cfg["helper"],
+def _gn_signature(cfg, faces) -> str:
+    return repr((cfg["op"], cfg["outside"], cfg["n_prisms"], cfg["helper"], faces,
                  [(b["obj"], [round(v, 6) for v in b["c"]], [round(v, 6) for v in b["h"]])
                   for b in cfg["boxes"]]))
 
 
-def build_group(cfg):
-    """(Re)build the tileset's clip group; returns it (None: nothing to clip)."""
-    name = GN_PREFIX + cfg["uid"]
+def build_group(cfg, faces=False):
+    """(Re)build the tileset's clip group, deleting points, or with ``faces``
+    the faces whose points are all cut; returns it (None: nothing to clip)."""
+    name = (GN_FACES_PREFIX if faces else GN_PREFIX) + cfg["uid"]
     ng = bpy.data.node_groups.get(name)
     if not cfg["boxes"] and not cfg["n_prisms"]:
         return None
-    sig = _gn_signature(cfg)
+    sig = _gn_signature(cfg, faces)
     if ng is not None and ng.get("sig") == sig:
         return ng
     if ng is None:
@@ -281,8 +286,15 @@ def build_group(cfg):
             acc = math(cfg["op"], acc, t)
         cut = math("GREATER_THAN", acc, bval=0.5)
         dg = N("GeometryNodeDeleteGeometry")
-        dg.domain = "POINT"
+        dg.domain = "FACE" if faces else "POINT"
         L(gi.outputs[0], dg.inputs["Geometry"])
+        if faces:
+            # a boolean point field read on faces is true when all points are
+            on_pts = N("GeometryNodeFieldOnDomain")
+            on_pts.data_type = "BOOLEAN"
+            on_pts.domain = "POINT"
+            L(cut, on_pts.inputs[0])
+            cut = on_pts.outputs[0]
         L(cut, dg.inputs["Selection"])
         L(dg.outputs[0], go.inputs[0])
     ng["sig"] = sig
@@ -305,25 +317,31 @@ def _set_gn(obj, ng) -> None:
 
 
 # ── applying ─────────────────────────────────────────────────────────────────
+def set_mode(scene, uid, any_, invert) -> None:
+    """The two attributes the tile materials read; no material is touched."""
+    any_name, inv_name = clip_attr_names(uid)
+    scene[any_name], scene[inv_name] = float(any_), float(invert)
+    scene.update_tag()
+
+
+def _tile_group(prefix, cfg, faces):
+    return bpy.data.node_groups.get(prefix + cfg["uid"]) or build_group(cfg, faces)
+
+
 def apply_to_tile(obj, cfg=None) -> None:
     """Bring one tile in line with its tileset's clip config."""
     if obj is None or obj.type != "MESH":
         return
     cfg = _cfg(obj.parent) if cfg is None else cfg
     if _is_point_tile(obj):
-        ng = None
-        if cfg:
-            ng = bpy.data.node_groups.get(GN_PREFIX + cfg["uid"]) or build_group(cfg)
-        _set_gn(obj, ng)
+        _set_gn(obj, _tile_group(GN_PREFIX, cfg, False) if cfg else None)
         return
+    _set_gn(obj, _tile_group(GN_FACES_PREFIX, cfg, True) if cfg and cfg.get("geometry") else None)
     for m in obj.data.materials:
         if cfg and cfg["boxes"]:
-            set_box_terms(m, cfg["boxes"], cfg["outside"], cfg["op"])
+            set_box_terms(m, cfg["boxes"], cfg["uid"])
         else:
             clear_box_terms(m)
-            if cfg and m is not None and m.get("ogc_clip_op") != cfg["op"] and m.node_tree \
-                    and any(_is_term(n) for n in m.node_tree.nodes):
-                relink_clip_chain(m, cfg["op"])
 
 
 def apply_to_tileset(root, cfg) -> None:
@@ -337,6 +355,8 @@ def apply_to_tileset(root, cfg) -> None:
         root[CFG_PROP] = cfg
         try:
             build_group(cfg)
+            if cfg.get("geometry"):
+                build_group(cfg, True)
         except Exception as e:                       # noqa: BLE001
             print(f"[3DTiles] clip group: {e}")
     for o in root.children:
@@ -347,8 +367,9 @@ def apply_to_tileset(root, cfg) -> None:
                 print(f"[3DTiles] clip {o.name}: {e}")
     if cfg is None:
         uid = root.get("ogc_clip_uid")
-        ng = bpy.data.node_groups.get(GN_PREFIX + uid) if uid else None
-        if ng is not None and ng.users == 0:
-            bpy.data.node_groups.remove(ng)
+        for prefix in (GN_PREFIX, GN_FACES_PREFIX):
+            ng = bpy.data.node_groups.get(prefix + uid) if uid else None
+            if ng is not None and ng.users == 0:
+                bpy.data.node_groups.remove(ng)
     else:
         root["ogc_clip_uid"] = cfg["uid"]

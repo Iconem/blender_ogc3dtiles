@@ -13,11 +13,13 @@ combined term is 1:
   * KEEP_ALL — MAX of "outside": cut what is outside any volume.
 
 Mesh tiles: prisms become cesium-native ``RasterizedPolygonsOverlay`` masks
-(one per prism, or one for the union when the mode allows), boxes an
-object-space test in the shader; both feed one chain in the tile material
-(overlays.attach_clip / clip_nodes). ``RasterizedPolygonsTileExcluder`` skips
-tiles that are cut whatever the other volumes say. Point and splat tiles: a
-Geometry Nodes modifier deletes the cut points (clip_nodes).
+(one per prism), boxes an object-space test in the shader; both feed one
+chain in the tile material (overlays.attach_clip / clip_nodes). The mode is
+read at render time from two view-layer attributes, so switching it touches
+no material. ``RasterizedPolygonsTileExcluder`` skips tiles that are cut
+whatever the other volumes say. Point and splat tiles: a Geometry Nodes
+modifier deletes the cut points; the same on mesh tiles (Cut Geometry) deletes
+the faces that are entirely cut (clip_nodes). See docs/clipping.md.
 
 An object's outline is every closed loop of its boundary edges (edges used
 by one face, or every edge of a face-less mesh or curve), so one object can
@@ -119,30 +121,57 @@ MODE_OPS = {"CUT_ANY": ("MAXIMUM", False), "CUT_ALL": ("MINIMUM", False),
             "KEEP_ANY": ("MINIMUM", True), "KEEP_ALL": ("MAXIMUM", True)}
 
 
+MAX_MASKS = 8
+
+
 def mode_op(mode) -> tuple:
     """(combine op, outside term?) of a clip mode."""
     return MODE_OPS.get(mode, MODE_OPS["CUT_ANY"])
 
 
-def clip_specs(item, polygons, n_boxes=0, detail_px=2.0) -> list:
+def clip_specs(item, polygons, detail_px=2.0) -> list:
     """Backend overlay specs (native_backend._make_overlay kind CLIP) for a
-    tileset entry's lon/lat prisms. The mask of a spec is the per-volume
-    term (inside, or outside when inverted). One spec covers the union when
-    the combine op allows it (MAX of inside = inside the union, MIN of
-    outside = outside the union); otherwise one spec per polygon. A spec
-    also excludes whole tiles when its mask being 1 means "cut" whatever the
-    other volumes (boxes included) say."""
+    tileset entry's lon/lat prisms: masks reading 1 inside. One mask per
+    polygon, so a mode switch needs no new raster. Beyond MAX_MASKS (GPU
+    texture slots) the "any" modes share one mask of the union."""
     if not polygons:
         return []
-    op, outside = mode_op(item.clip_mode)
     base = f"clip_{item.uid}"
-    union = (op == "MAXIMUM") != outside or len(polygons) == 1
-    if union:
-        exclude = op == "MAXIMUM" or n_boxes == 0
-        return [{"uid": f"{base}_u", "kind": "CLIP", "polygons": polygons, "invert": outside,
-                 "exclude": exclude, "detail_px": detail_px}]
-    return [{"uid": f"{base}_p{i}", "kind": "CLIP", "polygons": [p], "invert": outside,
-             "exclude": op == "MAXIMUM", "detail_px": detail_px} for i, p in enumerate(polygons)]
+    if len(polygons) > MAX_MASKS and item.clip_mode in ("CUT_ANY", "KEEP_ANY"):
+        return [{"uid": f"{base}_u", "kind": "CLIP", "polygons": polygons, "invert": False,
+                 "detail_px": detail_px}]
+    return [{"uid": f"{base}_p{i}", "kind": "CLIP", "polygons": [p], "invert": False,
+             "detail_px": detail_px} for i, p in enumerate(polygons)]
+
+
+def clip_excluders(item, polygons, n_boxes=0) -> list:
+    """Native excluders: [{"uid", "kind", "polygons", "invert"}] whose tiles
+    are cut whatever the other volumes say, so they are never loaded."""
+    if not polygons:
+        return []
+    base = f"clipx_{item.uid}"
+    mode = item.clip_mode
+
+    def spec(i, polys, invert):
+        return {"uid": f"{base}_{i}", "kind": "CLIP", "polygons": polys, "invert": invert}
+
+    if mode == "CUT_ANY":                 # inside one polygon is enough
+        return [spec(0, polygons, False)]
+    if mode == "KEEP_ALL":                # outside one polygon is enough
+        return [spec(i, [p], True) for i, p in enumerate(polygons)]
+    if n_boxes:                           # a box could still decide otherwise
+        return []
+    if mode == "KEEP_ANY":                # outside the union of the prisms
+        return [spec(0, polygons, True)]
+    return [spec(0, polygons, False)] if len(polygons) == 1 else []
+
+
+def mode_attrs(mode) -> tuple:
+    """(any, invert) read by the material chain: combine the "inside" terms
+    with MAX (1) or MIN (0), then invert the result or not. KEEP_ANY =
+    MIN of outside = 1 - MAX of inside (and KEEP_ALL likewise)."""
+    return (1.0 if mode in ("CUT_ANY", "KEEP_ANY") else 0.0,
+            1.0 if mode in ("KEEP_ANY", "KEEP_ALL") else 0.0)
 
 
 def box_extent(bound_box) -> tuple:

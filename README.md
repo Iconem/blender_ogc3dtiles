@@ -416,23 +416,16 @@ Meshes, point clouds and Gaussian splats are clipped. Moving, rotating or
 scaling a box updates the cut live; moving or editing a prism (or a box's
 mesh) re-cuts 0.35 s after the last change.
 
-Under the hood, per mesh tile material, every volume is one "term" node (1
-where the volume's condition holds), the terms are combined with MAX (any)
-or MIN (all), and the result drives a Transparent BSDF mix (nodes
-`OGC3D PolyClip …`, before the viewport-region clip):
+On mesh tiles the cut is done in the material, so Solid view, snapping and
+exports still see the full mesh. **Cut Geometry** also deletes the faces that
+are entirely cut, with Geometry Nodes and without fetching anything again. Faces
+across the boundary stay whole outside the Material and Rendered views. It's off
+by default because it slows down dragging a box on large scenes. Point clouds
+and splats always lose the cut points for real.
 
-- prisms are cesium-native `RasterizedPolygonsOverlay` masks draped like
-  imagery (cesium-native backend), one for the union when the mode allows,
-  else one per polygon. The edge follows the mask resolution, so it can be
-  a metre or two off on coarse tiles. A `RasterizedPolygonsTileExcluder`
-  skips tiles that are cut whatever the other volumes say, so they are never
-  downloaded;
-- boxes are a Texture Coordinate (Object) test in the box's own space.
-
-Point and splat tiles get a Geometry Nodes modifier (`OGC3D Clip`, one group
-per tileset) that deletes the cut points: boxes test the point in the box's
-space, prisms cast a vertical ray onto a hidden helper mesh holding the
-flattened outlines (`OGC3D Clip Prisms …`).
+Switching mode is close to instant: no material changes. See
+[docs/clipping.md](docs/clipping.md) for how it all works, what comes from
+cesium-native, and measurements.
 
 ### Local and network tilesets, libraries, copies
 

@@ -43,28 +43,41 @@ def test_loops_to_lonlat_around_origin():
     assert 0.0011 < max(lons) - min(lons) < 0.0013
 
 
-def test_clip_specs_modes():
+def test_clip_specs_masks():
     polys = [[[0, 0], [1, 0], [1, 1]], [[2, 2], [3, 2], [3, 3]]]
     item = types.SimpleNamespace(uid="abc", clip_mode="CUT_ANY")
-    (s,) = clipping.clip_specs(item, polys)          # MAX of inside = inside the union
-    assert s["uid"] == "clip_abc_u" and not s["invert"] and s["exclude"] and len(s["polygons"]) == 2
-    (s,) = clipping.clip_specs(item, polys, n_boxes=1)
-    assert s["exclude"]                               # cut whatever the box says
-    item.clip_mode = "KEEP_ANY"                       # MIN of outside = outside the union
-    (s,) = clipping.clip_specs(item, polys)
-    assert s["invert"] and s["exclude"]
-    (s,) = clipping.clip_specs(item, polys, n_boxes=1)
-    assert not s["exclude"]                           # a box may still keep the tile
-    item.clip_mode = "CUT_ALL"
-    specs = clipping.clip_specs(item, polys)
-    assert [x["uid"] for x in specs] == ["clip_abc_p0", "clip_abc_p1"]
-    assert not any(x["exclude"] or x["invert"] for x in specs)
-    item.clip_mode = "KEEP_ALL"
-    specs = clipping.clip_specs(item, polys, n_boxes=2)
-    assert len(specs) == 2 and all(x["exclude"] and x["invert"] for x in specs)
-    (s,) = clipping.clip_specs(item, polys[:1])       # one polygon: union == per polygon
-    assert s["uid"] == "clip_abc_u" and s["invert"] and s["exclude"]
+    uids = ["clip_abc_p0", "clip_abc_p1"]
+    for mode in clipping.MODE_OPS:                    # a mode switch needs no new mask
+        item.clip_mode = mode
+        specs = clipping.clip_specs(item, polys)
+        assert [x["uid"] for x in specs] == uids and not any(x["invert"] for x in specs)
     assert clipping.clip_specs(item, []) == []
+    many = polys * 5                                  # over the GPU texture budget
+    item.clip_mode = "KEEP_ANY"
+    (s,) = clipping.clip_specs(item, many)
+    assert s["uid"] == "clip_abc_u" and len(s["polygons"]) == 10
+    item.clip_mode = "CUT_ALL"                        # an overlap can't use a union
+    assert len(clipping.clip_specs(item, many)) == 10
+
+
+def test_clip_excluders():
+    polys = [[[0, 0], [1, 0], [1, 1]], [[2, 2], [3, 2], [3, 3]]]
+    item = types.SimpleNamespace(uid="abc", clip_mode="CUT_ANY")
+    (s,) = clipping.clip_excluders(item, polys, n_boxes=1)    # cut whatever the box says
+    assert not s["invert"] and len(s["polygons"]) == 2
+    item.clip_mode = "KEEP_ALL"
+    ex = clipping.clip_excluders(item, polys, n_boxes=1)      # outside one is enough
+    assert len(ex) == 2 and all(s["invert"] and len(s["polygons"]) == 1 for s in ex)
+    item.clip_mode = "KEEP_ANY"
+    (s,) = clipping.clip_excluders(item, polys)
+    assert s["invert"] and len(s["polygons"]) == 2
+    assert clipping.clip_excluders(item, polys, n_boxes=1) == []    # a box may keep the tile
+    item.clip_mode = "CUT_ALL"
+    assert clipping.clip_excluders(item, polys) == []         # inside both isn't testable
+    (s,) = clipping.clip_excluders(item, polys[:1])
+    assert not s["invert"]
+    assert clipping.clip_excluders(item, polys[:1], n_boxes=1) == []
+    assert clipping.clip_excluders(item, []) == []
 
 
 def test_clip_mode_semantics():
@@ -78,6 +91,20 @@ def test_clip_mode_semantics():
         for x in (-1, 0.5, 1.5, 2.5, 4):
             terms = [(not f(x)) if outside else f(x) for f in inside.values()]
             assert bool(comb(terms)) == (x in cut_set), (mode, x)
+
+
+def test_mode_attrs_match_modes():
+    """The material chain (MAX or MIN of inside, then maybe invert) gives the
+    same answer as the (op, per-volume term) definition of each mode."""
+    cases = [(0, 0), (0, 1), (1, 0), (1, 1)]
+    for mode in clipping.MODE_OPS:
+        op, outside = clipping.mode_op(mode)
+        any_, invert = clipping.mode_attrs(mode)
+        for a, b in cases:
+            terms = [1 - a, 1 - b] if outside else [a, b]
+            want = (max if op == "MAXIMUM" else min)(terms)
+            x = max(a, b) if any_ else min(a, b)
+            assert abs(x - invert) == want, (mode, a, b)
 
 
 def test_box_extent():

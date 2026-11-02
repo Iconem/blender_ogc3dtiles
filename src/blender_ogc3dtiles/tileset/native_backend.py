@@ -577,26 +577,25 @@ class CesiumNativeBackend:
             return False
         self._tileset.overlays.add(ov)
         self._overlays[spec["uid"]] = ov
-        if spec.get("exclude"):
-            # tiles entirely on the clipped side of the polygons are never loaded
-            self._excluders[spec["uid"]] = self._cs.tiles.selection.RasterizedPolygonsTileExcluder(ov)
-            self._push_excluders()
         return True
 
     def remove_overlay(self, uid):
         ov = self._overlays.pop(uid, None)
-        if self._excluders.pop(uid, None) is not None:
-            self._push_excluders()
         if ov is not None and self._tileset is not None:
             try:
                 self._tileset.overlays.remove(ov)
             except Exception as exc:      # noqa: BLE001
                 print("[3DTiles/native] overlay remove failed: %r" % (exc,))
 
-    def _push_excluders(self):
+    def set_excluders(self, specs):
+        """Tiles entirely on the clipped side of these polygons are never
+        loaded. The overlays only carry the polygons, they aren't added to
+        the tileset, so changing them re-rasterises nothing."""
         if self._tileset is None:
             return
         try:
+            exc = self._cs.tiles.selection.RasterizedPolygonsTileExcluder
+            self._excluders = {s["uid"]: exc(_make_overlay(self._cs, s)) for s in specs}
             self._tileset.options.excluders = list(self._excluders.values())
         except Exception as exc:          # noqa: BLE001
             print("[3DTiles/native] excluders update failed: %r" % (exc,))

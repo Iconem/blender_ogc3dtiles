@@ -20,23 +20,23 @@ import bpy
 from .io import OVERLAY_UV_PREFIX
 
 NODE_TAG = "OGC3D Overlay"
+ORDER_PROP = "ogc_order"
 
 
-def _names(tex_id):
-    b = f"{NODE_TAG} {tex_id}"
+def _names(uid):
+    b = f"{NODE_TAG} {uid}"
     return {"uv": b + " UV", "map": b + " Map", "tex": b + " Tex", "mix": b + " Mix",
             "alpha": b + " Alpha", "fac": b + " Factor"}
 
 
+def _overlay_mixes(nt):
+    return [n for n in nt.nodes
+            if n.name.startswith(NODE_TAG) and n.name.endswith(" Mix") and n.type == "MIX"]
+
+
 def _color_source(nt):
-    """Socket carrying the material's current colour (the topmost overlay
-    mix, else the image texture, else a RGB node of the base colour)."""
-    best = None
-    for n in nt.nodes:
-        if n.name.startswith(NODE_TAG) and n.name.endswith(" Mix") and n.type == "MIX":
-            best = n if best is None or n.location.x > best.location.x else best
-    if best is not None:
-        return best.outputs[2]
+    """Socket carrying the material's own colour (the image texture, else a
+    RGB node of the base colour)."""
     for n in nt.nodes:
         if n.type == "TEX_IMAGE" and n.image is not None and not n.name.startswith(NODE_TAG):
             return n.outputs["Color"]
@@ -49,83 +49,104 @@ def _color_source(nt):
     return rgb.outputs[0]
 
 
-def attach(mat, tex_id, image_name, translation, scale, alpha=1.0) -> bool:
+def _insert_mix(nt, mix) -> None:
+    """Put a new overlay mix in the chain by layer order, bottom layer first:
+    material colour → mix → mix → every consumer of the colour."""
+    others = [m for m in _overlay_mixes(nt) if m != mix]    # bpy wrappers: not "is"
+    if others:
+        ordered = sorted(others, key=lambda m: m.get(ORDER_PROP, 0))
+        src = ordered[0].inputs[6].links[0].from_socket
+        dst = [lk.to_socket for lk in ordered[-1].outputs[2].links]
+    else:
+        src = _color_source(nt)
+        dst = [lk.to_socket for lk in src.links]
+        if not dst:
+            # untextured material: the base colour was a plain value, feed the BSDF
+            bsdf = next((n for n in nt.nodes if n.type == "BSDF_PRINCIPLED"), None)
+            dst = [bsdf.inputs["Base Color"]] if bsdf is not None else []
+    acc = src
+    for m in sorted(others + [mix], key=lambda m: m.get(ORDER_PROP, 0)):
+        nt.links.new(acc, m.inputs[6])
+        acc = m.outputs[2]
+    for sock in dst:
+        nt.links.new(acc, sock)
+
+
+def attach(mat, tex_id, uid, image_name, translation, scale, alpha=1.0, order=0) -> bool:
+    """Overlays sharing a projection share a texture coordinate set, so the
+    nodes are keyed by overlay uid. ``order``: position in the overlay list,
+    later layers mix over earlier ones."""
     if mat is None or not mat.use_nodes or mat.node_tree is None:
         return False
     img = bpy.data.images.get(image_name)
     if img is None:
         return False
     nt = mat.node_tree
-    nm = _names(tex_id)
+    nm = _names(uid)
     tex = nt.nodes.get(nm["tex"])
     mp = nt.nodes.get(nm["map"])
-    if tex is not None and mp is not None:          # re-attach: finer raster for the same set
+    if tex is not None and mp is not None:          # re-attach: finer raster for the same layer
         tex.image = img
         mp.inputs["Location"].default_value = (translation[0], translation[1], 0.0)
         mp.inputs["Scale"].default_value = (scale[0], scale[1], 1.0)
+        uv = nt.nodes.get(nm["uv"])
+        if uv is not None and uv.uv_map != f"{OVERLAY_UV_PREFIX}{tex_id}":
+            uv.uv_map = f"{OVERLAY_UV_PREFIX}{tex_id}"
         return True
-    src = _color_source(nt)
-    x0 = src.node.location.x
+    y = 700 + 260 * order
     uv = nt.nodes.new("ShaderNodeUVMap")
     uv.name = uv.label = nm["uv"]
     uv.uv_map = f"{OVERLAY_UV_PREFIX}{tex_id}"
-    uv.location = (x0 - 300, 700 + 120 * tex_id)
+    uv.location = (-800, y)
     mp = nt.nodes.new("ShaderNodeMapping")
     mp.name = mp.label = nm["map"]
     mp.vector_type = "POINT"
     mp.inputs["Location"].default_value = (translation[0], translation[1], 0.0)
     mp.inputs["Scale"].default_value = (scale[0], scale[1], 1.0)
-    mp.location = (x0 - 100, 700 + 120 * tex_id)
+    mp.location = (-600, y)
     tex = nt.nodes.new("ShaderNodeTexImage")
     tex.name = tex.label = nm["tex"]
     tex.image = img
     tex.extension = "EXTEND"
     tex.interpolation = "Linear"
-    tex.location = (x0 + 150, 700 + 120 * tex_id)
+    tex.location = (-350, y)
     fac = nt.nodes.new("ShaderNodeMath")
     fac.name = fac.label = nm["fac"]
     fac.operation = "MULTIPLY"
     fac.inputs[0].default_value = float(alpha)
-    fac.location = (x0 + 450, 850 + 120 * tex_id)
+    fac.location = (-50, y + 150)
     mix = nt.nodes.new("ShaderNodeMix")
     mix.name = mix.label = nm["mix"]
     mix.data_type = "RGBA"
     mix.blend_type = "MIX"
-    mix.location = (x0 + 450, 500 + 120 * tex_id)
+    mix.location = (-50, y - 100)
+    mix[ORDER_PROP] = int(order)
     nt.links.new(uv.outputs["UV"], mp.inputs["Vector"])
     nt.links.new(mp.outputs["Vector"], tex.inputs["Vector"])
     nt.links.new(tex.outputs["Alpha"], fac.inputs[1])
     nt.links.new(fac.outputs[0], mix.inputs[0])
-    # consumers of the previous colour now read the mix
-    for link in list(src.links):
-        nt.links.new(mix.outputs[2], link.to_socket)
-    if not mix.outputs[2].links:
-        # untextured material: the base colour was a plain value, feed the BSDF
-        bsdf = next((n for n in nt.nodes if n.type == "BSDF_PRINCIPLED"), None)
-        if bsdf is not None:
-            nt.links.new(mix.outputs[2], bsdf.inputs["Base Color"])
-    nt.links.new(src, mix.inputs[6])
     nt.links.new(tex.outputs["Color"], mix.inputs[7])
+    _insert_mix(nt, mix)
     return True
 
 
-def detach(mat, tex_id) -> bool:
+def detach(mat, uid) -> bool:
     """cesium-native detaches a raster when a finer one replaces it (and when
     an overlay is removed). Keep the nodes and only drop the image: an Image
-    Texture without image reads alpha 0, so the mix shows the material's own
-    colour, and the next attach is a cheap image / mapping update instead of
-    a rebuilt node graph (which also made EEVEE recompile the material)."""
+    Texture without image reads alpha 0, so the mix shows the colour below,
+    and the next attach is a cheap image / mapping update instead of a
+    rebuilt node graph (which also made EEVEE recompile the material)."""
     if mat is None or not mat.use_nodes or mat.node_tree is None:
         return False
-    tex = mat.node_tree.nodes.get(_names(tex_id)["tex"])
+    tex = mat.node_tree.nodes.get(_names(uid)["tex"])
     if tex is None:
         return False
     tex.image = None
     return True
 
 
-def set_alpha(mat, tex_id, alpha) -> bool:
-    n = mat.node_tree.nodes.get(_names(tex_id)["fac"]) if mat and mat.node_tree else None
+def set_alpha(mat, uid, alpha) -> bool:
+    n = mat.node_tree.nodes.get(_names(uid)["fac"]) if mat and mat.node_tree else None
     if n is None:
         return False
     n.inputs[0].default_value = float(alpha)
@@ -133,18 +154,14 @@ def set_alpha(mat, tex_id, alpha) -> bool:
 
 
 def set_overlay_alpha(uid, alpha) -> int:
-    """Live opacity: every tile material carrying this overlay (matched by
-    the tex id the tile object recorded for the uid)."""
+    """Live opacity: every tile material carrying this overlay."""
     n = 0
     for o in bpy.data.objects:
         ids = o.get("overlay_ids")
-        if not ids or o.type != "MESH":
-            continue
-        tid = ids.get(uid) if hasattr(ids, "get") else None
-        if tid is None:
+        if not ids or o.type != "MESH" or uid not in ids:
             continue
         for m in o.data.materials:
-            if set_alpha(m, int(tid), alpha):
+            if set_alpha(m, uid, alpha):
                 n += 1
     return n
 
@@ -152,25 +169,43 @@ def set_overlay_alpha(uid, alpha) -> int:
 # ── clipping volumes ─────────────────────────────────────────────────────────
 # Note: cesium-native gives all overlays sharing a projection the same
 # texture coordinate set, so clip nodes are keyed by overlay uid, not by set.
-# Every clipping volume of a mesh tile is one "term" node in its material,
-# 1 where the per-volume condition holds (inside, or outside, see
-# clipping.MODE_OPS):
+# Every clipping volume of a mesh tile is one "term" node in its material, 1
+# inside the volume:
 #
 #   prism (uid ``clip_...``, a cesium mask):  UV → Mapping → Image → Term
 #   box   (clip_nodes.set_box_terms):  Texture Coordinate (Object) → … → Term
 #
-#   Terms → MAX / MIN chain → Greater Than 0.5 → Mix Shader(surface, Transparent)
+#   Terms → MAX chain ┐
+#   Terms → MIN chain ┴ Mix (attribute "any") → |x - attribute "invert"|
+#     → Greater Than 0.5 → Mix Shader(surface, Transparent)
 #
-# The op is stored on the material (``ogc_clip_op``). A detached mask's nodes
-# are removed (a stale term would bias the MIN chain), and the whole chain
-# goes when no term is left.
+# The two attributes are view-layer attributes (custom properties on the
+# scene, clip_nodes.set_mode), so a mode switch recompiles no material. The
+# structure only changes when a volume is added or removed. A mask detached
+# for a finer raster keeps its nodes for the same reason.
 
 CLIP_PREFIX = "clip_"
 POLY_TAG = "OGC3D PolyClip"
 POLY_MIX = POLY_TAG + " Mix"
 POLY_STEP = POLY_TAG + " Step"
 POLY_TRANSPARENT = POLY_TAG + " Transparent"
-CLIP_OP_PROP = "ogc_clip_op"
+POLY_SELECT = POLY_TAG + " Select"
+POLY_SUB = POLY_TAG + " Invert Sub"
+POLY_ABS = POLY_TAG + " Invert Abs"
+POLY_ATTR_ANY = POLY_TAG + " Attr Any"
+POLY_ATTR_INVERT = POLY_TAG + " Attr Invert"
+CLIP_UID_PROP = "ogc_clip_uid"
+
+
+def clip_attr_names(tileset_uid) -> tuple:
+    """Scene custom property names of a tileset's mode: (any, invert)."""
+    b = "ogc_clip_" + "".join(c if c.isalnum() else "_" for c in str(tileset_uid))
+    return b + "_any", b + "_invert"
+
+
+def tileset_uid_of_mask(uid) -> str:
+    """clip_<tileset uid>_<p0 | u> → the tileset uid."""
+    return str(uid)[len(CLIP_PREFIX):].rsplit("_", 1)[0]
 
 
 def is_clip_uid(uid) -> bool:
@@ -182,9 +217,10 @@ def _poly_names(uid):
     return {"uv": b + " UV", "map": b + " Map", "tex": b + " Tex", "term": b + " Term"}
 
 
-def _ensure_poly_mix(nt):
+def _ensure_poly_mix(nt, tileset_uid):
     """Mix Shader between the material's shader and a Transparent BSDF, put
-    in front of the viewport-region clip mix when that one exists."""
+    in front of the viewport-region clip mix when that one exists, with the
+    mode logic ahead of it."""
     from . import materials
     mix = nt.nodes.get(POLY_MIX)
     if mix is not None:
@@ -194,21 +230,40 @@ def _ensure_poly_mix(nt):
         return None
     src = target.links[0].from_socket
     x, y = target.node.location
-    tr = nt.nodes.new("ShaderNodeBsdfTransparent")
-    tr.name = tr.label = POLY_TRANSPARENT
-    tr.location = (x - 420, y - 420)
-    step = nt.nodes.new("ShaderNodeMath")
-    step.name = step.label = POLY_STEP
+    N, L = nt.nodes.new, nt.links.new
+
+    def named(node, name, dx, dy):
+        node.name = node.label = name
+        node.location = (x + dx, y + dy)
+        return node
+
+    tr = named(N("ShaderNodeBsdfTransparent"), POLY_TRANSPARENT, -420, -420)
+    step = named(N("ShaderNodeMath"), POLY_STEP, -420, -250)
     step.operation = "GREATER_THAN"
     step.inputs[1].default_value = 0.5
-    step.location = (x - 420, y - 250)
-    mix = nt.nodes.new("ShaderNodeMixShader")
-    mix.name = mix.label = POLY_MIX
-    mix.location = (x - 200, y)
-    nt.links.new(step.outputs[0], mix.inputs["Fac"])
-    nt.links.new(src, mix.inputs[1])
-    nt.links.new(tr.outputs[0], mix.inputs[2])
-    nt.links.new(mix.outputs[0], target)
+    ab = named(N("ShaderNodeMath"), POLY_ABS, -620, -250)
+    ab.operation = "ABSOLUTE"
+    sub = named(N("ShaderNodeMath"), POLY_SUB, -820, -250)
+    sub.operation = "SUBTRACT"
+    sel = named(N("ShaderNodeMix"), POLY_SELECT, -1020, -250)
+    sel.data_type = "FLOAT"
+    any_name, inv_name = clip_attr_names(tileset_uid)
+    a_any = named(N("ShaderNodeAttribute"), POLY_ATTR_ANY, -1240, -60)
+    a_any.attribute_type = "VIEW_LAYER"
+    a_any.attribute_name = any_name
+    a_inv = named(N("ShaderNodeAttribute"), POLY_ATTR_INVERT, -1020, -60)
+    a_inv.attribute_type = "VIEW_LAYER"
+    a_inv.attribute_name = inv_name
+    L(a_any.outputs["Fac"], sel.inputs[0])
+    L(sel.outputs[0], sub.inputs[0])
+    L(a_inv.outputs["Fac"], sub.inputs[1])
+    L(sub.outputs[0], ab.inputs[0])
+    L(ab.outputs[0], step.inputs[0])
+    mix = named(N("ShaderNodeMixShader"), POLY_MIX, -200, 0)
+    L(step.outputs[0], mix.inputs["Fac"])
+    L(src, mix.inputs[1])
+    L(tr.outputs[0], mix.inputs[2])
+    L(mix.outputs[0], target)
     return mix
 
 
@@ -216,37 +271,38 @@ def _is_term(n) -> bool:
     return n.name.startswith(POLY_TAG) and n.name.endswith(" Term")
 
 
-def relink_clip_chain(mat, op=None) -> None:
-    """Combine every term of the material with ``op`` (MAXIMUM / MINIMUM;
-    default: the stored one) into the step node; no term: no clipping."""
+def relink_clip_chain(mat, tileset_uid=None) -> None:
+    """Rebuild the MAX and MIN chains over the material's terms; no term: no
+    clipping. Only needed when a term comes or goes."""
     if mat is None or mat.node_tree is None:
         return
-    if op is not None:
-        mat[CLIP_OP_PROP] = op
-    op = mat.get(CLIP_OP_PROP, "MAXIMUM")
+    if tileset_uid is not None:
+        mat[CLIP_UID_PROP] = tileset_uid
+    tileset_uid = mat.get(CLIP_UID_PROP, "")
     nt = mat.node_tree
-    for n in [n for n in nt.nodes if n.name.startswith(POLY_TAG) and n.name.endswith(" Combine")]:
+    for n in [n for n in nt.nodes if n.name.startswith(POLY_TAG) and " Combine" in n.name]:
         nt.nodes.remove(n)
     terms = sorted((n for n in nt.nodes if _is_term(n)), key=lambda n: n.name)
     if not terms:
         remove_poly_clip(mat)
         return
-    if _ensure_poly_mix(nt) is None:
+    if _ensure_poly_mix(nt, tileset_uid) is None:
         return
-    step = nt.nodes.get(POLY_STEP)
-    acc = terms[0].outputs[0]
-    for t in terms[1:]:
-        comb = nt.nodes.new("ShaderNodeMath")
-        comb.name = comb.label = t.name[: -len(" Term")] + " Combine"
-        comb.operation = op
-        comb.location = (t.location.x + 200, t.location.y)
-        nt.links.new(acc, comb.inputs[0])
-        nt.links.new(t.outputs[0], comb.inputs[1])
-        acc = comb.outputs[0]
-    nt.links.new(acc, step.inputs[0])
+    sel = nt.nodes.get(POLY_SELECT)
+    for op, sock, dy in (("MINIMUM", sel.inputs[2], 0), ("MAXIMUM", sel.inputs[3], 120)):
+        acc = terms[0].outputs[0]
+        for t in terms[1:]:
+            comb = nt.nodes.new("ShaderNodeMath")
+            comb.name = comb.label = f"{t.name[: -len(' Term')]} Combine {op}"
+            comb.operation = op
+            comb.location = (t.location.x + 200, t.location.y + dy)
+            nt.links.new(acc, comb.inputs[0])
+            nt.links.new(t.outputs[0], comb.inputs[1])
+            acc = comb.outputs[0]
+        nt.links.new(acc, sock)
 
 
-def attach_clip(mat, tex_id, uid, image_name, translation, scale, op=None) -> bool:
+def attach_clip(mat, tex_id, uid, image_name, translation, scale) -> bool:
     if mat is None or not mat.use_nodes or mat.node_tree is None:
         return False
     img = bpy.data.images.get(image_name)
@@ -258,7 +314,8 @@ def attach_clip(mat, tex_id, uid, image_name, translation, scale, op=None) -> bo
     nm = _poly_names(uid)
     tex, mp, term = nt.nodes.get(nm["tex"]), nt.nodes.get(nm["map"]), nt.nodes.get(nm["term"])
     if tex is None or mp is None or term is None:
-        mix = _ensure_poly_mix(nt)
+        tileset_uid = tileset_uid_of_mask(uid)
+        mix = _ensure_poly_mix(nt, tileset_uid)
         if mix is None:
             return False
         n_terms = sum(1 for n in nt.nodes if _is_term(n))
@@ -284,9 +341,7 @@ def attach_clip(mat, tex_id, uid, image_name, translation, scale, op=None) -> bo
         nt.links.new(uv.outputs["UV"], mp.inputs["Vector"])
         nt.links.new(mp.outputs["Vector"], tex.inputs["Vector"])
         nt.links.new(tex.outputs["Color"], term.inputs[0])
-        relink_clip_chain(mat, op)
-    elif op is not None and mat.get(CLIP_OP_PROP) != op:
-        relink_clip_chain(mat, op)
+        relink_clip_chain(mat, tileset_uid)
     uvn = nt.nodes.get(nm["uv"])
     if uvn is not None and uvn.uv_map != f"{OVERLAY_UV_PREFIX}{tex_id}":
         uvn.uv_map = f"{OVERLAY_UV_PREFIX}{tex_id}"
@@ -296,10 +351,18 @@ def attach_clip(mat, tex_id, uid, image_name, translation, scale, op=None) -> bo
     return True
 
 
-def detach_clip(mat, uid) -> bool:
+def detach_clip(mat, uid, keep=False) -> bool:
+    """``keep``: the overlay stays, cesium-native is swapping in a finer
+    raster; only drop the image. Otherwise the term goes (a stale term would
+    bias the MIN chain)."""
     if mat is None or not mat.use_nodes or mat.node_tree is None:
         return False
     nt = mat.node_tree
+    if keep:
+        tex = nt.nodes.get(_poly_names(uid)["tex"])
+        if tex is not None:
+            tex.image = None
+        return tex is not None
     nodes = [nt.nodes.get(n) for n in _poly_names(uid).values()]
     if not any(nodes):
         return False
@@ -327,10 +390,10 @@ def remove_poly_clip(mat) -> bool:
     return bool(tagged)
 
 
-def _clip_op_for(obj):
+def _mask_in_use(obj, uid) -> bool:
     root = obj.parent
     cfg = root.get("ogc_clip") if root is not None else None
-    return cfg.get("op") if cfg else None
+    return bool(cfg) and uid in list(cfg.get("masks") or [])
 
 
 def _shader_clipped(obj) -> bool:
@@ -339,7 +402,7 @@ def _shader_clipped(obj) -> bool:
     return obj.type == "MESH" and len(obj.data.polygons) > 0
 
 
-def apply_event(obj, ev, alpha_for_uid) -> None:
+def apply_event(obj, ev, alpha_for_uid, order_for_uid=None) -> None:
     """An ("attach"/"detach") event from the native backend on a tile object."""
     if ev[0] == "attach":
         _, key, tid, uid, image, tr, sc = ev
@@ -348,20 +411,22 @@ def apply_event(obj, ev, alpha_for_uid) -> None:
         obj["overlay_ids"] = ids
         if is_clip_uid(uid):
             if _shader_clipped(obj):
-                op = _clip_op_for(obj)
                 for m in obj.data.materials:
-                    attach_clip(m, tid, uid, image, tr, sc, op)
+                    attach_clip(m, tid, uid, image, tr, sc)
             return
+        order = order_for_uid(uid) if order_for_uid is not None else 0
         for m in obj.data.materials:
-            attach(m, tid, image, tr, sc, alpha_for_uid(uid))
+            attach(m, tid, uid, image, tr, sc, alpha_for_uid(uid), order)
     elif ev[0] == "detach":
-        tid, uid = ev[2], (ev[3] if len(ev) > 3 else "")
+        uid = ev[3] if len(ev) > 3 else ""
         if is_clip_uid(uid):
-            ids = dict(obj.get("overlay_ids") or {})
-            ids.pop(uid, None)
-            obj["overlay_ids"] = ids
+            keep = _mask_in_use(obj, uid)
+            if not keep:
+                ids = dict(obj.get("overlay_ids") or {})
+                ids.pop(uid, None)
+                obj["overlay_ids"] = ids
             for m in obj.data.materials:
-                detach_clip(m, uid)
+                detach_clip(m, uid, keep)
             return
         for m in obj.data.materials:
-            detach(m, tid)
+            detach(m, uid)

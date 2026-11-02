@@ -26,6 +26,7 @@ from bpy.types import Operator, Panel, UIList
 
 from ..camera import CesiumCameraAdapter
 from ..io import (
+    addon_pref,
     DiskCache,
     TileDownloadManager,
     default_cache_dir,
@@ -2457,6 +2458,45 @@ _classes = [
 ]
 
 
+PANEL_CATEGORY = OGC3D_PT_MainPanel.bl_category
+SIDEBAR_TRIES = 25          # every 0.2 s: the window and its tabs appear after a draw
+
+
+def _open_sidebar_tick(tries=[0]):                   # noqa: B006
+    """Open each window's largest 3D Viewport's sidebar on our tab. A region only
+    accepts a tab once it has drawn its tabs, so this retries until then."""
+    if not addon_pref("open_sidebar", True):
+        return None
+    pending = not bpy.context.window_manager.windows
+    for win in bpy.context.window_manager.windows:
+        areas = [a for a in win.screen.areas if a.type == "VIEW_3D"]
+        if not areas:
+            continue
+        area = max(areas, key=lambda a: a.width * a.height)
+        area.spaces.active.show_region_ui = True
+        region = next((r for r in area.regions if r.type == "UI"), None)
+        try:
+            if region is not None and region.active_panel_category != PANEL_CATEGORY:
+                region.active_panel_category = PANEL_CATEGORY
+                area.tag_redraw()
+        except (AttributeError, TypeError):          # no tabs yet
+            pending = True
+            area.tag_redraw()
+    tries[0] += 1
+    if pending and tries[0] < SIDEBAR_TRIES:
+        return 0.2
+    tries[0] = 0
+    return None
+
+
+def _open_sidebar(*_args):
+    if not bpy.app.background and not bpy.app.timers.is_registered(_open_sidebar_tick):
+        bpy.app.timers.register(_open_sidebar_tick, first_interval=0.2)
+
+
+_open_sidebar._bpy_persistent = True               # = @bpy.app.handlers.persistent
+
+
 EYE_TIMER_S = 0.15
 
 
@@ -2489,6 +2529,9 @@ def register():
         bpy.app.handlers.depsgraph_update_post.append(_clip_depsgraph_watch)
     if _clip_frame_change not in bpy.app.handlers.frame_change_post:
         bpy.app.handlers.frame_change_post.append(_clip_frame_change)
+    if _open_sidebar not in bpy.app.handlers.load_post:
+        bpy.app.handlers.load_post.append(_open_sidebar)
+    _open_sidebar()
 
 
 def unregister():
@@ -2498,6 +2541,10 @@ def unregister():
         bpy.app.handlers.depsgraph_update_post.remove(_clip_depsgraph_watch)
     if _clip_frame_change in bpy.app.handlers.frame_change_post:
         bpy.app.handlers.frame_change_post.remove(_clip_frame_change)
+    if _open_sidebar in bpy.app.handlers.load_post:
+        bpy.app.handlers.load_post.remove(_open_sidebar)
+    if bpy.app.timers.is_registered(_open_sidebar_tick):
+        bpy.app.timers.unregister(_open_sidebar_tick)
     for st in _state["streams"].values():
         dm = st.get("download_mgr")
         if dm:

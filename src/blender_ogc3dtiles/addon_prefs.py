@@ -127,6 +127,11 @@ class OGC3DTilesPreferences(AddonPreferences):
         description="Trimmed to this size, least recently used first, when the first stream of a "
                     "session starts. 0 = no cap. cesium-native also keeps at most 4096 responses",
         default=10.0, min=0.0, soft_max=200.0)
+    open_sidebar: BoolProperty(
+        name="Open the 3D Tiles sidebar",
+        description="When Blender starts or a file loads, open the sidebar of each window's "
+                    "largest 3D Viewport on the 3D Tiles tab",
+        default=True)
     mapped_drives_as_unc: BoolProperty(
         name="Mapped drives as UNC",
         description="When browsing to a tileset on a mapped network drive (Z:), store its "
@@ -202,6 +207,8 @@ class OGC3DTilesPreferences(AddonPreferences):
             row3.operator("ogc3dtiles.reset_perf_stats", icon="X", text="Reset Stats")
         else:
             box2.label(text="Start streaming to gather samples.", icon="INFO")
+
+        layout.prop(self, "open_sidebar")
 
         # ── Cache / library ───────────────────────────────────────────────────
         layout.separator()

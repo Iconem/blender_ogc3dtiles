@@ -162,7 +162,6 @@ Read on 2026-11-02, nothing merged. v0.66 only reads and writes the glTF 2.1 and
 - [cesium-native#1486](https://github.com/CesiumGS/cesium-native/issues/1486), geometry
   clipping: posted by Jonathan on 2026-11-02.
 - Cesium community thread 47479 (Blender architectural models + Google 3D
-  tiles): reply drafted, not posted. Story: started in June 2026 as a
-  prototype in a claude.ai chat integrating cesium-native-python, slow;
-  reworked in October 2026. Mention Arun's CesiumForBlender; no "going
-  public soon" yet. Shout-out to cesium-native-python (Ecosystem Grant).
+  Tiles): reply posted by Jonathan on 2026-11-02, [post 5](https://community.cesium.com/t/integrating-blender-architectural-models-with-google-photorealistic-3d-tiles-in-unreal-engine/47479/5).
+- calebbuffa/cesium-native-python#2: heads-up about the public add-on posted by
+  Jonathan on 2026-11-02. Wait for Caleb before opening more binding PRs.

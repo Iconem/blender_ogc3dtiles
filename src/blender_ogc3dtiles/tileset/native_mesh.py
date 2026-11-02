@@ -270,6 +270,16 @@ def _quat_mul(a, b):
                      aw * bw - ax * bx - ay * by - az * bz], axis=-1)
 
 
+def _splat_attr(cs, model, ai, view, dtype):
+    """A splat attribute: float in SPZ-decoded tiles, often normalised integers
+    in uncompressed ones, which the binding's typed views can't read."""
+    arr = _as_array(view(model, ai), dtype)
+    if arr is None:
+        arr = _raw_accessor(model, ai)
+        arr = arr.astype(dtype) if arr is not None else None
+    return arr
+
+
 def _splat_arrays(cs, model, prim, T, n):
     """Rotation (N,4 as Blender w,x,y,z), scale (N,3 metres) and spherical
     harmonics [(N,3) per coefficient, spec order] of a splat primitive,
@@ -278,8 +288,8 @@ def _splat_arrays(cs, model, prim, T, n):
     ri, si = _first_attr(prim, _SPLAT_ROTATION), _first_attr(prim, _SPLAT_SCALE)
     if ri is None or si is None:
         return None
-    rot = _as_array(cs.gltf.AccessorViewVec4(model, ri), np.float64)
-    scl = _as_array(cs.gltf.AccessorViewVec3(model, si), np.float64)
+    rot = _splat_attr(cs, model, ri, cs.gltf.AccessorViewVec4, np.float64)
+    scl = _splat_attr(cs, model, si, cs.gltf.AccessorViewVec3, np.float64)
     if rot is None or scl is None or len(rot) != n or len(scl) != n:
         return None
     # node transform: rotation composes, a uniform scale scales the splats
@@ -305,11 +315,13 @@ def _splat_arrays(cs, model, prim, T, n):
         if _SPLAT_SH in name:
             try:
                 parts = name.split(_SPLAT_SH)[1].split("_COEF_")
-                keys.append((int(parts[0]), int(parts[1]), ai))
+                # degree 0 is the base colour, COLOR_0 already carries it
+                if int(parts[0]) > 0:
+                    keys.append((int(parts[0]), int(parts[1]), ai))
             except (IndexError, ValueError):
                 continue
     for _deg, _coef, ai in sorted(keys):
-        arr = _as_array(cs.gltf.AccessorViewVec3(model, ai), np.float32)
+        arr = _splat_attr(cs, model, ai, cs.gltf.AccessorViewVec3, np.float32)
         if arr is None or len(arr) != n:
             sh = []
             break

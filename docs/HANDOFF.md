@@ -106,14 +106,22 @@ or keys; the files that do are named below and stay out of git.
   (two view-layer attributes), masks always per polygon, optional Cut Geometry.
 - Imagery overlays keyed by uid and mixed in list order: layers sharing a
   projection coexist.
-- 3D Tiles of SPZ splats (`KHR_gaussian_splatting_compression_spz_2`) stream
-  and clip with no special code. `EXT_splat_opacity` is ignored.
+- 3D Tiles of splats stream and clip, SPZ
+  (`KHR_gaussian_splatting_compression_spz_2`) and uncompressed (normalised
+  integer accessors read from the buffer; SH degree 0 is not a higher band).
+  `EXT_splat_opacity` is ignored.
+- Blender 5.3 moved Geometry Nodes modifier inputs to
+  `mod.properties.inputs.<id>.value`: point clouds had lost their material and
+  radius on 5.3.
 
 ### Known limitations and open threads
 
 - **Moving a prism reloads the tileset's tiles**: cesium-native reloads tiles
   when an overlay is added or replaced. Boxes don't have this. A shader test
   against the outline, like the boxes, would avoid it for meshes if it matters.
+- **`GltfModifier` from Python fails** ("Tried to call pure virtual function
+  GltfModifier.apply", tiles don't load): check the binding's trampoline.
+  Feature request draft: `docs/cesium-native-clipping-request.md`, not posted.
 - **`is_job_running("SHADER_COMPILATION")`** stayed true for minutes on large
   scenes while the viewport was already correct. Don't use it to wait.
 - **Non-georeferenced tilesets** (3dtiled splat output, root near ECEF 0)

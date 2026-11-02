@@ -1229,11 +1229,28 @@ def update_view_proxy(scene, eye_world, p11, height_px, is_persp):
             n.outputs[0].default_value = 1.0 if is_persp else 0.0
 
 
+def _mod_input_get(mod, identifier):
+    """A Geometry Nodes modifier input. Blender 5.3 moved them from ID
+    properties to ``mod.properties.inputs.<identifier>.value``."""
+    props = getattr(mod, "properties", None)
+    if props is not None:
+        return getattr(props.inputs, identifier).value
+    return mod[identifier]
+
+
+def _mod_input_set(mod, identifier, value) -> None:
+    props = getattr(mod, "properties", None)
+    if props is not None:
+        getattr(props.inputs, identifier).value = value
+    else:
+        mod[identifier] = value
+
+
 def _points_input(mod, ng, name):
     for item in ng.interface.items_tree:
         if getattr(item, "in_out", "") == "INPUT" and item.name == name:
             try:
-                return float(mod[item.identifier])
+                return float(_mod_input_get(mod, item.identifier))
             except Exception:          # noqa: BLE001
                 return None
     return None
@@ -1244,9 +1261,9 @@ def _set_points_inputs(mod, ng, radius, mat):
         if getattr(item, "in_out", "") != "INPUT":
             continue
         if item.name == "Material" and mat is not None:
-            mod[item.identifier] = mat
+            _mod_input_set(mod, item.identifier, mat)
         elif item.name == "Radius":
-            mod[item.identifier] = float(radius)
+            _mod_input_set(mod, item.identifier, float(radius))
 
 
 TILE_GEOMETRY_GROUP = "OGC3D Tile Geometry"

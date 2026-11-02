@@ -36,11 +36,39 @@ From cesium-native, through the Python binding:
 - `RasterizedPolygonsTileExcluder` drops tiles entirely on one side of the
   polygons, so they are never downloaded.
 
-Everything else is Blender nodes. cesium-native has no box volume and no way to
-cut geometry by a polygon. It also doesn't combine overlays: each mask is a
-separate raster, so the intersection logic has to run downstream of it, in the
-shader or in Geometry Nodes. Cesium's game-engine plugins work the same way,
-with the mask discarding pixels in a material.
+Everything else is Blender nodes.
+
+### What prisms are
+
+A prism is a 2D polygon extruded without height limits. Blender vertices are
+converted to longitude / latitude, which drops their height, so it isn't a
+polygon in ENU:
+
+- On mesh tiles, cesium-native tests in longitude / latitude, so the walls follow
+  the ellipsoid normal at each point.
+- On points and splats, the helper mesh is flat in the tileset frame and the ray
+  follows that frame's Z.
+
+The two agree near the scene origin and drift apart slowly with distance.
+
+### Other native paths
+
+cesium-native ships no box volume and no geometry cut, but it has two hooks. The
+binding exposes both as Python subclasses:
+
+| Hook | Could do | State here |
+|---|---|---|
+| `ITileExcluder` | Skip tiles inside or outside a box. `tile.bounding_volume` has `as_oriented_bounding_box`. | Works from Python, called on the main thread. Not used yet. |
+| `GltfModifier` (cesium-native v0.53) | Really cut tile geometry in a worker thread, and re-cut loaded tiles with `trigger()`, with no reload. | A Python subclass fails with "Tried to call pure virtual function GltfModifier.apply", so tiles don't load. Binding issue, not investigated further. |
+
+Even once that works, a Python modifier would hold the GIL while cutting, so a
+C++ one is the real path. See `docs/cesium-native-clipping-request.md`. Upstream:
+[cesium-unreal#1644](https://github.com/CesiumGS/cesium-unreal/issues/1644) asks
+for real geometry cuts and is open;
+[cesium-unreal#1818](https://github.com/CesiumGS/cesium-unreal/issues/1818) tried
+Manifold booleans, which need closed meshes;
+[cesium-native#1307](https://github.com/CesiumGS/cesium-native/pull/1307) (open)
+fixes `GltfModifier` with raster overlays.
 
 ## Mesh tiles: the material chain
 
@@ -129,4 +157,5 @@ view or in an export.
   coarse tiles.
 - Prisms are computed in longitude / latitude, so an edge isn't perfectly
   straight in ENU over long distances.
-- Boxes never exclude tiles: a tile inside a box is still downloaded, then hidden.
+- Boxes never exclude tiles yet: a tile inside a box is still downloaded, then
+  hidden. A Python `ITileExcluder` can fix this.

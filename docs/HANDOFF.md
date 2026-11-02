@@ -18,7 +18,8 @@ or keys; the files that do are named below and stay out of git.
   add-on preferences). Label share-link entries by asset id, never by token.
   Mask the URL field in any screenshot of a Google entry.
 - **Repos.**
-  - `jo-chemla/blender_ogc3dtiles` and `Iconem/blender_ogc3dtiles` are private.
+  - `jo-chemla/blender_ogc3dtiles` and `Iconem/blender_ogc3dtiles` are public since
+    2026-11-02, so anything committed is published.
     **Push directly to `main` on both remotes (`origin`, `iconem`). No PRs for
     the add-on.**
   - Upstream binding: `calebbuffa/cesium-native-python`. Our fork is
@@ -144,8 +145,6 @@ or keys; the files that do are named below and stay out of git.
 - Install wheels from PyPI or bundle them once #4 ships; drop the workarounds
   #5 makes redundant (keep a version check).
 - COPC / Potree loader as a Python content loader.
-- Before making the repo public: scan history for tokens (screenshots too),
-  pick a licence, check README images.
 
 ### Coming in cesium-native: 3D Tiles 2.0
 

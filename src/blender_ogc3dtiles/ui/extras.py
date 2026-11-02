@@ -6,7 +6,7 @@ import os
 import threading
 
 import bpy
-from bpy.props import BoolProperty, EnumProperty, FloatProperty, StringProperty
+from bpy.props import BoolProperty, EnumProperty, FloatProperty, IntProperty, StringProperty
 from bpy.types import Operator
 
 from .. import cachectl, library, paths
@@ -114,56 +114,92 @@ class OGC3D_OT_CacheTrim(Operator):
 
 
 # ── Libraries ────────────────────────────────────────────────────────────────
-_lib_items = []          # EnumProperty items must outlive the callback
+LIB_PICKER_WIDTH = 700      # px at resolution scale 1; a search popup can't be widened
+LIB_PICKER_ROWS = 24
+_lib_rows = []              # the library files as read when the picker opened
 
 
 def _library_paths():
     return [bpy.path.abspath(p) for p in library.split_paths(addon_pref("library_files", ""))]
 
 
-def _entry_items(self, context):
-    _lib_items.clear()
-    for i, (path, e) in enumerate(library.read_all(_library_paths())):
-        if "error" in e:
-            continue
-        lib = os.path.splitext(os.path.basename(path))[0]
-        grp = f"{e['group']} / " if e.get("group") else ""
-        _lib_items.append((str(i), f"{grp}{e['name']}", f"{lib}: {e.get('notes', '')}"))
-    if not _lib_items:
-        _lib_items.append(("-1", "(no library entries)", "Add library files in the preferences"))
-    return _lib_items
+def _entry_label(entry) -> str:
+    return f"{entry['group']} / {entry['name']}" if entry.get("group") else entry["name"]
 
 
-class OGC3D_OT_LibraryAdd(Operator):
-    """Add a tileset from a library file (Preferences > Tileset libraries)"""
-    bl_idname = "ogc3dtiles.library_add"
-    bl_label = "Add from Library"
-    bl_property = "entry"
-    bl_options = {"REGISTER", "UNDO"}
+def _matching_entries(query) -> list:
+    """Indices into _lib_rows of the entries holding every word of ``query``."""
+    words = query.lower().split()
+    out = []
+    for i, (_path, e) in enumerate(_lib_rows):
+        if "error" not in e:
+            text = f"{_entry_label(e)} {e.get('notes', '')}".lower()
+            if all(w in text for w in words):
+                out.append(i)
+    return out
 
-    entry: EnumProperty(name="Tileset", items=_entry_items)
 
-    def invoke(self, context, event):
-        if not _library_paths():
-            self.report({"WARNING"}, "No tileset library: add one in the add-on preferences")
-            return {"CANCELLED"}
-        context.window_manager.invoke_search_popup(self)
-        return {"RUNNING_MODAL"}
+class OGC3D_OT_LibraryPick(Operator):
+    """Add this tileset to the list"""
+    bl_idname = "ogc3dtiles.library_pick"
+    bl_label = "Add Tileset"
+    bl_options = {"REGISTER", "UNDO", "INTERNAL"}
+
+    index: IntProperty(options={"HIDDEN"})
+
+    @classmethod
+    def description(cls, context, properties):
+        i = properties.index
+        return _lib_rows[i][1].get("notes", "") if 0 <= i < len(_lib_rows) else ""
 
     def execute(self, context):
-        i = int(self.entry)
-        rows = library.read_all(_library_paths())
-        if not (0 <= i < len(rows)) or "error" in rows[i][1]:
+        if not (0 <= self.index < len(_lib_rows)):
             return {"CANCELLED"}
         props = context.scene.ogc3dtiles
         it = props.tilesets.add()
-        library.apply_entry(it, rows[i][1], add_overlay=lambda item: item.overlays.add())
+        library.apply_entry(it, _lib_rows[self.index][1], add_overlay=lambda item: item.overlays.add())
         for ov in it.overlays:
             if not ov.uid:
                 import uuid
                 ov.uid = f"ov_{uuid.uuid4().hex[:8]}"
         props.active_tileset = len(props.tilesets) - 1
         self.report({"INFO"}, f"Added {it.name}")
+        return {"FINISHED"}
+
+
+class OGC3D_OT_LibraryAdd(Operator):
+    """Add a tileset from a library file (Preferences > Tileset libraries)"""
+    bl_idname = "ogc3dtiles.library_add"
+    bl_label = "Add from Library"
+
+    query: StringProperty(name="Search", options={"TEXTEDIT_UPDATE", "SKIP_SAVE"})
+
+    def invoke(self, context, event):
+        if not _library_paths():
+            self.report({"WARNING"}, "No tileset library: add one in the add-on preferences")
+            return {"CANCELLED"}
+        _lib_rows[:] = library.read_all(_library_paths())
+        width = int(LIB_PICKER_WIDTH * context.preferences.system.ui_scale)
+        return context.window_manager.invoke_popup(self, width=width)
+
+    def draw(self, context):
+        layout = self.layout
+        row = layout.row()
+        row.activate_init = True
+        row.prop(self, "query", text="", icon="VIEWZOOM", placeholder="Search tilesets")
+        found = _matching_entries(self.query)
+        col = layout.column(align=True)
+        for i in found[:LIB_PICKER_ROWS]:
+            row = col.row(align=True)
+            row.alignment = "LEFT"
+            row.operator(OGC3D_OT_LibraryPick.bl_idname, text=_entry_label(_lib_rows[i][1]),
+                         emboss=False).index = i
+        if not found:
+            col.label(text="No matching tileset" if _lib_rows else "The library is empty")
+        elif len(found) > LIB_PICKER_ROWS:
+            col.label(text=f"{len(found) - LIB_PICKER_ROWS} more: type to narrow down")
+
+    def execute(self, context):
         return {"FINISHED"}
 
 
@@ -412,6 +448,7 @@ def draw_entry_tools(layout, it) -> None:
 _classes = [
     OGC3D_OT_TilesetBrowse,
     OGC3D_OT_CacheTrim,
+    OGC3D_OT_LibraryPick,
     OGC3D_OT_LibraryAdd,
     OGC3D_OT_LibrarySave,
     OGC3D_OT_LibraryAddFile,

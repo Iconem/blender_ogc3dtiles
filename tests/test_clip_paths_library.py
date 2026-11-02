@@ -257,6 +257,22 @@ def test_library_save_read_replace(tmp_path):
     assert library.split_paths(' a.json ; "b c.json";') == ["a.json", "b c.json"]
 
 
+def test_library_content_filter():
+    splat = {"name": "Interior splat v3", "group": "San Pietro"}
+    pts = {"name": "AkYum", "group": "Cambodia point clouds"}
+    mesh = {"name": "Bench 50M", "group": "San Pietro meshes (CDN)"}
+    told = {"name": "Saint-Roman", "content": "POINTS"}
+    unknown = {"name": "Venice flyover"}
+    assert [library.content_type(e) for e in (splat, pts, mesh, told, unknown)] == [
+        "SPLATS", "POINTS", "MESH", "POINTS", ""]
+    # the entry's own field wins over its words, and splats over a mesh2splat's "mesh"
+    assert library.content_type({"name": "mesh tiles", "content": "SPLATS"}) == "SPLATS"
+    assert library.content_type({"name": "Interior mesh2splat"}) == "SPLATS"
+    assert library.matches(splat, "SPLAT pietro") and not library.matches(splat, "splat rome")
+    assert library.matches(unknown, "") and not library.matches(unknown, "", ("MESH",))
+    assert library.matches(pts, "", ("MESH", "POINTS")) and not library.matches(pts, "", ("SPLATS",))
+
+
 # ── cache cap ─────────────────────────────────────────────────────────────────
 
 def _make_cache(path, sizes):

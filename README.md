@@ -471,7 +471,8 @@ Private databases left by other Blender processes are deleted after a day.
 overlays and their keys) under its name, replacing an entry of the same
 name. It re-reads the file just before writing and replaces it atomically.
 The bookmark button under the tileset list adds an entry from any library
-through a search popup. A .blend keeps the entry's URL once added, so it
+through a search popup, optionally only meshes, point clouds or splats (an entry's
+`content` field, else guessed from its words). A .blend keeps the entry's URL once added, so it
 still opens if the library entry goes away.
 
 **Copy into project.** It copies the active tileset (explicit tilesets,

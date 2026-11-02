@@ -9,11 +9,12 @@ add-on or its repository. Several files can be listed in the preferences
      "tilesets": [
        {"name": "San Pietro", "kind": "TILESET", "url": "https://...",
         "ion_asset_id": 0, "ion_token": "", "use_own_sse": false, "max_sse": 4.0,
-        "use_overlays": false, "group": "Rome", "notes": "",
+        "use_overlays": false, "group": "Rome", "notes": "", "content": "MESH",
         "overlays": [{"name": "OSM", "kind": "URL", "url": "...", ...}]}
      ]}
 
-No bpy here: entries convert from / to anything with the TilesetItem /
+``content`` (MESH, POINTS or SPLATS) is optional; without it the type is guessed
+from the entry's words. No bpy here: entries convert from / to anything with the TilesetItem /
 OverlayItem attribute names.
 """
 from __future__ import annotations
@@ -27,6 +28,28 @@ ITEM_FIELDS = ("name", "kind", "url", "ion_asset_id", "ion_token", "use_own_sse"
                "max_sse", "use_overlays")
 OVERLAY_FIELDS = ("name", "kind", "url", "key", "layer", "style", "matrix_set",
                   "image_format", "min_level", "max_level", "detail_px", "enabled", "alpha")
+
+
+CONTENT_WORDS = (("SPLATS", ("splat", "3dgs", "spz")),
+                 ("POINTS", ("point cloud", "pointcloud", "lidar", "copc", "pnts")),
+                 ("MESH", ("mesh", "b3dm", "photorealistic")))
+
+
+def content_type(entry: dict) -> str:
+    """MESH, POINTS or SPLATS, "" when the entry doesn't tell."""
+    if entry.get("content"):
+        return entry["content"]
+    text = f"{entry.get('group', '')} {entry.get('name', '')} {entry.get('notes', '')}".lower()
+    return next((kind for kind, words in CONTENT_WORDS if any(w in text for w in words)), "")
+
+
+def matches(entry: dict, query: str, kinds=()) -> bool:
+    """Does the entry hold every word of ``query``, and is it of one of ``kinds``
+    (none: any type)?"""
+    if kinds and content_type(entry) not in kinds:
+        return False
+    text = f"{entry.get('group', '')} {entry.get('name', '')} {entry.get('notes', '')}".lower()
+    return all(w in text for w in query.lower().split())
 
 
 def split_paths(s: str) -> list:
@@ -88,7 +111,7 @@ def save_entry(path: str, entry: dict) -> bool:
     replaced = False
     for i, e in enumerate(entries):
         if e.get("name") == entry["name"]:
-            keep = {k: e[k] for k in ("group", "notes") if k in e and k not in entry}
+            keep = {k: e[k] for k in ("group", "notes", "content") if k in e and k not in entry}
             entries[i] = {**entry, **keep}
             replaced = True
             break

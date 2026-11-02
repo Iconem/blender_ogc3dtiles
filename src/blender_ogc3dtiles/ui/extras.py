@@ -6,8 +6,8 @@ import os
 import threading
 
 import bpy
-from bpy.props import BoolProperty, EnumProperty, FloatProperty, IntProperty, StringProperty
-from bpy.types import Operator
+from bpy.props import BoolProperty, CollectionProperty, EnumProperty, FloatProperty, IntProperty, StringProperty
+from bpy.types import Operator, PropertyGroup, UIList
 
 from .. import cachectl, library, paths
 from ..io import addon_pref, default_cache_dir
@@ -114,9 +114,10 @@ class OGC3D_OT_CacheTrim(Operator):
 
 
 # ── Libraries ────────────────────────────────────────────────────────────────
-LIB_PICKER_WIDTH = 700      # px at resolution scale 1; a search popup can't be widened
+LIB_PICKER_WIDTH = 520      # px at resolution scale 1; a search popup can't be widened
 LIB_PICKER_ROWS = 24
 _lib_rows = []              # the library files as read when the picker opened
+_lib_filter = ("", ())      # (query, kinds) the list shows, set when the picker draws
 
 
 def _library_paths():
@@ -127,16 +128,10 @@ def _entry_label(entry) -> str:
     return f"{entry['group']} / {entry['name']}" if entry.get("group") else entry["name"]
 
 
-def _matching_entries(query) -> list:
-    """Indices into _lib_rows of the entries holding every word of ``query``."""
-    words = query.lower().split()
-    out = []
-    for i, (_path, e) in enumerate(_lib_rows):
-        if "error" not in e:
-            text = f"{_entry_label(e)} {e.get('notes', '')}".lower()
-            if all(w in text for w in words):
-                out.append(i)
-    return out
+def _matching_entries(query, kinds=()) -> list:
+    """Indices into _lib_rows of the entries that match."""
+    return [i for i, (_path, e) in enumerate(_lib_rows)
+            if "error" not in e and library.matches(e, query, kinds)]
 
 
 class OGC3D_OT_LibraryPick(Operator):
@@ -167,18 +162,44 @@ class OGC3D_OT_LibraryPick(Operator):
         return {"FINISHED"}
 
 
+class OGC3D_LibraryRow(PropertyGroup):
+    """One row of the picker's list (a UIList needs a collection)."""
+    index: IntProperty()
+
+
+class OGC3D_UL_LibraryEntries(UIList):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
+        if item.index < len(_lib_rows):
+            row = layout.row(align=True)
+            row.alignment = "LEFT"
+            row.operator(OGC3D_OT_LibraryPick.bl_idname, text=_entry_label(_lib_rows[item.index][1]),
+                         emboss=False).index = item.index
+
+    def filter_items(self, context, data, propname):
+        keep = set(_matching_entries(*_lib_filter))
+        return [self.bitflag_filter_item if r.index in keep else 0
+                for r in getattr(data, propname)], []
+
+
 class OGC3D_OT_LibraryAdd(Operator):
     """Add a tileset from a library file (Preferences > Tileset libraries)"""
     bl_idname = "ogc3dtiles.library_add"
     bl_label = "Add from Library"
 
     query: StringProperty(name="Search", options={"TEXTEDIT_UPDATE", "SKIP_SAVE"})
+    show_mesh: BoolProperty(name="Mesh", options={"SKIP_SAVE"})
+    show_points: BoolProperty(name="Point cloud", options={"SKIP_SAVE"})
+    show_splats: BoolProperty(name="Splats", options={"SKIP_SAVE"})
 
     def invoke(self, context, event):
         if not _library_paths():
             self.report({"WARNING"}, "No tileset library: add one in the add-on preferences")
             return {"CANCELLED"}
         _lib_rows[:] = library.read_all(_library_paths())
+        rows = context.window_manager.ogc3d_lib_rows
+        rows.clear()
+        for i in range(len(_lib_rows)):
+            rows.add().index = i
         width = int(LIB_PICKER_WIDTH * context.preferences.system.ui_scale)
         return context.window_manager.invoke_popup(self, width=width)
 
@@ -187,17 +208,21 @@ class OGC3D_OT_LibraryAdd(Operator):
         row = layout.row()
         row.activate_init = True
         row.prop(self, "query", text="", icon="VIEWZOOM", placeholder="Search tilesets")
-        found = _matching_entries(self.query)
-        col = layout.column(align=True)
-        for i in found[:LIB_PICKER_ROWS]:
-            row = col.row(align=True)
-            row.alignment = "LEFT"
-            row.operator(OGC3D_OT_LibraryPick.bl_idname, text=_entry_label(_lib_rows[i][1]),
-                         emboss=False).index = i
+        row = layout.row()
+        row.prop(self, "show_mesh")
+        row.prop(self, "show_points")
+        row.prop(self, "show_splats")
+        kinds = [k for k, on in (("MESH", self.show_mesh), ("POINTS", self.show_points),
+                                 ("SPLATS", self.show_splats)) if on]
+        global _lib_filter
+        _lib_filter = (self.query, kinds)
+        found = len(_matching_entries(self.query, kinds))
         if not found:
-            col.label(text="No matching tileset" if _lib_rows else "The library is empty")
-        elif len(found) > LIB_PICKER_ROWS:
-            col.label(text=f"{len(found) - LIB_PICKER_ROWS} more: type to narrow down")
+            layout.label(text="No matching tileset" if _lib_rows else "The library is empty")
+            return
+        n = min(found, LIB_PICKER_ROWS)
+        layout.template_list("OGC3D_UL_LibraryEntries", "", context.window_manager, "ogc3d_lib_rows",
+                             context.window_manager, "ogc3d_lib_active", rows=n, maxrows=n)
 
     def execute(self, context):
         return {"FINISHED"}
@@ -448,6 +473,8 @@ def draw_entry_tools(layout, it) -> None:
 _classes = [
     OGC3D_OT_TilesetBrowse,
     OGC3D_OT_CacheTrim,
+    OGC3D_LibraryRow,
+    OGC3D_UL_LibraryEntries,
     OGC3D_OT_LibraryPick,
     OGC3D_OT_LibraryAdd,
     OGC3D_OT_LibrarySave,
@@ -460,10 +487,15 @@ _classes = [
 def register():
     for cls in _classes:
         bpy.utils.register_class(cls)
+    wm = bpy.types.WindowManager
+    wm.ogc3d_lib_rows = CollectionProperty(type=OGC3D_LibraryRow)
+    wm.ogc3d_lib_active = IntProperty(default=-1)
 
 
 def unregister():
     _export["cancel"] = True
+    del bpy.types.WindowManager.ogc3d_lib_active
+    del bpy.types.WindowManager.ogc3d_lib_rows
     for cls in reversed(_classes):
         bpy.utils.unregister_class(cls)
 

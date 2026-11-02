@@ -1,17 +1,20 @@
 """Clipping volumes in Blender nodes (see clipping.py for the modes).
 
 * Mesh tile materials: one node group per tileset, shared by its tiles, holds
-  every volume: boxes test the shading point in the box's space, prisms edge by
+  every volume: boxes test the shading point in the box's space, polygons edge by
   edge in the tileset frame. Everything that moves is a view-layer attribute
   (scene custom properties), including the transforms: changing one recompiles
   nothing, where a value in a node or an object in a Texture Coordinate node
   regenerates the shader of every material using it (15-30 s with 3000 tiles).
-  So a box animated in a render doesn't follow; its Geometry Nodes path does.
+  Keyframes reach the attributes through a frame change handler (ui).
+  When the volumes change shape, a new version of the group and of its attributes
+  takes over tile by tile, a few per tick, so the regeneration is spread out; the
+  old version keeps its values until no tile uses it.
 * Point and splat tiles: one Geometry Nodes group per tileset (modifier
   "OGC3D Clip", first in the stack) deletes the cut vertices. Boxes test the
-  vertex in the box's space; prisms cast a vertical ray onto a hidden helper
+  vertex in the box's space; polygons cast a vertical ray onto a hidden helper
   mesh holding the flattened, filled outlines in the tileset frame (face
-  attribute ``clip_poly`` = prism index).
+  attribute ``clip_poly`` = polygon index).
 * Mesh tiles with Cut Geometry: the same test in a second group deletes the
   faces whose vertices are all cut; the shader still trims the faces across
   the boundary. Solid view, exports and snapping then see the cut.
@@ -33,7 +36,7 @@ CFG_PROP = "ogc_clip"
 GN_MOD = "OGC3D Clip"
 GN_PREFIX = "OGC3D Clip "
 GN_FACES_PREFIX = "OGC3D Clip Faces "
-HELPER_PREFIX = "OGC3D Clip Prisms "
+HELPER_PREFIX = "OGC3D Clip Polygons "
 VOLUMES_PREFIX = "OGC3D Clip Volumes "
 VOLUMES_TERM = POLY_TAG + " volumes Term"
 POLY_ATTR = "clip_poly"
@@ -42,12 +45,12 @@ TILES_PER_TICK_S = 0.1      # clip nodes on existing tiles: this long per tick
 
 
 # ── config on the root Empty ─────────────────────────────────────────────────
-def make_cfg(uid, op, outside, boxes, n_prisms, helper_name, masks=(), geometry=False,
+def make_cfg(uid, op, outside, boxes, n_polygons, helper_name, masks=(), geometry=False,
              volumes="") -> dict:
     """boxes: [(object name, centre xyz, half size xyz)]; masks: uids of the
     tileset's cesium masks; geometry: Cut Geometry on mesh tiles; volumes: the
     tiles' shared shader group."""
-    return {"uid": uid, "op": op, "outside": bool(outside), "n_prisms": int(n_prisms),
+    return {"uid": uid, "op": op, "outside": bool(outside), "n_polygons": int(n_polygons),
             "helper": helper_name or "", "masks": list(masks), "geometry": bool(geometry),
             "volumes": volumes,
             "boxes": [{"obj": n, "c": list(c), "h": list(h)} for n, c, h in boxes]}
@@ -55,7 +58,10 @@ def make_cfg(uid, op, outside, boxes, n_prisms, helper_name, masks=(), geometry=
 
 def _cfg(root):
     cfg = root.get(CFG_PROP) if root is not None else None
-    return cfg.to_dict() if hasattr(cfg, "to_dict") else cfg
+    cfg = cfg.to_dict() if hasattr(cfg, "to_dict") else cfg
+    if cfg and "n_prisms" in cfg:                    # saved by an earlier version
+        cfg["n_polygons"] = cfg["n_prisms"]
+    return cfg
 
 
 def _is_point_tile(obj) -> bool:
@@ -77,16 +83,21 @@ def _write_attrs(scene, values) -> None:
         scene.update_tag()
 
 
+def _obj_matrix(obj, depsgraph):
+    return (obj.evaluated_get(depsgraph) if depsgraph is not None else obj).matrix_world
+
+
 def _rows(base, m) -> dict:
     """A matrix's upper 3 x 4 as attributes: three rows and the translation."""
     return {f"{base}_r{i}": tuple(m[i][:3]) for i in range(3)} | {
         f"{base}_t": (m[0][3], m[1][3], m[2][3])}
 
 
-def _volume_attrs(uid, frame, loops, boxes) -> dict:
-    base = clip_attr_base(uid)
+def _volume_attrs(base, frame, loops, boxes, depsgraph=None) -> dict:
     root = bpy.data.objects.get(frame)
-    out = _rows(base + "_f", root.matrix_world.inverted_safe()) if root is not None and loops else {}
+    out = {}
+    if root is not None and loops:
+        out = _rows(base + "_f", _obj_matrix(root, depsgraph).inverted_safe())
     for i, loop in enumerate(loops):
         for e, edge in enumerate(padded_edges(loop)):
             out[f"{base}_p{i}_{e}"] = edge
@@ -95,7 +106,7 @@ def _volume_attrs(uid, frame, loops, boxes) -> dict:
         if obj is not None:
             unit = Matrix.Diagonal((*(1.0 / v for v in h), 1.0)) @ Matrix.Translation(
                 (-c[0], -c[1], -c[2]))
-            out |= _rows(f"{base}_b{i}", unit @ obj.matrix_world.inverted_safe())
+            out |= _rows(f"{base}_b{i}", unit @ _obj_matrix(obj, depsgraph).inverted_safe())
     return out
 
 
@@ -103,13 +114,12 @@ def _volumes_sig(loops, boxes) -> str:
     return repr(([edge_slots(len(lp)) for lp in loops], len(boxes)))
 
 
-def _build_volumes(name, uid, loops, boxes):
+def _build_volumes(name, base, loops, boxes):
     """Group (→ Min, Max) over every volume's "inside"."""
     ng = bpy.data.node_groups.new(name, "ShaderNodeTree")
     for k in ("Min", "Max"):
         ng.interface.new_socket(k, in_out="OUTPUT", socket_type="NodeSocketFloat")
     N, L = ng.nodes.new, ng.links.new
-    base = clip_attr_base(uid)
 
     def math(op):
         n = N("ShaderNodeMath")
@@ -209,44 +219,71 @@ def _build_volumes(name, uid, loops, boxes):
     return ng
 
 
+def _current_volumes(uid):
+    """The newest version of a tileset's volumes group, or None."""
+    prefix = f"{VOLUMES_PREFIX}{uid} v"
+    groups = [g for g in bpy.data.node_groups if g.name.startswith(prefix)]
+    return max(groups, key=lambda g: g.get("v", 0), default=None)
+
+
+def _version_base(uid, version) -> str:
+    return f"{clip_attr_base(uid)}_v{version}"
+
+
 def update_volumes(scene, uid, frame, loops, boxes) -> str:
     """Bring a tileset's attributes and shared group up to date; returns the
-    group's name ("": no volumes). Only a change of shape regenerates shaders:
+    group's name ("": no volumes). Only a change of shape makes a new group:
     another outline or box, or an outline outgrowing its slots. ``frame``: the
     object whose space the outlines are in."""
-    wanted = _volume_attrs(uid, frame, loops, boxes)
-    _write_attrs(scene, wanted)
-    base = clip_attr_base(uid)
-    for k in [k for k in scene.keys() if k.startswith((base + "_p", base + "_b", base + "_f")) and k not in wanted]:
-        del scene[k]
-    name = VOLUMES_PREFIX + uid
-    old = bpy.data.node_groups.get(name)
     if not loops and not boxes:
         return ""
+    ng = _current_volumes(uid)
     sig = _volumes_sig(loops, boxes)
-    if old is None or old.get("sig") != sig:
-        ng = _build_volumes(name + " new" if old else name, uid, loops, boxes)
-        ng["sig"] = sig
-        if old is not None:
-            old.user_remap(ng)                       # one call, all materials
-            bpy.data.node_groups.remove(old)
-            ng.name = name
-    return name
+    if ng is None or ng.get("sig") != sig:
+        v = ng.get("v", 0) + 1 if ng is not None else 1
+        ng = _build_volumes(f"{VOLUMES_PREFIX}{uid} v{v}", _version_base(uid, v), loops, boxes)
+        ng["sig"], ng["v"] = sig, v
+    _write_attrs(scene, _volume_attrs(_version_base(uid, ng["v"]), frame, loops, boxes))
+    return ng.name
 
 
-def update_volume_values(scene, uid, frame, loops, boxes) -> bool:
-    """The attributes alone, while an object is being dragged. False when its
-    shape changed, which takes update_volumes."""
-    ng = bpy.data.node_groups.get(VOLUMES_PREFIX + uid)
+def update_volume_values(scene, uid, frame, loops, boxes, depsgraph=None) -> bool:
+    """The attributes alone, while an object is being dragged or animated. False
+    when its shape changed, which takes update_volumes."""
+    ng = _current_volumes(uid)
     if ng is None or ng.get("sig") != _volumes_sig(loops, boxes):
         return False
-    _write_attrs(scene, _volume_attrs(uid, frame, loops, boxes))
+    _write_attrs(scene, _volume_attrs(_version_base(uid, ng["v"]), frame, loops, boxes, depsgraph))
     return True
 
 
+def set_animated_deps(scene, uid, objs) -> None:
+    """Keep keyframed volumes in the render's depsgraph: one hidden from render is
+    otherwise left out of it and keeps its old transform. A driver reading its
+    location creates that dependency; its value isn't used."""
+    base = clip_attr_base(uid) + "_dep"
+    ad = scene.animation_data
+    have = [fc for fc in ad.drivers if fc.data_path.startswith(f'["{base}')] if ad else []
+    if [fc.driver.variables[0].targets[0].id for fc in have] == list(objs):
+        return
+    for fc in have:
+        scene.driver_remove(fc.data_path)
+    for k in [k for k in scene.keys() if k.startswith(base)]:
+        del scene[k]
+    for i, o in enumerate(objs):
+        key = f"{base}{i}"
+        scene[key] = 0.0
+        d = scene.driver_add(f'["{key}"]').driver
+        v = d.variables.new()
+        v.name, v.type = "x", "TRANSFORMS"
+        v.targets[0].id = o
+        v.targets[0].transform_type = "LOC_X"
+        d.expression = "x"
+
+
 def set_volumes_term(mat, group, tileset_uid) -> None:
-    """Make the material use the tileset's volumes group ("" : none). Relinks
-    only when the term comes or goes."""
+    """Make the material use this version of the tileset's volumes group ("" :
+    none). Relinks only when the term comes or goes."""
     if mat is None or not mat.use_nodes or mat.node_tree is None:
         return
     nt = mat.node_tree
@@ -257,15 +294,17 @@ def set_volumes_term(mat, group, tileset_uid) -> None:
         n.location = (-1900.0, -2600.0)
         n.node_tree = bpy.data.node_groups.get(group)
         relink_clip_chain(mat, tileset_uid)
+    elif group and (n.node_tree is None or n.node_tree.name != group):
+        n.node_tree = bpy.data.node_groups.get(group)
     elif not group and n is not None:
         nt.nodes.remove(n)
         relink_clip_chain(mat)
 
 
-# ── prism helper mesh ────────────────────────────────────────────────────────
+# ── polygon helper mesh ────────────────────────────────────────────────────────
 def update_helper(uid, root, loops_local, coll):
-    """Hidden mesh with one flat (z = 0) n-gon per prism outline, in the
-    tileset frame (object matrix = the root's). None without prisms."""
+    """Hidden mesh with one flat (z = 0) n-gon per polygon outline, in the
+    tileset frame (object matrix = the root's). None without polygons."""
     name = HELPER_PREFIX + uid
     ob = bpy.data.objects.get(name)
     if not loops_local:
@@ -303,7 +342,7 @@ def update_helper(uid, root, loops_local, coll):
 
 # ── Geometry Nodes group for point / splat tiles ─────────────────────────────
 def _gn_signature(cfg, faces) -> str:
-    return repr((cfg["op"], cfg["outside"], cfg["n_prisms"], cfg["helper"], faces,
+    return repr((cfg["op"], cfg["outside"], cfg["n_polygons"], cfg["helper"], faces,
                  [(b["obj"], [round(v, 6) for v in b["c"]], [round(v, 6) for v in b["h"]])
                   for b in cfg["boxes"]]))
 
@@ -313,7 +352,7 @@ def build_group(cfg, faces=False):
     the faces whose points are all cut; returns it (None: nothing to clip)."""
     name = (GN_FACES_PREFIX if faces else GN_PREFIX) + cfg["uid"]
     ng = bpy.data.node_groups.get(name)
-    if not cfg["boxes"] and not cfg["n_prisms"]:
+    if not cfg["boxes"] and not cfg["n_polygons"]:
         return None
     sig = _gn_signature(cfg, faces)
     if ng is not None and ng.get("sig") == sig:
@@ -383,7 +422,7 @@ def build_group(cfg, faces=False):
         L(ab.outputs[0], sep.inputs[0])
         m = math("MAXIMUM", math("MAXIMUM", sep.outputs[0], sep.outputs[1]), sep.outputs[2])
         terms.append(math("GREATER_THAN" if cfg["outside"] else "LESS_THAN", m, bval=1.0))
-    helper = bpy.data.objects.get(cfg["helper"]) if cfg["n_prisms"] else None
+    helper = bpy.data.objects.get(cfg["helper"]) if cfg["n_polygons"] else None
     if helper is not None:
         hi = obj_info(helper)
         hl = xform(inv(hi.outputs["Transform"]), world)
@@ -396,7 +435,7 @@ def build_group(cfg, faces=False):
         attr = N("GeometryNodeInputNamedAttribute")
         attr.data_type = "INT"
         attr.inputs["Name"].default_value = POLY_ATTR
-        for i in range(cfg["n_prisms"]):
+        for i in range(cfg["n_polygons"]):
             cmp = N("FunctionNodeCompare")
             cmp.data_type = "INT"
             cmp.operation = "EQUAL"
@@ -495,15 +534,34 @@ def apply_to_tiles(names) -> list:
     return []
 
 
+def _drop_volumes(uid, keep="") -> None:
+    """Remove the versions of the volumes group no tile uses, and their attributes."""
+    scene = bpy.context.scene
+    for ng in list(bpy.data.node_groups):
+        if ng.name.startswith(f"{VOLUMES_PREFIX}{uid} v") and ng.users == 0 and ng.name != keep:
+            base = _version_base(uid, ng.get("v", 0)) + "_"
+            for k in [k for k in scene.keys() if k.startswith(base)]:
+                del scene[k]
+            bpy.data.node_groups.remove(ng)
+
+
 def prune_groups(root) -> None:
     """Remove the groups no tile uses any more."""
     uid = root.get("ogc_clip_uid") if root is not None else None
     if not uid:
         return
-    if _cfg(root):
+    cfg = _cfg(root)
+    _drop_volumes(uid, (cfg.get("volumes") or "") if cfg else "")
+    if cfg:
         return
-    for name in (GN_PREFIX + uid, GN_FACES_PREFIX + uid, VOLUMES_PREFIX + uid,
-                 MODE_GROUP_PREFIX + uid):
+    forget_groups(uid)
+
+
+def forget_groups(uid) -> None:
+    """A tileset's tiles are gone: its groups go too."""
+    _drop_volumes(uid)
+    set_animated_deps(bpy.context.scene, uid, [])
+    for name in (GN_PREFIX + uid, GN_FACES_PREFIX + uid, MODE_GROUP_PREFIX + uid):
         ng = bpy.data.node_groups.get(name)
         if ng is not None and ng.users == 0:
             bpy.data.node_groups.remove(ng)

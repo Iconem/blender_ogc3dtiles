@@ -172,7 +172,7 @@ def set_overlay_alpha(uid, alpha) -> int:
 # Every clipping volume of a mesh tile is one "term" node in its material, 1
 # inside the volume:
 #
-#   prism (uid ``clip_...``, a cesium mask):  UV → Mapping → Image → Term
+#   polygon (uid ``clip_...``, a cesium mask):  UV → Mapping → Image → Term
 #   volumes (clip_nodes.set_volumes_term):  the tileset's shared group → Term
 #
 #   Terms → MAX chain ┐

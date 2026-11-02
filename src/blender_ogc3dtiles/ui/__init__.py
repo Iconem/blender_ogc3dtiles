@@ -426,15 +426,15 @@ def clip_mark_dirty(scene, item) -> None:
         st["clip_dirty_t"] = time.monotonic()
 
 
-def _clip_volumes(scene, props, item, st):
-    """(prism loops in the tileset frame, [(box object name, centre, half size)])
+def _clip_volumes(scene, props, item, st, dg=None):
+    """(polygon loops in the tileset frame, [(box object name, centre, half size)])
     of an entry's enabled clipping objects."""
     from .. import clipping
     if not item.use_clipping:
         return [], []
+    dg = dg or bpy.context.evaluated_depsgraph_get()
     root = bpy.data.objects.get(st.get("root_obj") or "")
-    to_tileset = root.matrix_world.inverted() if root is not None else None
-    dg = bpy.context.evaluated_depsgraph_get()
+    to_tileset = root.evaluated_get(dg).matrix_world.inverted() if root is not None else None
     loops, boxes = [], []
     for cp in item.clip_polygons:
         if not cp.enabled or cp.obj is None:
@@ -473,13 +473,34 @@ def _apply_excluders(props, st, item) -> None:
     if backend is None or not hasattr(backend, "set_excluders"):
         return
     excluders = st.get("clip_ex_specs") or []
-    # prisms have no place on the globe for a local tileset, so no tile test
+    # polygons have no place on the globe for a local tileset, so no tile test
     boxes = [] if st.get("clip_no_excluders") else _clip_box_units(props, item, st)
     sig = repr((excluders, boxes, item.clip_mode))
     if sig != st.get("clip_ex_sig"):
         backend.set_excluders(excluders, boxes, item.clip_mode)
         st["clip_ex_sig"] = sig
         st["last_sig"] = None
+
+
+def _clip_frame_change(scene, depsgraph):
+    """Keyframed volumes, in the viewport and in renders. Blender evaluates the
+    scene again after this handler, so the frame gets these values."""
+    props = getattr(scene, "ogc3dtiles", None)
+    if props is None or not _state["streams"]:
+        return
+    for it in props.tilesets:
+        st = _state["streams"].get(it.uid)
+        if st is not None and it.use_clipping and any(
+                _is_animated(cp.obj) for cp in it.clip_polygons if cp.enabled and cp.obj):
+            _clip_live(scene, st, it, depsgraph)
+
+
+_clip_frame_change._bpy_persistent = True          # = @bpy.app.handlers.persistent
+
+
+def _is_animated(o) -> bool:
+    ad = o.animation_data
+    return ad is not None and (ad.action is not None or len(ad.drivers) > 0)
 
 
 def _parent_clip_objects(item, root) -> None:
@@ -498,17 +519,18 @@ def _unparent_clip_object(o) -> None:
     o.matrix_world = m
 
 
-def _clip_live(scene, st, item) -> None:
-    """While an object is being dragged: the cut follows through the shader's
-    attributes. The rest waits for it to settle (_refresh_clip)."""
+def _clip_live(scene, st, item, dg=None) -> None:
+    """While an object is being dragged or animated: the cut follows through the
+    shader's attributes. The rest waits for it to settle (_refresh_clip)."""
     from .. import clip_nodes, clipping
     root = bpy.data.objects.get(st.get("root_obj") or "")
     if root is None:
         return
     try:
-        loops, boxes = _clip_volumes(scene, None, item, st)
-        small, _dense = clipping.split_prisms(loops)
-        clip_nodes.update_volume_values(scene, item.uid, root.name, [loops[i] for i in small], boxes)
+        loops, boxes = _clip_volumes(scene, None, item, st, dg)
+        small, _dense = clipping.split_polygons(loops)
+        clip_nodes.update_volume_values(scene, item.uid, root.name, [loops[i] for i in small],
+                                        boxes, dg)
     except Exception as e:                           # noqa: BLE001
         print(f"[3DTiles] clipping: {e}")
 
@@ -522,13 +544,17 @@ def _refresh_clip(scene, props, st, item) -> None:
     root = bpy.data.objects.get(st.get("root_obj") or "")
     try:
         loops, boxes = _clip_volumes(scene, props, item, st)
-        small, dense = clipping.split_prisms(loops)
+        small, dense = clipping.split_polygons(loops)
         local = is_local_origin(props)
-        st["clip_no_excluders"] = local and bool(loops)
+        # a keyframed volume can uncover any tile later on, and a render doesn't stream
+        animated = [cp.obj for cp in item.clip_polygons if item.use_clipping and cp.enabled
+                    and cp.obj and _is_animated(cp.obj)]
+        clip_nodes.set_animated_deps(scene, item.uid, animated)
+        st["clip_no_excluders"] = bool(animated) or (local and bool(loops))
         lonlat = [] if local else clipping.loops_to_lonlat(
             loops, (props.origin_lat, props.origin_lon, props.origin_height))
         specs = clipping.clip_specs(item, [lonlat[i] for i in dense] if lonlat else [])
-        excluders = clipping.clip_excluders(item, lonlat, n_boxes=len(boxes))
+        excluders = [] if animated else clipping.clip_excluders(item, lonlat, n_boxes=len(boxes))
     except Exception as e:                           # noqa: BLE001
         print(f"[3DTiles] clipping: {e}")
         loops, boxes, specs, excluders, small = [], [], [], [], []
@@ -594,14 +620,14 @@ def _clip_depsgraph_watch(scene, depsgraph):
     props = getattr(scene, "ogc3dtiles", None)
     if props is None:
         return
-    watched, prisms, boxes, roots = {}, set(), {}, {}
+    watched, polygons, boxes, roots = {}, set(), {}, {}
     for it in props.tilesets:
         if it.use_clipping and it.uid in _state["streams"]:
             for cp in it.clip_polygons:
                 if cp.enabled and cp.obj is not None:
                     watched.setdefault(cp.obj.name, []).append(it)
                     if cp.shape != "BOX":
-                        prisms.add(cp.obj.name)
+                        polygons.add(cp.obj.name)
                     else:
                         boxes.setdefault(cp.obj.name, []).append(it)
             if watched:
@@ -612,7 +638,7 @@ def _clip_depsgraph_watch(scene, depsgraph):
         idb = u.id
         name = getattr(idb, "name", None)
         # a box move only needs its attributes (_clip_live) and tile excluder;
-        # prisms are baked for the masks and Geometry Nodes, so they rebuild on
+        # polygons are baked for the masks and Geometry Nodes, so they rebuild on
         # a move too, as does everything when the tileset moves
         if isinstance(idb, bpy.types.Object) and u.is_updated_transform and name in roots:
             st = _state["streams"][roots[name].uid]
@@ -621,7 +647,7 @@ def _clip_depsgraph_watch(scene, depsgraph):
                 clip_mark_dirty(scene, roots[name])
             st["clip_root_m"] = m
         if isinstance(idb, bpy.types.Object) and name in watched and (
-                u.is_updated_geometry or (u.is_updated_transform and name in prisms)):
+                u.is_updated_geometry or (u.is_updated_transform and name in polygons)):
             for it in watched[name]:
                 clip_mark_dirty(scene, it)
         elif isinstance(idb, bpy.types.Object) and u.is_updated_transform and name in boxes:
@@ -1108,6 +1134,8 @@ def _teardown_stream(st, remove_objects: bool):
                 _unparent_clip_object(o)
         remove_tiles([(rec.holder, rec.data) for rec in st["tiles"].values()], extra_objects=[root])
         st["tiles"].clear()
+        from .. import clip_nodes
+        clip_nodes.forget_groups(st["key"])
         coll = bpy.data.collections.get(st.get("coll") or "")
         if coll is not None and not coll.objects and not coll.children:
             bpy.data.collections.remove(coll)
@@ -2451,6 +2479,8 @@ def register():
         bpy.app.timers.register(_eye_tick, first_interval=1.0, persistent=True)
     if _clip_depsgraph_watch not in bpy.app.handlers.depsgraph_update_post:
         bpy.app.handlers.depsgraph_update_post.append(_clip_depsgraph_watch)
+    if _clip_frame_change not in bpy.app.handlers.frame_change_post:
+        bpy.app.handlers.frame_change_post.append(_clip_frame_change)
 
 
 def unregister():
@@ -2458,6 +2488,8 @@ def unregister():
         bpy.app.timers.unregister(_eye_tick)
     if _clip_depsgraph_watch in bpy.app.handlers.depsgraph_update_post:
         bpy.app.handlers.depsgraph_update_post.remove(_clip_depsgraph_watch)
+    if _clip_frame_change in bpy.app.handlers.frame_change_post:
+        bpy.app.handlers.frame_change_post.remove(_clip_frame_change)
     for st in _state["streams"].values():
         dm = st.get("download_mgr")
         if dm:

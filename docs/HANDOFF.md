@@ -50,6 +50,7 @@ or keys; the files that do are named below and stay out of git.
 | [#2 issue](https://github.com/calebbuffa/cesium-native-python/issues/2) | Meta issue: A1-A3 (build), B1-B4 (partial workarounds), C1-C12 (full workarounds). | Open. Caleb (2026-10-21) takes all of it and welcomes PRs. Our status reply (2026-10-22) and the v0.65 bump / orthographic note (posted by Jonathan, late October) have no answer yet. |
 | [#3](https://github.com/calebbuffa/cesium-native-python/pull/3) | A1 + A2: `pip install .` on Windows, Linux, macOS. | Merged (`521956e`). |
 | [#4](https://github.com/calebbuffa/cesium-native-python/pull/4) | A3: cibuildwheel 3 OSes × CPython 3.11-3.13, Release + PyPI trusted-publishing jobs. | Open, waiting for Caleb (he must set up PyPI publishing). Branch `ci/wheels` (`1ffdf92`). |
+| [#7](https://github.com/calebbuffa/cesium-native-python/pull/7) | One cast so Python subclasses of `GltfModifier` can override `apply`. Branch `fix/gltf-modifier-subclass`, on `main`. | Open, waiting for Caleb. |
 | [#5](https://github.com/calebbuffa/cesium-native-python/pull/5) | C1, C2, C3, C4+C7 (docs), C8, C9. Stacked on #4. | Open, waiting for Caleb. Branch `bindings/c-items` (`775d220`). After #4 merges, rebase if needed, `--force-with-lease` to the fork. |
 
 - Waiting on Caleb: C6, C10, C11 (API shape, or need cesium-native changes),
@@ -117,10 +118,8 @@ or keys; the files that do are named below and stay out of git.
 ### Known limitations and open threads
 
 - **`GltfModifier` from Python fails** ("Tried to call pure virtual function
-  GltfModifier.apply", tiles don't load). One cast in the trampoline fixes it:
-  `static_cast<const PyGltfModifier*>(this)` in `get_override`, tested on a rebuilt
-  v0.59 binding. To propose as its own small PR. Jonathan wants the clip modifier in
-  cesium-native C++ and bound, not done in Python.
+  GltfModifier.apply", tiles don't load) until #7 merges. Jonathan wants the clip
+  modifier in cesium-native C++ and bound, not done in Python.
   Drafts, not posted: `docs/cesium-native-clipping-request.md`.
 - **`is_job_running("SHADER_COMPILATION")`** stayed true for minutes on large
   scenes while the viewport was already correct. Don't use it to wait.

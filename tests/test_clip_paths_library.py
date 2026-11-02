@@ -93,9 +93,9 @@ def _inside_from_edges(edges, x, y):
     return abs(acc) > 0.5
 
 
-def test_prism_edges_match_a_reference():
+def test_polygon_edges_match_a_reference():
     concave = [(0, 0), (4, 0), (4, 4), (2, 1), (0, 4)]           # a notch from above
-    edges = clipping.prism_edges(concave)
+    edges = clipping.polygon_edges(concave)
     assert edges[0] == (0, 0, 0.0)                               # horizontal: never crosses
     cases = {(1, 1): True, (3, 1): True, (2, 0.5): True, (2, 3): False, (5, 1): False,
              (-1, 1): False, (1, -1): False, (0.5, 3): True, (3.5, 3): True}
@@ -104,17 +104,17 @@ def test_prism_edges_match_a_reference():
     # either winding, and a wide coordinate range with a near-horizontal edge
     big = [(1000.0, 5000.0), (9000.0, 5000.001), (9000.0, 9000.0), (1000.0, 9000.0)]
     for loop in (big, big[::-1]):
-        e = clipping.prism_edges(loop)
+        e = clipping.polygon_edges(loop)
         assert _inside_from_edges(e, 5000.0, 7000.0) and not _inside_from_edges(e, 500.0, 7000.0)
         assert not _inside_from_edges(e, 5000.0, 4999.0)
 
 
-def test_split_prisms():
-    n = clipping.PRISM_SHADER_EDGES
-    assert clipping.split_prisms([[(0, 0)] * 3, [(0, 0)] * (n + 1), [(0, 0)] * n]) == ([0, 2], [1])
+def test_split_polygons():
+    n = clipping.POLYGON_SHADER_EDGES
+    assert clipping.split_polygons([[(0, 0)] * 3, [(0, 0)] * (n + 1), [(0, 0)] * n]) == ([0, 2], [1])
     # past what the attributes hold, outlines become masks
     many = [[(0, 0)] * n] * (clipping.SHADER_SLOTS // n + 1)
-    small, dense = clipping.split_prisms(many)
+    small, dense = clipping.split_polygons(many)
     assert dense == [len(many) - 1] and small == list(range(len(many) - 1))
 
 

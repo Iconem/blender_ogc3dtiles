@@ -177,7 +177,7 @@ def _clip_object_poll(self, obj):
 
 
 CLIP_SHAPES = [
-    ("PRISM", "Clip-polygon", "Each closed outline of the object, seen from above, extruded "
+    ("CLIP_POLYGON", "Clip-polygon", "Each closed outline of the object, seen from above, extruded "
      "along the tileset's Z without limit (like Cesium's clipping polygons)"),
     ("BOX", "Box", "The object's bounding box with its location, rotation and scale: "
      "clips in 3D, so it can cut the top of a building only"),
@@ -194,7 +194,7 @@ class ClipPolygonItem(PropertyGroup):
                     "object's bounding box. Moving or editing it updates the cut",
         update=_on_clip_edit)
     enabled: BoolProperty(name="Use", default=True, update=_on_clip_edit)
-    shape: EnumProperty(name="Shape", items=CLIP_SHAPES, default="PRISM", update=_on_clip_edit)
+    shape: EnumProperty(name="Shape", items=CLIP_SHAPES, default="CLIP_POLYGON", update=_on_clip_edit)
 
 
 # value: (combine op over the volumes, term per volume)
@@ -247,7 +247,7 @@ class TilesetItem(PropertyGroup):
     active_overlay: IntProperty(default=0)
     use_clipping: BoolProperty(
         name="Clipping",
-        description="Cut this tileset with Blender objects: vertical prisms from their "
+        description="Cut this tileset with Blender objects: vertical polygons from their "
                     "outlines, or 3D boxes. Meshes, point clouds and splats. Live",
         default=False, update=_on_clip_edit)
     clip_mode: EnumProperty(name="Mode", items=CLIP_MODES, default="CUT_ANY",

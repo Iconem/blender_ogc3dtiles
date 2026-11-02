@@ -764,7 +764,7 @@ terrain, implicit tiling.
 | v0.63.0 (2026-08) | — | `KHR_lights_punctual`, Bentley line / point style materials, GeoJSON point rasterising fix, MAXAR string offsets fix. |
 | v0.64.0 (2026-09) | **orthographic views** | `ViewState` accepts general culling volumes (not only a perspective frustum), intersection tests on `BoundingVolume`, area paging for fixed-LOD terrain regions. |
 | v0.65.0 (2026-10) | **orthographic views**, robustness | Breaking: `ViewState` takes a delegate computing the tile screen-space error (replaces the fixed geometric-error setter). Fixes: Draco out-of-bounds read, PNTS section length check. `GS_3DT` iTwin reality data, styling provider for `VectorTilesRasterOverlay`. |
-| unreleased | security fix | Integer overflow / out-of-bounds write when decoding `EXT_meshopt_compression`; experimental glTF 2.1 and 3D Tiles 2.0; `CESIUM_DISABLE_SPZ` build option; `KHR_implicit_shapes` classes renamed. |
+| v0.66.0 (2026-11) | security fix | Integer overflow / out-of-bounds write when decoding `EXT_meshopt_compression`; experimental glTF 2.1 and 3D Tiles 2.0; `CESIUM_DISABLE_SPZ` build option; `KHR_implicit_shapes` classes renamed. |
 
 Reading: the meshopt fix is a reason to bump even without new features;
 v0.62 is the release that makes the bump expensive (vcpkg baseline, image

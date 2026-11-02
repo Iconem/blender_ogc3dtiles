@@ -91,9 +91,8 @@ re-applies it to loaded tiles without reloading them. A tileset has one, set on
 - **From Python it fails today**, with "Tried to call pure virtual function
   GltfModifier.apply", so tiles don't load. The trampoline looks the override up
   through `GltfModifier`, a type pybind11 doesn't know; `PyGltfModifier` is the
-  registered one. Changing that one cast fixes it: tested on a rebuilt v0.59 binding,
-  `apply` runs on worker threads, its model reaches the renderer, and `trigger()`
-  re-applies to a loaded tile. Not yet proposed upstream.
+  registered one. Changing that one cast fixes it:
+  [cesium-native-python#7](https://github.com/calebbuffa/cesium-native-python/pull/7).
 - **The real path is C++:** a clipping modifier in cesium-native, which the binding
   then exposes as a plain class, with no Python holding the GIL while it cuts. Draft
   request: `docs/cesium-native-clipping-request.md`.
@@ -114,7 +113,7 @@ Each tile has its own material, because each has its own texture. What clips is
 shared: every material holds a few nodes pointing at two groups of its tileset.
 
 ```
-"OGC3D Clip Volumes <uid>":  Geometry Position (world)
+"OGC3D Clip Volumes <uid> v<n>":  Geometry Position (world)
     → clip-polygons: through the tileset frame's inverse, then the winding number
     → boxes: through the box's inverse, then max(|x|, |y|, |z|) < 1
     → Min and Max over the volumes
@@ -135,12 +134,14 @@ regenerate the shader of every material using it.
 - **So a shader only changes with the shape of the volumes:** an outline or box
   added or removed, or an outline outgrowing its slots. Outlines get 8, 16, 32 or
   64 slots, so adding a point rarely costs anything.
-- **The group swaps in one call**, `user_remap`, then each material regenerates at
-  its next draw. That draw grows with slots and materials, about 0.4 ms per slot and
-  per material: 10 s for 4 slots, 18 s for 16, 40 s for 32, 77 s for 64, over 2900
-  materials. Blender blocks during it.
-- **Over 64 points an outline becomes a mask**, as do outlines past 384 slots in a
-  tileset (Blender reads 512 view-layer attributes in all).
+- **A new shape takes over tile by tile.** Regenerating a material costs about 0.4 ms
+  per slot, so swapping every material at once blocked Blender for 10 s with 4 slots,
+  18 s with 16, 40 s with 32 and 77 s with 64, over 2900 materials. Instead each shape
+  is a new version of the group (`… v2`) with its own attributes, assigned to a few
+  tiles per tick, visible ones first. Tiles not reached yet keep the old cut, exactly.
+- **Over 64 points an outline becomes a mask**, as do outlines past 240 slots in a
+  tileset: versions coexist during a takeover, and Blender reads 512 view-layer
+  attributes in all.
 - **One mask per polygon, in every mode.** Masks always read "inside", so a mode
   switch needs no new raster. Above 8 polygons the "any" modes share one union
   mask, to stay within GPU texture slots. The "all" modes can't use a union and
@@ -168,7 +169,7 @@ first in the stack) deletes the cut points.
 
 - **Boxes:** the point goes to world space, then through the inverse of the box
   transform, and is tested against the box's half sizes.
-- **Clip-polygons:** a hidden helper mesh (`OGC3D Clip Prisms <uid>`) holds the outlines
+- **Clip-polygons:** a hidden helper mesh (`OGC3D Clip Polygons <uid>`) holds the outlines
   as flat n-gons, with a face attribute `clip_poly` for the outline's index. Each
   outline gets a straight-down ray from above the point.
 
@@ -206,19 +207,22 @@ view or in an export.
 | Switch mode | Writes two attributes. |
 | Move, rotate or scale a clip-polygon or a box | Live, through the attributes. 0.35 s after the last change, the excluders, masks and point / splat groups follow, and newly needed tiles load. |
 | Edit a clip-polygon's points | The same, unless it outgrows its slots. |
-| Add or remove a volume | The group swaps, then one long draw (above). |
+| Add or remove a volume | Tiles take the new version a few per tick (above). |
 | Move or edit a clip-polygon over 64 points | The mask is replaced, so cesium-native reloads the tiles. |
-| Move the tileset's root Empty | Clipping objects without a parent are parented to it when added, so they follow. No shader changes; Blender redraws every tile's transform (9.5 s on Google 3D Tiles). |
+| Move the tileset's root Empty | Clipping objects without a parent are parented to it when added, so they follow. No shader changes: 0.05 s for the matrices of 3200 tiles, then a 0.1 s draw. |
+| Keyframe a volume | Followed in the viewport and in renders, on mesh tiles through a frame change handler. No tile is skipped while a volume is keyframed, since it may uncover any of them, and a render doesn't stream. |
 
-Measured in Material view on Google 3D Tiles over Rome (about 3000 materials and
-2500 tiles, still streaming), with a 16-point clip-polygon:
+Measured in Material view on Google 3D Tiles over Rome (3000–3500 materials, 2500–3200
+tiles, still streaming), with a 16-point clip-polygon:
 
-| | Nodes in each material, then in copies | Shared group, attributes |
-|---|---|---|
-| Add it | 39 ms per tile, then a 16 s draw | 18 ms per tile, then a 25 s draw |
-| Move it | 12–15 s draw | 0.27 s draw |
-| Add a box after it | Per material again | 0.5 s pass, then a 30 s draw |
-| Move a box | 32 s draw with the box in a shared node | 0.13 s draw |
+| | Nodes in each material | Shared group, swapped at once | Shared group, tile by tile |
+|---|---|---|---|
+| Add it, then a box | 39 ms per tile, then a 16 s block | 18 ms per tile, then a 25–30 s block | longest freeze 1.7 s, then 3.7 s; about 2 minutes at around 1 frame per second until all tiles have it |
+| Move it | 12–15 s draw | 0.27 s draw | same |
+| Move a box | 32 s draw with the box in a shared node | 0.13 s draw | same |
+
+Reloading the tiles instead wouldn't be quicker: reaching those 2700 tiles from a
+new start took 172 s, and each new material regenerates its shader anyway.
 
 The box excluder averaged 9.7 µs per tile visited on Google 3D Tiles: 14640 calls,
 142 ms in total over about 20 s.
@@ -230,18 +234,19 @@ tileset sits in ENU at the scene's one origin, a local one in its own coordinate
 What differs is skipping whole tiles, which needs a place on the globe: a local
 tileset with a clip-polygon skips none, so tiles under the cut still download.
 
-Checked in Material view and Cycles on the interior 473M: a clip-polygon, a box, 64
-and 65 points, and a root moved and rotated. Checked in Material view on a local
-mesh tileset. Attributes are read in Cycles too, once per render.
+Checked in Material view, the Cycles viewport and Cycles renders on the interior 473M:
+a clip-polygon, a box, 64 and 65 points, a root moved and rotated, Cut Geometry, and a
+keyframed box in Cycles and EEVEE animation renders. Checked in Material view on a
+local mesh tileset.
 
 ## Known limits
 
 - Only masks (outlines over 64 points) follow a raster resolution, so they can be
   a metre or two off on coarse tiles.
-- Adding a volume to a tileset of thousands of tiles blocks Blender for one long
-  draw, which grows with the outline's slots.
-- A box or clip-polygon animated in a render doesn't follow on mesh tiles: the
-  attributes update on scene edits. Points and splats follow.
+- Adding a volume to a tileset of thousands of tiles takes minutes to reach all of
+  them, at a low frame rate.
+- On points and splats, a keyframed clip-polygon doesn't follow in renders: its
+  helper mesh is baked. A keyframed box does.
 - The box excluder is conservative: "entirely outside" only tries the box's own
   axes, so a tile near a corner of a rotated box can load, then be hidden.
 - On a tileset that isn't georeferenced, a clip-polygon means no tile is skipped,

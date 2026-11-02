@@ -1,7 +1,7 @@
 """Clipping volumes: Blender objects that cut a tileset.
 
 Each tileset entry lists objects (meshes or curves), each used either as a
-**prism** (its closed outlines in the tileset frame's XY, extruded along that
+**polygon** (its closed outlines in the tileset frame's XY, extruded along that
 frame's Z) or as a **box** (its bounding box with its full transform, so it can
 cut in 3D).
 
@@ -12,13 +12,13 @@ combined term is 1:
   * KEEP_ANY — MIN of "outside": cut what is outside every volume;
   * KEEP_ALL — MAX of "outside": cut what is outside any volume.
 
-Mesh tiles: prisms are an edge-by-edge test in the shader, boxes an object-space
+Mesh tiles: polygons are an edge-by-edge test in the shader, boxes an object-space
 test, in one group shared by a tileset's materials (clip_nodes, overlays). Their
 values and the mode are view-layer attributes, read at render time, so changing
-them touches no material and recompiles nothing. Outlines over PRISM_SHADER_EDGES
+them touches no material and recompiles nothing. Outlines over POLYGON_SHADER_EDGES
 points fall back on cesium-native ``RasterizedPolygonsOverlay`` masks. Excluders skip
 tiles that are cut whatever the other volumes say: native
-``RasterizedPolygonsTileExcluder`` for prisms, a Python ``ITileExcluder`` for
+``RasterizedPolygonsTileExcluder`` for polygons, a Python ``ITileExcluder`` for
 boxes. Point and splat tiles: a Geometry Nodes modifier deletes the cut points;
 the same on mesh tiles (Cut Geometry) deletes the faces that are entirely cut
 (clip_nodes). See docs/clipping.md.
@@ -37,9 +37,10 @@ import numpy as np
 from .tileset.traversal import blender_to_ecef, ecef_to_geodetic
 
 MIN_LOOP = 3
-PRISM_SHADER_EDGES = 64     # above this an outline is a cesium mask, not shader math
-EDGE_SLOT_SIZES = (8, 16, 32, PRISM_SHADER_EDGES)
-SHADER_SLOTS = 384          # per tileset: Blender reads 512 view-layer attributes in all
+POLYGON_SHADER_EDGES = 64     # above this an outline is a cesium mask, not shader math
+EDGE_SLOT_SIZES = (8, 16, 32, POLYGON_SHADER_EDGES)
+SHADER_SLOTS = 240          # per tileset, twice while a new version takes over: Blender
+                            # reads 512 view-layer attributes in all
 
 
 def edge_loops(edges) -> list:
@@ -115,7 +116,7 @@ def object_loops(obj, depsgraph, to_tileset=None) -> list:
     if me is None:
         return []
     try:
-        m = obj.matrix_world if to_tileset is None else to_tileset @ obj.matrix_world
+        m = ev.matrix_world if to_tileset is None else to_tileset @ ev.matrix_world
         co = [m @ v.co for v in me.vertices]
         edges = [tuple(e.vertices) for e in me.edges]
         faces = [tuple(p.vertices) for p in me.polygons]
@@ -138,7 +139,7 @@ def mode_op(mode) -> tuple:
 
 def clip_specs(item, polygons, detail_px=2.0) -> list:
     """Backend overlay specs (native_backend._make_overlay kind CLIP) for a
-    tileset entry's lon/lat prisms: masks reading 1 inside. One mask per
+    tileset entry's lon/lat polygons: masks reading 1 inside. One mask per
     polygon, so a mode switch needs no new raster. Beyond MAX_MASKS (GPU
     texture slots) the "any" modes share one mask of the union."""
     if not polygons:
@@ -168,7 +169,7 @@ def clip_excluders(item, polygons, n_boxes=0) -> list:
         return [spec(0, polygons, False)]
     if mode == "KEEP_ALL":                # outside one polygon is enough
         return [spec(i, [p], True) for i, p in enumerate(polygons)]
-    if mode == "KEEP_ANY":                # outside the union of the prisms
+    if mode == "KEEP_ANY":                # outside the union of the polygons
         return [{**spec(0, polygons, True), "and": bool(n_boxes)}]
     if len(polygons) == 1 and not n_boxes:
         return [spec(0, polygons, False)]
@@ -192,7 +193,7 @@ def box_extent(bound_box) -> tuple:
     return c, h
 
 
-def prism_edges(loop) -> list:
+def polygon_edges(loop) -> list:
     """(x, y, dx/dy) per edge of an outline, for the shader's crossing test
     (clip_nodes): a horizontal edge never crosses, so its slope doesn't matter."""
     out = []
@@ -210,19 +211,19 @@ def edge_slots(n) -> int:
 
 
 def padded_edges(loop) -> list:
-    """prism_edges filled up to edge_slots. The extra edges stay on the first
+    """polygon_edges filled up to edge_slots. The extra edges stay on the first
     vertex, so the winding number doesn't see them."""
-    edges = prism_edges(loop)
+    edges = polygon_edges(loop)
     x, y = loop[0][0], loop[0][1]
     return edges + [(x, y, 0.0)] * (edge_slots(len(loop)) - len(edges))
 
 
-def split_prisms(loops) -> tuple:
+def split_polygons(loops) -> tuple:
     """Indices of the outlines tested in the shader, and of those which become
     cesium masks: too dense, or past what the attributes can hold."""
     small, dense, used = [], [], 0
     for i, lp in enumerate(loops):
-        slots = edge_slots(len(lp)) if len(lp) <= PRISM_SHADER_EDGES else None
+        slots = edge_slots(len(lp)) if len(lp) <= POLYGON_SHADER_EDGES else None
         if slots is None or used + slots > SHADER_SLOTS:
             dense.append(i)
         else:

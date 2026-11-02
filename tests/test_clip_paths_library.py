@@ -71,13 +71,99 @@ def test_clip_excluders():
     item.clip_mode = "KEEP_ANY"
     (s,) = clipping.clip_excluders(item, polys)
     assert s["invert"] and len(s["polygons"]) == 2
-    assert clipping.clip_excluders(item, polys, n_boxes=1) == []    # a box may keep the tile
+    assert not s.get("and")
+    (s,) = clipping.clip_excluders(item, polys, n_boxes=1)    # a box may keep the tile
+    assert s["and"] and s["invert"]
     item.clip_mode = "CUT_ALL"
-    assert clipping.clip_excluders(item, polys) == []         # inside both isn't testable
+    ex = clipping.clip_excluders(item, polys)                 # every polygon must agree
+    assert len(ex) == 2 and all(s["and"] and not s["invert"] for s in ex)
     (s,) = clipping.clip_excluders(item, polys[:1])
-    assert not s["invert"]
-    assert clipping.clip_excluders(item, polys[:1], n_boxes=1) == []
+    assert not s["invert"] and not s.get("and")
+    (s,) = clipping.clip_excluders(item, polys[:1], n_boxes=1)
+    assert s["and"]
     assert clipping.clip_excluders(item, []) == []
+
+
+def _inside_from_edges(edges, x, y):
+    """The shader group's math (clip_nodes._edge_group), in plain Python."""
+    above = [y - e[1] > 0 for e in edges]
+    acc = 0.0
+    for i, (ex, ey, k) in enumerate(edges):
+        acc += (above[i] - above[(i + 1) % len(edges)]) * (x < (y - ey) * k + ex)
+    return abs(acc) > 0.5
+
+
+def test_prism_edges_match_a_reference():
+    concave = [(0, 0), (4, 0), (4, 4), (2, 1), (0, 4)]           # a notch from above
+    edges = clipping.prism_edges(concave)
+    assert edges[0] == (0, 0, 0.0)                               # horizontal: never crosses
+    cases = {(1, 1): True, (3, 1): True, (2, 0.5): True, (2, 3): False, (5, 1): False,
+             (-1, 1): False, (1, -1): False, (0.5, 3): True, (3.5, 3): True}
+    for (x, y), want in cases.items():
+        assert _inside_from_edges(edges, x, y) is want, (x, y)
+    # either winding, and a wide coordinate range with a near-horizontal edge
+    big = [(1000.0, 5000.0), (9000.0, 5000.001), (9000.0, 9000.0), (1000.0, 9000.0)]
+    for loop in (big, big[::-1]):
+        e = clipping.prism_edges(loop)
+        assert _inside_from_edges(e, 5000.0, 7000.0) and not _inside_from_edges(e, 500.0, 7000.0)
+        assert not _inside_from_edges(e, 5000.0, 4999.0)
+
+
+def test_split_prisms():
+    n = clipping.PRISM_SHADER_EDGES
+    assert clipping.split_prisms([[(0, 0)] * 3, [(0, 0)] * (n + 1), [(0, 0)] * n]) == ([0, 2], [1])
+    # past what the attributes hold, outlines become masks
+    many = [[(0, 0)] * n] * (clipping.SHADER_SLOTS // n + 1)
+    small, dense = clipping.split_prisms(many)
+    assert dense == [len(many) - 1] and small == list(range(len(many) - 1))
+
+
+def test_padded_edges_keep_the_winding():
+    concave = [(0, 0), (4, 0), (4, 4), (2, 1), (0, 4)]
+    edges = clipping.padded_edges(concave)
+    assert len(edges) == clipping.edge_slots(len(concave)) == 8
+    for (x, y), want in {(1, 1): True, (2, 3): False, (5, 1): False, (0.5, 3): True}.items():
+        assert _inside_from_edges(edges, x, y) is want, (x, y)
+    full = [(float(i), float(i * i % 7)) for i in range(8)]
+    assert len(clipping.padded_edges(full)) == 8
+
+
+I4 = [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
+
+
+def test_obb_vs_box():
+    box = clipping.ecef_to_unit_box(I4, I4, (10, 0, 0), (2, 3, 4))  # x 8..12, y -3..3, z -4..4
+    small = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+    assert clipping.obb_vs_box((10, 0, 0), small, box) == 1
+    assert clipping.obb_vs_box((12, 0, 0), small, box) == 0         # across a face
+    assert clipping.obb_vs_box((20, 0, 0), small, box) == -1
+    assert clipping.obb_vs_box((10, 0, 3.5), [[0, 0, 1], [1, 0, 0], [0, 1, 0]], box) == 0
+    tall = [[1, 0, 0], [0, 1, 0], [0, 0, 100]]
+    assert clipping.obb_vs_box((10, 0, 0), tall, box) == 0          # goes through it
+    # the box's own transform is applied: moved 100 up and turned 90 degrees
+    turned = [[0, -1, 0, 0], [1, 0, 0, 0], [0, 0, 1, 100], [0, 0, 0, 1]]
+    box = clipping.ecef_to_unit_box(I4, turned, (10, 0, 0), (2, 3, 4))
+    assert clipping.obb_vs_box((0, 10, 100), small, box) == 1
+    assert clipping.obb_vs_box((10, 0, 100), small, box) == -1
+    # and large ECEF-like coordinates stay exact
+    far = [[1, 0, 0, 4.5e6], [0, 1, 0, 1e6], [0, 0, 1, 4.3e6], [0, 0, 0, 1]]
+    box = clipping.ecef_to_unit_box(far, I4, (0, 0, 0), (1, 1, 1))
+    assert clipping.obb_vs_box((4.5e6 + 0.5, 1e6, 4.3e6), [[.1, 0, 0], [0, .1, 0], [0, 0, .1]], box) == 1
+
+
+def test_boxes_cut_per_mode():
+    a = clipping.ecef_to_unit_box(I4, I4, (0, 0, 0), (2, 2, 2))
+    b = clipping.ecef_to_unit_box(I4, I4, (10, 0, 0), (2, 2, 2))
+    small = [[.5, 0, 0], [0, .5, 0], [0, 0, .5]]
+    in_a, far = (0, 0, 0), (100, 0, 0)
+    assert clipping.boxes_cut(in_a, small, [a, b], "CUT_ANY")        # inside one
+    assert not clipping.boxes_cut(far, small, [a, b], "CUT_ANY")
+    assert not clipping.boxes_cut(in_a, small, [a, b], "CUT_ALL")    # not in both
+    assert clipping.boxes_cut(in_a, small, [a, a], "CUT_ALL")
+    assert clipping.boxes_cut(far, small, [a, b], "KEEP_ANY")        # outside every one
+    assert not clipping.boxes_cut(in_a, small, [a, b], "KEEP_ANY")
+    assert clipping.boxes_cut(in_a, small, [a, b], "KEEP_ALL")       # outside one is enough
+    assert not clipping.boxes_cut(in_a, small, [a, a], "KEEP_ALL")
 
 
 def test_clip_mode_semantics():

@@ -395,10 +395,11 @@ spherical harmonics).
 Each tileset entry has a **Clipping** list of Blender objects. **+** adds the
 selected meshes or curves; each one is either:
 
-- a **Prism**: its outlines seen from above, extruded vertically along the
-  scene's up axis (ENU up), like Cesium's clipping polygons. An outline is
-  every closed loop of boundary edges, or every edge of a face-less mesh or
-  curve, so one object can hold several polygons;
+- a **Clip-polygon**: its outlines seen from above, extruded along the tileset frame's Z
+  (ENU up at the scene origin). An outline is every closed loop of boundary edges,
+  or every edge of a face-less mesh or curve, so one object can hold several
+  polygons. To make one, draw a Circle or Plane mesh, a polyline or a closed curve
+  in Top view;
 - a **Box**: the object's bounding box with its location, rotation and
   scale, so it clips in 3D (cut the top floors of a building, or a slab of a
   point cloud). Cube-like meshes are added as boxes.
@@ -413,8 +414,11 @@ The mode combines the volumes:
 | Keep inside all | what is outside at least one volume (*outside any*) | overlap kept |
 
 Meshes, point clouds and Gaussian splats are clipped. Moving, rotating or
-scaling a box updates the cut live; moving or editing a prism (or a box's
-mesh) re-cuts 0.35 s after the last change.
+scaling a box or a clip-polygon updates the cut live, with no tile reloaded
+(outlines over 64 points are cesium masks, which do reload them). Objects without
+a parent are parented to the tileset's root Empty, so they follow it.
+Tiles entirely cut by the
+volumes aren't downloaded.
 
 On mesh tiles the cut is done in the material, so Solid view, snapping and
 exports still see the full mesh. **Cut Geometry** also deletes the faces that

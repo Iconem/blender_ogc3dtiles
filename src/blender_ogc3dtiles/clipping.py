@@ -1,9 +1,9 @@
 """Clipping volumes: Blender objects that cut a tileset.
 
 Each tileset entry lists objects (meshes or curves), each used either as a
-**prism** (its closed outlines seen from above, extruded vertically along the
-scene's up axis, like Cesium's cartographic polygons) or as a **box** (its
-bounding box with its full transform, so it can cut in 3D).
+**prism** (its closed outlines in the tileset frame's XY, extruded along that
+frame's Z) or as a **box** (its bounding box with its full transform, so it can
+cut in 3D).
 
 Modes, as (combine op, per-volume term) where a point is cut when the
 combined term is 1:
@@ -12,27 +12,34 @@ combined term is 1:
   * KEEP_ANY — MIN of "outside": cut what is outside every volume;
   * KEEP_ALL — MAX of "outside": cut what is outside any volume.
 
-Mesh tiles: prisms become cesium-native ``RasterizedPolygonsOverlay`` masks
-(one per prism), boxes an object-space test in the shader; both feed one
-chain in the tile material (overlays.attach_clip / clip_nodes). The mode is
-read at render time from two view-layer attributes, so switching it touches
-no material. ``RasterizedPolygonsTileExcluder`` skips tiles that are cut
-whatever the other volumes say. Point and splat tiles: a Geometry Nodes
-modifier deletes the cut points; the same on mesh tiles (Cut Geometry) deletes
-the faces that are entirely cut (clip_nodes). See docs/clipping.md.
+Mesh tiles: prisms are an edge-by-edge test in the shader, boxes an object-space
+test, in one group shared by a tileset's materials (clip_nodes, overlays). Their
+values and the mode are view-layer attributes, read at render time, so changing
+them touches no material and recompiles nothing. Outlines over PRISM_SHADER_EDGES
+points fall back on cesium-native ``RasterizedPolygonsOverlay`` masks. Excluders skip
+tiles that are cut whatever the other volumes say: native
+``RasterizedPolygonsTileExcluder`` for prisms, a Python ``ITileExcluder`` for
+boxes. Point and splat tiles: a Geometry Nodes modifier deletes the cut points;
+the same on mesh tiles (Cut Geometry) deletes the faces that are entirely cut
+(clip_nodes). See docs/clipping.md.
 
 An object's outline is every closed loop of its boundary edges (edges used
 by one face, or every edge of a face-less mesh or curve), so one object can
-hold several polygons. Prisms need the cesium-native backend for meshes.
+hold several polygons.
 """
 from __future__ import annotations
 
 import math
 from collections import defaultdict
 
+import numpy as np
+
 from .tileset.traversal import blender_to_ecef, ecef_to_geodetic
 
 MIN_LOOP = 3
+PRISM_SHADER_EDGES = 64     # above this an outline is a cesium mask, not shader math
+EDGE_SLOT_SIZES = (8, 16, 32, PRISM_SHADER_EDGES)
+SHADER_SLOTS = 384          # per tileset: Blender reads 512 view-layer attributes in all
 
 
 def edge_loops(edges) -> list:
@@ -146,7 +153,9 @@ def clip_specs(item, polygons, detail_px=2.0) -> list:
 
 def clip_excluders(item, polygons, n_boxes=0) -> list:
     """Native excluders: [{"uid", "kind", "polygons", "invert"}] whose tiles
-    are cut whatever the other volumes say, so they are never loaded."""
+    are cut whatever the other volumes say, so they are never loaded. With
+    "and", a tile is only cut when every volume agrees: these join the boxes in
+    one combined excluder (native_backend.set_excluders)."""
     if not polygons:
         return []
     base = f"clipx_{item.uid}"
@@ -159,11 +168,11 @@ def clip_excluders(item, polygons, n_boxes=0) -> list:
         return [spec(0, polygons, False)]
     if mode == "KEEP_ALL":                # outside one polygon is enough
         return [spec(i, [p], True) for i, p in enumerate(polygons)]
-    if n_boxes:                           # a box could still decide otherwise
-        return []
     if mode == "KEEP_ANY":                # outside the union of the prisms
-        return [spec(0, polygons, True)]
-    return [spec(0, polygons, False)] if len(polygons) == 1 else []
+        return [{**spec(0, polygons, True), "and": bool(n_boxes)}]
+    if len(polygons) == 1 and not n_boxes:
+        return [spec(0, polygons, False)]
+    return [{**spec(i, [p], False), "and": True} for i, p in enumerate(polygons)]
 
 
 def mode_attrs(mode) -> tuple:
@@ -181,6 +190,87 @@ def box_extent(bound_box) -> tuple:
     c = tuple((max(v) + min(v)) * 0.5 for v in (xs, ys, zs))
     h = tuple(max((max(v) - min(v)) * 0.5, 1e-6) for v in (xs, ys, zs))
     return c, h
+
+
+def prism_edges(loop) -> list:
+    """(x, y, dx/dy) per edge of an outline, for the shader's crossing test
+    (clip_nodes): a horizontal edge never crosses, so its slope doesn't matter."""
+    out = []
+    for i, a in enumerate(loop):
+        b = loop[(i + 1) % len(loop)]
+        dy = b[1] - a[1]
+        out.append((a[0], a[1], (b[0] - a[0]) / dy if dy else 0.0))
+    return out
+
+
+def edge_slots(n) -> int:
+    """Edges an outline's shader test has room for. A bit more than it needs, so
+    that adding a point to an outline rarely changes the shader."""
+    return next(s for s in EDGE_SLOT_SIZES if s >= n)
+
+
+def padded_edges(loop) -> list:
+    """prism_edges filled up to edge_slots. The extra edges stay on the first
+    vertex, so the winding number doesn't see them."""
+    edges = prism_edges(loop)
+    x, y = loop[0][0], loop[0][1]
+    return edges + [(x, y, 0.0)] * (edge_slots(len(loop)) - len(edges))
+
+
+def split_prisms(loops) -> tuple:
+    """Indices of the outlines tested in the shader, and of those which become
+    cesium masks: too dense, or past what the attributes can hold."""
+    small, dense, used = [], [], 0
+    for i, lp in enumerate(loops):
+        slots = edge_slots(len(lp)) if len(lp) <= PRISM_SHADER_EDGES else None
+        if slots is None or used + slots > SHADER_SLOTS:
+            dense.append(i)
+        else:
+            small.append(i)
+            used += slots
+    return small, dense
+
+
+def ecef_to_unit_box(enu_to_ecef, obj_to_enu, c, h) -> list:
+    """Rows (3 x 4) taking ECEF to the box's [-1, 1] cube. In doubles: ECEF
+    doesn't fit in mathutils' floats."""
+    unit = np.array([[h[0], 0, 0, c[0]], [0, h[1], 0, c[1]], [0, 0, h[2], c[2]], [0, 0, 0, 1]],
+                    np.float64)
+    m = np.asarray(enu_to_ecef, np.float64) @ np.asarray(obj_to_enu, np.float64) @ unit
+    return np.linalg.inv(m)[:3].tolist()
+
+
+def obb_vs_box(center, half_axes, box) -> int:
+    """1: the oriented box (half_axes as columns) is entirely inside ``box``
+    (ecef_to_unit_box); -1: entirely outside; 0: can't tell. Outside only tries
+    the box's own axes, so a tile near a corner may read 0, which keeps it."""
+    (hxx, hxy, hxz), (hyx, hyy, hyz), (hzx, hzy, hzz) = half_axes
+    cx, cy, cz = center
+    inside = True
+    for a, b, d, t in box:
+        v = abs(a * cx + b * cy + d * cz + t)
+        e = (abs(a * hxx + b * hyx + d * hzx) + abs(a * hxy + b * hyy + d * hzy)
+             + abs(a * hxz + b * hyz + d * hzz))
+        if v - e >= 1.0:
+            return -1
+        inside = inside and v + e <= 1.0
+    return 1 if inside else 0
+
+
+BOX_RULES = {"CUT_ANY": (1, False), "CUT_ALL": (1, True), "KEEP_ANY": (-1, True),
+             "KEEP_ALL": (-1, False)}
+
+
+def box_rule(mode) -> tuple:
+    """(obb_vs_box value that cuts, must every volume agree?) of a clip mode."""
+    return BOX_RULES.get(mode, BOX_RULES["CUT_ANY"])
+
+
+def boxes_cut(center, half_axes, boxes, mode) -> bool:
+    """Do the boxes alone cut this oriented box under ``mode``?"""
+    want, every = box_rule(mode)
+    hits = (obb_vs_box(center, half_axes, b) == want for b in boxes)
+    return all(hits) if every else any(hits)
 
 
 def looks_like_box(n_verts, n_faces) -> bool:

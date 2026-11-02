@@ -177,8 +177,8 @@ def _clip_object_poll(self, obj):
 
 
 CLIP_SHAPES = [
-    ("PRISM", "Prism", "Each closed outline of the object, seen from above, extruded "
-     "vertically without limit (like Cesium's clipping polygons)"),
+    ("PRISM", "Clip-polygon", "Each closed outline of the object, seen from above, extruded "
+     "along the tileset's Z without limit (like Cesium's clipping polygons)"),
     ("BOX", "Box", "The object's bounding box with its location, rotation and scale: "
      "clips in 3D, so it can cut the top of a building only"),
 ]
@@ -186,10 +186,10 @@ CLIP_SHAPES = [
 
 class ClipPolygonItem(PropertyGroup):
     """A Blender object that clips a tileset: its outline seen from above
-    (prism) or its bounding box (box)."""
+    (clip-polygon) or its bounding box (box)."""
     obj: bpy.props.PointerProperty(
         name="Object", type=bpy.types.Object, poll=_clip_object_poll,
-        description="Mesh or curve. Prism: each closed outline (boundary edges, or the edges "
+        description="Mesh or curve. Clip-polygon: each closed outline (boundary edges, or the edges "
                     "of a face-less mesh / curve), seen from above, is one polygon. Box: the "
                     "object's bounding box. Moving or editing it updates the cut",
         update=_on_clip_edit)

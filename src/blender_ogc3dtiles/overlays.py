@@ -173,7 +173,7 @@ def set_overlay_alpha(uid, alpha) -> int:
 # inside the volume:
 #
 #   prism (uid ``clip_...``, a cesium mask):  UV → Mapping → Image → Term
-#   box   (clip_nodes.set_box_terms):  Texture Coordinate (Object) → … → Term
+#   volumes (clip_nodes.set_volumes_term):  the tileset's shared group → Term
 #
 #   Terms → MAX chain ┐
 #   Terms → MIN chain ┴ Mix (attribute "any") → |x - attribute "invert"|
@@ -187,20 +187,58 @@ def set_overlay_alpha(uid, alpha) -> int:
 CLIP_PREFIX = "clip_"
 POLY_TAG = "OGC3D PolyClip"
 POLY_MIX = POLY_TAG + " Mix"
-POLY_STEP = POLY_TAG + " Step"
 POLY_TRANSPARENT = POLY_TAG + " Transparent"
-POLY_SELECT = POLY_TAG + " Select"
-POLY_SUB = POLY_TAG + " Invert Sub"
-POLY_ABS = POLY_TAG + " Invert Abs"
-POLY_ATTR_ANY = POLY_TAG + " Attr Any"
-POLY_ATTR_INVERT = POLY_TAG + " Attr Invert"
+POLY_MODE = POLY_TAG + " Mode"
+MODE_GROUP_PREFIX = "OGC3D Clip Mode "
 CLIP_UID_PROP = "ogc_clip_uid"
+
+
+def clip_attr_base(tileset_uid) -> str:
+    """Start of the names of a tileset's scene custom properties."""
+    return "ogc_clip_" + "".join(c if c.isalnum() else "_" for c in str(tileset_uid))
 
 
 def clip_attr_names(tileset_uid) -> tuple:
     """Scene custom property names of a tileset's mode: (any, invert)."""
-    b = "ogc_clip_" + "".join(c if c.isalnum() else "_" for c in str(tileset_uid))
+    b = clip_attr_base(tileset_uid)
     return b + "_any", b + "_invert"
+
+
+def _mode_group(tileset_uid):
+    """Group (Min, Max → Cut) applying the tileset's mode, shared by its tiles."""
+    name = f"{MODE_GROUP_PREFIX}{tileset_uid}"
+    ng = bpy.data.node_groups.get(name)
+    if ng is not None:
+        return ng
+    ng = bpy.data.node_groups.new(name, "ShaderNodeTree")
+    for k in ("Min", "Max"):
+        ng.interface.new_socket(k, in_out="INPUT", socket_type="NodeSocketFloat")
+    ng.interface.new_socket("Cut", in_out="OUTPUT", socket_type="NodeSocketFloat")
+    N, L = ng.nodes.new, ng.links.new
+
+    def math(op):
+        n = N("ShaderNodeMath")
+        n.operation = op
+        return n
+
+    gi, go = N("NodeGroupInput"), N("NodeGroupOutput")
+    any_name, inv_name = clip_attr_names(tileset_uid)
+    a_any, a_inv = N("ShaderNodeAttribute"), N("ShaderNodeAttribute")
+    a_any.attribute_type = a_inv.attribute_type = "VIEW_LAYER"
+    a_any.attribute_name, a_inv.attribute_name = any_name, inv_name
+    sel = N("ShaderNodeMix")
+    sel.data_type = "FLOAT"
+    sub, ab, step = math("SUBTRACT"), math("ABSOLUTE"), math("GREATER_THAN")
+    step.inputs[1].default_value = 0.5
+    L(a_any.outputs["Fac"], sel.inputs[0])
+    L(gi.outputs[0], sel.inputs[2])
+    L(gi.outputs[1], sel.inputs[3])
+    L(sel.outputs[0], sub.inputs[0])
+    L(a_inv.outputs["Fac"], sub.inputs[1])
+    L(sub.outputs[0], ab.inputs[0])
+    L(ab.outputs[0], step.inputs[0])
+    L(step.outputs[0], go.inputs[0])
+    return ng
 
 
 def tileset_uid_of_mask(uid) -> str:
@@ -238,29 +276,10 @@ def _ensure_poly_mix(nt, tileset_uid):
         return node
 
     tr = named(N("ShaderNodeBsdfTransparent"), POLY_TRANSPARENT, -420, -420)
-    step = named(N("ShaderNodeMath"), POLY_STEP, -420, -250)
-    step.operation = "GREATER_THAN"
-    step.inputs[1].default_value = 0.5
-    ab = named(N("ShaderNodeMath"), POLY_ABS, -620, -250)
-    ab.operation = "ABSOLUTE"
-    sub = named(N("ShaderNodeMath"), POLY_SUB, -820, -250)
-    sub.operation = "SUBTRACT"
-    sel = named(N("ShaderNodeMix"), POLY_SELECT, -1020, -250)
-    sel.data_type = "FLOAT"
-    any_name, inv_name = clip_attr_names(tileset_uid)
-    a_any = named(N("ShaderNodeAttribute"), POLY_ATTR_ANY, -1240, -60)
-    a_any.attribute_type = "VIEW_LAYER"
-    a_any.attribute_name = any_name
-    a_inv = named(N("ShaderNodeAttribute"), POLY_ATTR_INVERT, -1020, -60)
-    a_inv.attribute_type = "VIEW_LAYER"
-    a_inv.attribute_name = inv_name
-    L(a_any.outputs["Fac"], sel.inputs[0])
-    L(sel.outputs[0], sub.inputs[0])
-    L(a_inv.outputs["Fac"], sub.inputs[1])
-    L(sub.outputs[0], ab.inputs[0])
-    L(ab.outputs[0], step.inputs[0])
+    mode = named(N("ShaderNodeGroup"), POLY_MODE, -420, -250)
+    mode.node_tree = _mode_group(tileset_uid)
     mix = named(N("ShaderNodeMixShader"), POLY_MIX, -200, 0)
-    L(step.outputs[0], mix.inputs["Fac"])
+    L(mode.outputs[0], mix.inputs["Fac"])
     L(src, mix.inputs[1])
     L(tr.outputs[0], mix.inputs[2])
     L(mix.outputs[0], target)
@@ -288,16 +307,20 @@ def relink_clip_chain(mat, tileset_uid=None) -> None:
         return
     if _ensure_poly_mix(nt, tileset_uid) is None:
         return
-    sel = nt.nodes.get(POLY_SELECT)
-    for op, sock, dy in (("MINIMUM", sel.inputs[2], 0), ("MAXIMUM", sel.inputs[3], 120)):
-        acc = terms[0].outputs[0]
+    mode = nt.nodes.get(POLY_MODE)
+    for op, sock, dy, out in (("MINIMUM", mode.inputs[0], 0, "Min"),
+                              ("MAXIMUM", mode.inputs[1], 120, "Max")):
+        def value(t):       # the volumes group has both; a mask one value
+            return t.outputs.get(out) or t.outputs[0]
+
+        acc = value(terms[0])
         for t in terms[1:]:
             comb = nt.nodes.new("ShaderNodeMath")
             comb.name = comb.label = f"{t.name[: -len(' Term')]} Combine {op}"
             comb.operation = op
             comb.location = (t.location.x + 200, t.location.y + dy)
             nt.links.new(acc, comb.inputs[0])
-            nt.links.new(t.outputs[0], comb.inputs[1])
+            nt.links.new(value(t), comb.inputs[1])
             acc = comb.outputs[0]
         nt.links.new(acc, sock)
 

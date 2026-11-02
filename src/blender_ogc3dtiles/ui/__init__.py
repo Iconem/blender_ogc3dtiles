@@ -447,21 +447,91 @@ def _clip_volumes(scene, props, item, st):
     return loops, boxes
 
 
+def _clip_box_units(props, item, st) -> list:
+    """The enabled boxes for the tile excluder (clipping.ecef_to_unit_box)."""
+    import mathutils
+    from .. import clipping
+    from ..tileset.traversal import build_enu_to_ecef_matrix
+    if not item.use_clipping:
+        return []
+    root = bpy.data.objects.get(st.get("root_obj") or "")
+    to_tileset = root.matrix_world.inverted() if root is not None else mathutils.Matrix.Identity(4)
+    enu = build_enu_to_ecef_matrix(props.origin_lat, props.origin_lon, props.origin_height)
+    dg = bpy.context.evaluated_depsgraph_get()
+    out = []
+    for cp in item.clip_polygons:
+        if cp.enabled and cp.obj is not None and cp.shape == "BOX":
+            c, h = clipping.box_extent(cp.obj.evaluated_get(dg).bound_box)
+            m = to_tileset @ cp.obj.matrix_world
+            out.append(clipping.ecef_to_unit_box(enu, [list(r) for r in m], c, h))
+    return out
+
+
+def _apply_excluders(props, st, item) -> None:
+    """Hand the backend its excluders when they changed (a box move lands here)."""
+    backend = st.get("backend")
+    if backend is None or not hasattr(backend, "set_excluders"):
+        return
+    excluders = st.get("clip_ex_specs") or []
+    # prisms have no place on the globe for a local tileset, so no tile test
+    boxes = [] if st.get("clip_no_excluders") else _clip_box_units(props, item, st)
+    sig = repr((excluders, boxes, item.clip_mode))
+    if sig != st.get("clip_ex_sig"):
+        backend.set_excluders(excluders, boxes, item.clip_mode)
+        st["clip_ex_sig"] = sig
+        st["last_sig"] = None
+
+
+def _parent_clip_objects(item, root) -> None:
+    """Parentless clipping objects follow the tileset's root, staying in place."""
+    for cp in item.clip_polygons:
+        o = cp.obj
+        if o is not None and o.parent is None:
+            o.parent = root
+            o.matrix_parent_inverse = root.matrix_world.inverted()
+
+
+def _unparent_clip_object(o) -> None:
+    m = o.matrix_world.copy()
+    o.parent = None
+    o.matrix_parent_inverse.identity()
+    o.matrix_world = m
+
+
+def _clip_live(scene, st, item) -> None:
+    """While an object is being dragged: the cut follows through the shader's
+    attributes. The rest waits for it to settle (_refresh_clip)."""
+    from .. import clip_nodes, clipping
+    root = bpy.data.objects.get(st.get("root_obj") or "")
+    if root is None:
+        return
+    try:
+        loops, boxes = _clip_volumes(scene, None, item, st)
+        small, _dense = clipping.split_prisms(loops)
+        clip_nodes.update_volume_values(scene, item.uid, root.name, [loops[i] for i in small], boxes)
+    except Exception as e:                           # noqa: BLE001
+        print(f"[3DTiles] clipping: {e}")
+
+
 def _refresh_clip(scene, props, st, item) -> None:
-    """Rebuild an entry's clipping: cesium masks for the prisms (only when
-    they changed), box terms and the point / splat Geometry Nodes group."""
+    """Rebuild an entry's clipping: the tiles' shared shader group, cesium masks
+    for the densest outlines (only when they changed) and the point / splat
+    Geometry Nodes group."""
     from .. import clip_nodes, clipping
     backend = st.get("backend")
     root = bpy.data.objects.get(st.get("root_obj") or "")
     try:
         loops, boxes = _clip_volumes(scene, props, item, st)
-        lonlat = clipping.loops_to_lonlat(loops, (props.origin_lat, props.origin_lon,
-                                                  props.origin_height))
-        specs = clipping.clip_specs(item, lonlat)
+        small, dense = clipping.split_prisms(loops)
+        local = is_local_origin(props)
+        st["clip_no_excluders"] = local and bool(loops)
+        lonlat = [] if local else clipping.loops_to_lonlat(
+            loops, (props.origin_lat, props.origin_lon, props.origin_height))
+        specs = clipping.clip_specs(item, [lonlat[i] for i in dense] if lonlat else [])
         excluders = clipping.clip_excluders(item, lonlat, n_boxes=len(boxes))
     except Exception as e:                           # noqa: BLE001
         print(f"[3DTiles] clipping: {e}")
-        loops, boxes, specs, excluders = [], [], [], []
+        loops, boxes, specs, excluders, small = [], [], [], [], []
     op, outside = clipping.mode_op(item.clip_mode)
     sig = repr(specs)
     if backend is not None and hasattr(backend, "add_overlay") and sig != st.get("clip_sig"):
@@ -473,23 +543,22 @@ def _refresh_clip(scene, props, st, item) -> None:
                 st["clip_uids"].append(spec["uid"])
         st["clip_sig"] = sig
         st["last_sig"] = None
-    sig = repr(excluders)
-    if backend is not None and hasattr(backend, "set_excluders") and sig != st.get("clip_ex_sig"):
-        backend.set_excluders(excluders)
-        st["clip_ex_sig"] = sig
-        st["last_sig"] = None
+    st["clip_ex_specs"] = excluders
+    _apply_excluders(props, st, item)
     clip_nodes.set_mode(scene, item.uid, *clipping.mode_attrs(item.clip_mode))
     if root is None:
         return
     try:
+        _parent_clip_objects(item, root)
         coll = root.users_collection[0] if root.users_collection else scene.collection
         helper = clip_nodes.update_helper(item.uid, root, loops, coll)
+        volumes = clip_nodes.update_volumes(scene, item.uid, root.name, [loops[i] for i in small], boxes)
         cfg = None
         if loops or boxes:
-            cfg = clip_nodes.make_cfg(item.uid, op, outside, boxes, len(lonlat),
+            cfg = clip_nodes.make_cfg(item.uid, op, outside, boxes, len(loops),
                                       helper.name if helper else "",
-                                      [s["uid"] for s in specs], item.clip_geometry)
-        clip_nodes.apply_to_tileset(root, cfg)
+                                      [s["uid"] for s in specs], item.clip_geometry, volumes)
+        st["clip_todo"] = clip_nodes.apply_to_tileset(root, cfg)
     except Exception as e:                           # noqa: BLE001
         import traceback
         traceback.print_exc()
@@ -497,13 +566,25 @@ def _refresh_clip(scene, props, st, item) -> None:
 
 
 def _tick_clip(scene, props, st, now) -> None:
-    t = st.get("clip_dirty_t")
-    if t is None or now - t < CLIP_SETTLE_S or not _state.get("origin_set"):
+    if not _state.get("origin_set"):
         return
-    st["clip_dirty_t"] = None
+    if st.get("clip_todo"):
+        from .. import clip_nodes
+        st["clip_todo"] = clip_nodes.apply_to_tiles(st["clip_todo"])
+        if not st["clip_todo"]:
+            clip_nodes.prune_groups(bpy.data.objects.get(st.get("root_obj") or ""))
+    t, tb = st.get("clip_dirty_t"), st.get("clip_box_t")
+    full = t is not None and now - t >= CLIP_SETTLE_S
     item = next((it for it in props.tilesets if it.uid == st["key"]), None)
+    if item is not None and not full and (t is not None or tb is not None):
+        _clip_live(scene, st, item)
+    if not full and (tb is None or now - tb < CLIP_SETTLE_S):
+        return
+    st["clip_box_t"] = None
+    if full:
+        st["clip_dirty_t"] = None
     if item is not None:
-        _refresh_clip(scene, props, st, item)
+        (_refresh_clip(scene, props, st, item) if full else _apply_excluders(props, st, item))
 
 
 def _clip_depsgraph_watch(scene, depsgraph):
@@ -513,7 +594,7 @@ def _clip_depsgraph_watch(scene, depsgraph):
     props = getattr(scene, "ogc3dtiles", None)
     if props is None:
         return
-    watched, prisms = {}, set()
+    watched, prisms, boxes, roots = {}, set(), {}, {}
     for it in props.tilesets:
         if it.use_clipping and it.uid in _state["streams"]:
             for cp in it.clip_polygons:
@@ -521,17 +602,31 @@ def _clip_depsgraph_watch(scene, depsgraph):
                     watched.setdefault(cp.obj.name, []).append(it)
                     if cp.shape != "BOX":
                         prisms.add(cp.obj.name)
+                    else:
+                        boxes.setdefault(cp.obj.name, []).append(it)
+            if watched:
+                roots[_state["streams"][it.uid].get("root_obj")] = it
     if not watched:
         return
     for u in depsgraph.updates:
         idb = u.id
         name = getattr(idb, "name", None)
-        # a box's transform reaches the nodes directly (Texture Coordinate /
-        # Object Info); prisms are baked, so they rebuild on a move too
+        # a box move only needs its attributes (_clip_live) and tile excluder;
+        # prisms are baked for the masks and Geometry Nodes, so they rebuild on
+        # a move too, as does everything when the tileset moves
+        if isinstance(idb, bpy.types.Object) and u.is_updated_transform and name in roots:
+            st = _state["streams"][roots[name].uid]
+            m = tuple(tuple(r) for r in idb.matrix_world)
+            if st.get("clip_root_m", m) != m:
+                clip_mark_dirty(scene, roots[name])
+            st["clip_root_m"] = m
         if isinstance(idb, bpy.types.Object) and name in watched and (
                 u.is_updated_geometry or (u.is_updated_transform and name in prisms)):
             for it in watched[name]:
                 clip_mark_dirty(scene, it)
+        elif isinstance(idb, bpy.types.Object) and u.is_updated_transform and name in boxes:
+            for it in boxes[name]:
+                _state["streams"][it.uid]["clip_box_t"] = time.monotonic()
         elif isinstance(idb, (bpy.types.Mesh, bpy.types.Curve)):
             for oname, its in watched.items():
                 o = bpy.data.objects.get(oname)
@@ -584,6 +679,9 @@ class OGC3D_OT_ClipRemove(Operator):
         i = it.active_clip
         if not (0 <= i < len(it.clip_polygons)):
             return {"CANCELLED"}
+        o = it.clip_polygons[i].obj
+        if o is not None and o.parent is not None and o.parent.get("ogc3dtiles_root"):
+            _unparent_clip_object(o)
         it.clip_polygons.remove(i)
         it.active_clip = max(0, min(i, len(it.clip_polygons) - 1))
         clip_mark_dirty(context.scene, it)
@@ -1005,6 +1103,9 @@ def _teardown_stream(st, remove_objects: bool):
     st["backend"] = None
     if remove_objects:
         root = bpy.data.objects.get(st.get("root_obj") or "")
+        if root is not None:                         # clipping objects outlive the root
+            for o in [o for o in root.children if "tile_url" not in o and not o.get("tile_bbox")]:
+                _unparent_clip_object(o)
         remove_tiles([(rec.holder, rec.data) for rec in st["tiles"].values()], extra_objects=[root])
         st["tiles"].clear()
         coll = bpy.data.collections.get(st.get("coll") or "")
@@ -1826,7 +1927,7 @@ def _draw_clipping(b, it, st) -> None:
     col.operator("ogc3dtiles.clip_add", icon="ADD", text="")
     col.operator("ogc3dtiles.clip_remove", icon="REMOVE", text="")
     if st is not None and st.get("mode") == "python":
-        b.label(text="Prisms on meshes need the cesium-native backend", icon="INFO")
+        b.label(text="Very dense clip-polygons on meshes need the cesium-native backend", icon="INFO")
     elif not it.clip_polygons:
         b.label(text="+ adds the selected meshes / curves (cubes as boxes)", icon="INFO")
 

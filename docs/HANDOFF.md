@@ -95,7 +95,7 @@ or keys; the files that do are named below and stay out of git.
   files listed in the preferences, e.g. on the NAS), cache folder + size cap,
   copy tileset into the project (cropped to an object, to a geometric error),
   b3dm `RTC_CENTER` fix.
-- Clipping rework: four modes (cut / keep × inside any / all), prism or box
+- Clipping rework: four modes (cut / keep × inside any / all), clip-polygon or box
   per object, meshes via the material chain, points and splats via a Geometry
   Nodes delete. Fixed: overlays sharing a projection share one texture
   coordinate set in cesium-native, so clip nodes are keyed by overlay uid.
@@ -116,14 +116,17 @@ or keys; the files that do are named below and stay out of git.
 
 ### Known limitations and open threads
 
-- **Moving a prism reloads the tileset's tiles**: cesium-native reloads tiles
-  when an overlay is added or replaced. Boxes don't have this. A shader test
-  against the outline, like the boxes, would avoid it for meshes if it matters.
 - **`GltfModifier` from Python fails** ("Tried to call pure virtual function
-  GltfModifier.apply", tiles don't load): check the binding's trampoline.
-  Feature request draft: `docs/cesium-native-clipping-request.md`, not posted.
+  GltfModifier.apply", tiles don't load). One cast in the trampoline fixes it:
+  `static_cast<const PyGltfModifier*>(this)` in `get_override`, tested on a rebuilt
+  v0.59 binding. To propose as its own small PR. Jonathan wants the clip modifier in
+  cesium-native C++ and bound, not done in Python.
+  Drafts, not posted: `docs/cesium-native-clipping-request.md`.
 - **`is_job_running("SHADER_COMPILATION")`** stayed true for minutes on large
   scenes while the viewport was already correct. Don't use it to wait.
+- **Local splats loaded no tiles on 2026-11-02**, with clipping off too (Vestibule
+  7.5M and Interior mesh2splat 200M, view pivot at the origin, 60 m): see below, so
+  clipping them is unchecked. A local mesh tileset loads and clips.
 - **Non-georeferenced tilesets** (3dtiled splat output, root near ECEF 0)
   only land at the scene origin when the origin is Auto. Seen on 2026-11-01
   with the San Pietro splats: with the view pivot at (5, -10, 0) and a 95 m

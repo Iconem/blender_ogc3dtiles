@@ -344,6 +344,33 @@ def xyz_template(url: str) -> str:
     return url.replace("{y}", "{reverseY}").replace("{-y}", "{y}")
 
 
+def _volume_excluder(base, boxes, mode, joined):
+    """ITileExcluder for what cesium-native can't test: boxes, and polygons
+    that must agree with them (``joined``, native excluders). Python, called on
+    the main thread for each tile visited."""
+    from .. import clipping
+    _want, every = clipping.box_rule(mode)
+
+    class VolumeExcluder(base):
+        def __init__(self):
+            super().__init__()
+            self.joined = joined                # kept alive with this excluder
+
+        def start_new_frame(self):
+            for j in joined:
+                j.start_new_frame()
+
+        def should_exclude(self, tile):
+            if boxes:
+                obb = tile.bounding_volume.as_oriented_bounding_box()
+                cut = clipping.boxes_cut(obb.center.tolist(), obb.half_axes.tolist(), boxes, mode)
+                if not (every and cut):         # settled by the boxes alone
+                    return cut
+            return all(j.should_exclude(tile) for j in joined)
+
+    return VolumeExcluder()
+
+
 def _make_overlay(cs, spec):
     """cesium-native RasterOverlay for an overlay list entry (see props.OVERLAY_KINDS)."""
     ro = cs.raster_overlays
@@ -587,16 +614,22 @@ class CesiumNativeBackend:
             except Exception as exc:      # noqa: BLE001
                 print("[3DTiles/native] overlay remove failed: %r" % (exc,))
 
-    def set_excluders(self, specs):
-        """Tiles entirely on the clipped side of these polygons are never
-        loaded. The overlays only carry the polygons, they aren't added to
-        the tileset, so changing them re-rasterises nothing."""
+    def set_excluders(self, specs, boxes=(), mode="CUT_ANY"):
+        """Tiles entirely on the clipped side of these polygons and boxes
+        (clipping.ecef_to_unit_box) are never loaded. The overlays only carry
+        the polygons, they aren't added to the tileset, so changing them
+        re-rasterises nothing."""
         if self._tileset is None:
             return
         try:
-            exc = self._cs.tiles.selection.RasterizedPolygonsTileExcluder
-            self._excluders = {s["uid"]: exc(_make_overlay(self._cs, s)) for s in specs}
-            self._tileset.options.excluders = list(self._excluders.values())
+            sel = self._cs.tiles.selection
+            exc = sel.RasterizedPolygonsTileExcluder
+            made = {s["uid"]: exc(_make_overlay(self._cs, s)) for s in specs}
+            joined = [made.pop(s["uid"]) for s in specs if s.get("and")]
+            if boxes or joined:
+                made["boxes"] = _volume_excluder(sel.ITileExcluder, boxes, mode, joined)
+            self._excluders = made
+            self._tileset.options.excluders = list(made.values())
         except Exception as exc:          # noqa: BLE001
             print("[3DTiles/native] excluders update failed: %r" % (exc,))
 

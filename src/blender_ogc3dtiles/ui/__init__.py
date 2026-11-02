@@ -490,9 +490,14 @@ def _clip_frame_change(scene, depsgraph):
         return
     for it in props.tilesets:
         st = _state["streams"].get(it.uid)
-        if st is not None and it.use_clipping and any(
-                _is_animated(cp.obj) for cp in it.clip_polygons if cp.enabled and cp.obj):
-            _clip_live(scene, st, it, depsgraph)
+        animated = [cp for cp in it.clip_polygons if cp.enabled and cp.obj and _is_animated(cp.obj)]
+        if st is None or not it.use_clipping or not animated:
+            continue
+        _clip_live(scene, st, it, depsgraph)
+        # outlines are also baked for points, splats and masks, once the frame settles:
+        # Render Converged waits for that, F12 and Ctrl+F12 can't
+        if depsgraph.mode == "VIEWPORT" and any(cp.shape != "BOX" for cp in animated):
+            st["clip_dirty_t"] = time.monotonic()
 
 
 _clip_frame_change._bpy_persistent = True          # = @bpy.app.handlers.persistent
@@ -542,6 +547,7 @@ def _refresh_clip(scene, props, st, item) -> None:
     from .. import clip_nodes, clipping
     backend = st.get("backend")
     root = bpy.data.objects.get(st.get("root_obj") or "")
+    _state["last_change_t"] = time.monotonic()
     try:
         loops, boxes = _clip_volumes(scene, props, item, st)
         small, dense = clipping.split_polygons(loops)
@@ -2236,7 +2242,9 @@ class OGC3D_OT_RenderConverged(Operator):
         waited = now - self._t_frame
         ticked = _state.get("last_tick_t", 0.0) > self._t_frame
         quiet = now - _state.get("last_change_t", now)
-        converged = (ticked and _state.get("pending_total", 1) == 0
+        clip_pending = any(st.get("clip_dirty_t") is not None or st.get("clip_todo")
+                           for st in _state["streams"].values())
+        converged = (ticked and _state.get("pending_total", 1) == 0 and not clip_pending
                      and quiet >= props.render_settle_s
                      and waited >= max(props.render_settle_s, self._min_wait))
         if not converged and waited < props.render_max_wait_s:

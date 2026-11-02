@@ -120,7 +120,7 @@ or keys; the files that do are named below and stay out of git.
 - **`GltfModifier` from Python fails** ("Tried to call pure virtual function
   GltfModifier.apply", tiles don't load) until #7 merges. Jonathan wants the clip
   modifier in cesium-native C++ and bound, not done in Python.
-  Drafts, not posted: `docs/cesium-native-clipping-request.md`.
+  Requested upstream: cesium-native#1486.
 - **`is_job_running("SHADER_COMPILATION")`** stayed true for minutes on large
   scenes while the viewport was already correct. Don't use it to wait.
 - **Local splats loaded no tiles on 2026-11-02**, with clipping off too (Vestibule
@@ -147,8 +147,21 @@ or keys; the files that do are named below and stay out of git.
 - Before making the repo public: scan history for tokens (screenshots too),
   pick a licence, check README images.
 
+### Coming in cesium-native: 3D Tiles 2.0
+
+Read on 2026-11-02, nothing merged. v0.66 only reads and writes the glTF 2.1 and
+3D Tiles 2.0 classes. Streaming is cesium-native#1453, as a stack of PRs:
+#1464 → #1467 → #1473 → #1477 → #1478 (loader, draft). #1465 tracks external assets.
+
+- The add-on should need little: `Tileset` will take `*.tileset.gltf`.
+- The binding pays: libraries renamed (`Cesium3DTiles*` → `CesiumTilesetJson*`,
+  `Cesium3DTilesContent` split), `BoundingVolume` and `TileRefine` moved,
+  `registerAllTileContentTypes` → `registerAllConverterTypes`. Bump to v0.66 first.
+
 ## 3. Public posts
 
+- [cesium-native#1486](https://github.com/CesiumGS/cesium-native/issues/1486), geometry
+  clipping: posted by Jonathan on 2026-11-02.
 - Cesium community thread 47479 (Blender architectural models + Google 3D
   tiles): reply drafted, not posted. Story: started in June 2026 as a
   prototype in a claude.ai chat integrating cesium-native-python, slow;

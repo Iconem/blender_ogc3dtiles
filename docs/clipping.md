@@ -103,9 +103,9 @@ for real geometry cuts and is open;
 [cesium-unreal#1818](https://github.com/CesiumGS/cesium-unreal/issues/1818) tried
 Manifold booleans, which need closed meshes;
 [cesium-native#1307](https://github.com/CesiumGS/cesium-native/pull/1307) (open)
-fixes `GltfModifier` with raster overlays. cesium-native has no issue for geometry
-clipping yet; [#878](https://github.com/CesiumGS/cesium-native/issues/878) is about
-Cesium ion clip jobs.
+fixes `GltfModifier` with raster overlays;
+[cesium-native#1486](https://github.com/CesiumGS/cesium-native/issues/1486) asks for
+geometry clipping by box or polygon.
 
 ## Mesh tiles: one shared group
 
@@ -210,7 +210,7 @@ view or in an export.
 | Add or remove a volume | Tiles take the new version a few per tick (above). |
 | Move or edit a clip-polygon over 64 points | The mask is replaced, so cesium-native reloads the tiles. |
 | Move the tileset's root Empty | Clipping objects without a parent are parented to it when added, so they follow. No shader changes: 0.05 s for the matrices of 3200 tiles, then a 0.1 s draw. |
-| Keyframe a volume | Followed in the viewport and in renders, on mesh tiles through a frame change handler. No tile is skipped while a volume is keyframed, since it may uncover any of them, and a render doesn't stream. |
+| Keyframe a volume | Followed in the viewport and in renders, on mesh tiles through a frame change handler. No tile is skipped while a volume is keyframed, since it may uncover any of them. Render Converged Animation waits for each frame's clipping as well as its tiles. |
 
 Measured in Material view on Google 3D Tiles over Rome (3000–3500 materials, 2500–3200
 tiles, still streaming), with a 16-point clip-polygon:
@@ -245,8 +245,11 @@ local mesh tileset.
   a metre or two off on coarse tiles.
 - Adding a volume to a tileset of thousands of tiles takes minutes to reach all of
   them, at a low frame rate.
-- On points and splats, a keyframed clip-polygon doesn't follow in renders: its
-  helper mesh is baked. A keyframed box does.
+- A keyframed clip-polygon on points or splats, or one over 64 points on meshes,
+  needs **Render Converged Animation**. Both are baked once a frame has settled (a
+  helper mesh, a cesium mask), which that operator waits for; a plain F12 or Ctrl+F12
+  renders straight away, so it keeps the outline baked before the render started. A
+  keyframed box needs nothing baked: its transform reaches the nodes directly.
 - The box excluder is conservative: "entirely outside" only tries the box's own
   axes, so a tile near a corner of a rotated box can load, then be hidden.
 - On a tileset that isn't georeferenced, a clip-polygon means no tile is skipped,

@@ -8,7 +8,7 @@ version         = "0.2.0"
 description     = "OGC 3D Tiles streaming addon for Blender"
 readme          = "README.md"
 requires-python = ">=3.11"
-license         = { text = "Apache-2.0" }
+license         = { text = "MIT" }
 authors         = [{ name = "Jonathan Chemla", email = "jos.chemla@gmail.com" }]
 dependencies    = ["numpy>=1.26"]
 

@@ -11,7 +11,7 @@ What works today:
 - **Content:** cesium-native brings for free all supported flavors of 3d-tiles and tiles
   content: 3D Tiles 1.0 / 1.1 meshes (b3dm, glb, Draco, meshopt, KTX2), `pnts` point
   clouds, and Gaussian splats (`KHR_gaussian_splatting`, SPZ or uncompressed) as native
-  Blender 5.3 splats; Google Photorealistic 3D Tiles, Cesium ion assets, and a WGS84 globe
+  [Blender 5.3](https://developer.blender.org/docs/release_notes/5.3/rendering/) splats; Google Photorealistic 3D Tiles, Cesium ion assets, and a WGS84 globe
 - **Raster overlays** draped on tiles: URL template, TMS, WMTS, WMS, ion, Bing, Google,
   Azure, again feature-parity with all formats cesium maintains support for.
 - **Clipping:** cut a tileset with Blender objects, either as clip-polygons or as 3D
@@ -397,7 +397,9 @@ and the 3DGS-PLY-3DTiles converter write them) stream through the
 cesium-native backend like any other content: cesium-native decodes the
 SPZ payload and the direct-mesh path carries position, colour and opacity,
 rotation, scale and the spherical-harmonic coefficients into the tile.  On
-Blender 5.3 or newer the tile gets the shared 'OGC3D Splats' Geometry Nodes
+Blender 5.3 or newer, which adds native 3D Gaussian Splats
+([release notes](https://developer.blender.org/docs/release_notes/5.3/rendering/)),
+the tile gets the shared 'OGC3D Splats' Geometry Nodes
 group (Mesh to Points, Set Point Cloud Type: 3D Gaussian Splat) and is a
 native Gaussian splat point cloud, rendered by Workbench, EEVEE and Cycles
 with Blender's splat pipeline.  The attribute conventions follow Blender's

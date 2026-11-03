@@ -120,9 +120,10 @@ or keys; the files that do are named below and stay out of git.
 
 - **Feature metadata** (`tileset/feature_meta.py`, Metadata panel) is checked in a GUI
   session on 5.3 only: swissBUILDINGS3D, with an OSM overlay, and Cesium's point cloud
-  samples. Reopening a saved .blend is untested. `VEC3` table columns raise in the
-  binding, texture metadata isn't read, and `contents` (several per tile) loads nothing
-  on v0.59, so tiles of that kind give no metadata either.
+  samples. Texture metadata is checked on Cesium's three samples, 8-bit channels and UV
+  set 0 only. Reopening a saved .blend is untested. `VEC3` table columns raise in the
+  binding, and `contents` (several per tile) loads nothing on v0.59, so tiles of that
+  kind give no metadata either.
 - **Voxels** (`tileset/voxels.py`, see `docs/voxels.md`) are also checked on 5.3 only.
   Volumes are written on the main thread and aren't clipped. Blocks take no raster
   overlays: they have no overlay coordinates. Cylinder tiles are skipped.

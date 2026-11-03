@@ -35,6 +35,15 @@ def _on_meta_color(self, context):
         print(f"[3DTiles] metadata colors: {e}")
 
 
+def _on_voxel_project(self, context):
+    try:
+        from .. import voxel_lookup
+        voxel_lookup.sync_materials(context.scene)
+        voxel_lookup.update_settings(context.scene)
+    except Exception as e:                        # noqa: BLE001
+        print(f"[3DTiles] voxel colors: {e}")
+
+
 def _on_voxel_opacity(self, context):
     try:
         from .. import materials
@@ -45,10 +54,11 @@ def _on_voxel_opacity(self, context):
 
 def _on_meta_column(self, context):
     try:
-        from .. import materials
+        from .. import materials, voxel_lookup
         from ..io import refresh_feature_attributes
         refresh_feature_attributes(context.scene)
         materials.update_metadata_group(context.scene)
+        voxel_lookup.rebuild(context.scene)
     except Exception as e:                        # noqa: BLE001
         print(f"[3DTiles] metadata column: {e}")
 
@@ -573,8 +583,22 @@ class TilesSceneProps(PropertyGroup):
         items=(("FACES", "Blocks", "Opaque mesh of the cell faces next to empty space: crisp. "
                                    "Best for classes"),
                ("VOLUME", "Volume (see-through)", "OpenVDB Volume per box tile: soft, see-through. "
-                                                  "Best for continuous fields. No clipping")),
-        default="FACES",
+                                                  "Best for continuous fields. No clipping"),
+               ("PROJECT", "Color other tilesets", "Show nothing for the voxel tiles: every other "
+                                                   "tile's material reads the voxel under each pixel. "
+                                                   "Box tiles only")),
+        default="FACES", update=_on_voxel_project,
+    )
+    voxel_mix: FloatProperty(
+        name="Voxel color",
+        description="0 = the tile's own texture or vertex color, 1 = the voxel class only",
+        default=0.6, min=0.0, max=1.0, subtype="FACTOR", update=_on_voxel_project,
+    )
+    voxel_cut: BoolProperty(
+        name="Keep only inside voxels",
+        description="Pixels outside all voxels turn transparent: a boolean intersect with "
+                    "the voxel tileset, the geometry stays as it is",
+        default=False, update=_on_voxel_project,
     )
     voxel_exaggeration: FloatProperty(
         name="Voxel height scale",

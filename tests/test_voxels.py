@@ -190,3 +190,48 @@ class TestSubtreeRequests:
         assert asset_fixes.complete_subtree_json(whole) is whole
         other = b'{"root": {}}'
         assert asset_fixes.complete_subtree_json(other) is other
+
+
+class TestLookup:
+    def test_range_of_a_child_box(self):
+        root = voxels.box_matrix((0.0, 0.0, 0.0), np.diag((4.0, 4.0, 2.0)))
+        child = voxels.box_matrix((2.0, -2.0, 1.0), np.diag((2.0, 2.0, 1.0)))
+        lo, hi = voxels.box_range(root, child)
+        assert lo.tolist() == pytest.approx([0.0, -1.0, 0.0])
+        assert hi.tolist() == pytest.approx([1.0, 0.0, 1.0])
+
+    def test_range_of_a_mirrored_box(self):
+        axes = np.array([[4.0, 0, 0], [0, -4.0, 0], [0, 0, 2.0]])
+        root = voxels.box_matrix((0.0, 0.0, 0.0), axes)
+        child = voxels.box_matrix((0.0, -2.0, 0.0), axes / 2.0)
+        lo, hi = voxels.box_range(root, child)
+        assert lo[1] == pytest.approx(0.0) and hi[1] == pytest.approx(1.0)
+
+    def test_shape_keeps_proportions_within_budget(self):
+        nx, ny, nz = voxels.lookup_shape((82, 68, 31), (0.25, 0.25, 0.25))
+        assert nx * ny * nz <= 12_500_000
+        assert nx / ny == pytest.approx(82 / 68, abs=0.02)
+        assert voxels.atlas_layout((nx, ny, nz)) is not None
+
+    def test_a_long_grid_still_fits(self):
+        shape = voxels.lookup_shape((4000, 10, 10), (1.0, 1.0, 1.0))
+        cols, rows = voxels.atlas_layout(shape)
+        assert cols * shape[0] <= voxels.MAX_ATLAS and rows * shape[1] <= voxels.MAX_ATLAS
+
+    def test_paste_upsamples_and_replaces(self):
+        volume = np.ones((4, 4, 2), np.uint8)
+        voxels.paste(volume, np.array([[[7]], [[9]]], np.uint8), np.array((0.0, -1.0, -1.0)), np.array((1.0, 1.0, 1.0)))
+        assert volume[0, 0, 0] == 1 and volume[2, 0, 0] == 7 and volume[3, 3, 1] == 9
+
+    def test_atlas_places_slices(self):
+        volume = np.zeros((2, 3, 3), np.uint8)
+        volume[1, 2, 2] = 255
+        pixels = voxels.atlas_pixels(volume, 2, 2)
+        assert pixels.shape == (6, 4, 4)
+        # slice 2 is row 1, col 0; x=1, y=2 -> row 3 + 2, column 1
+        assert pixels[5, 1, 0] == 1.0 and pixels[..., 0].sum() == 1.0
+
+    def test_codes(self):
+        assert voxels.lookup_codes(np.array([0.0, 3.0, 8.0])).tolist() == [0, 3, 8]
+        out = voxels.lookup_codes(np.array([0.0, 1.0, 2.0]), (1.0, 2.0))
+        assert out[0] == 0 and out[1] == 1 and out[2] == 255

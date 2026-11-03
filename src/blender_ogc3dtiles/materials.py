@@ -560,16 +560,26 @@ def write_palette(scene):
 
 def ensure_metadata_group():
     ng = bpy.data.node_groups.get(META_GROUP)
-    if ng is not None:
+    if ng is not None and "Texel" in ng.interface.items_tree:
         return ng
-    ng = bpy.data.node_groups.new(META_GROUP, "ShaderNodeTree")
+    if ng is None:
+        ng = bpy.data.node_groups.new(META_GROUP, "ShaderNodeTree")
+    else:                    # a file from before texture metadata: same group, current nodes
+        ng.nodes.clear()
+        ng.interface.clear()
     ng.interface.new_socket("Color", in_out="INPUT", socket_type="NodeSocketColor")
+    ng.interface.new_socket("Texel", in_out="INPUT", socket_type="NodeSocketFloat")
     ng.interface.new_socket("Color", in_out="OUTPUT", socket_type="NodeSocketColor")
     nodes, links = ng.nodes, ng.links
     gin, gout = nodes.new("NodeGroupInput"), nodes.new("NodeGroupOutput")
     attr = nodes.new("ShaderNodeAttribute")
     attr.name = "Column"
     attr.attribute_type = "GEOMETRY"
+    # a tile has its column as an attribute or in a texture, the other one reads 0
+    column = nodes.new("ShaderNodeMath")
+    column.name = "Column Value"
+    links.new(attr.outputs["Fac"], column.inputs[0])
+    links.new(gin.outputs["Texel"], column.inputs[1])
     strength = _value_node(ng, "Strength", 1.0)
     numeric = _value_node(ng, "Is Number", 0.0)
     lo, hi = _value_node(ng, "Min", 0.0), _value_node(ng, "Max", 1.0)
@@ -580,7 +590,7 @@ def ensure_metadata_group():
     u.inputs[1].default_value = float(_PALETTE_SIZE)
     shift = nodes.new("ShaderNodeMath")
     shift.inputs[1].default_value = 0.5
-    links.new(attr.outputs["Fac"], shift.inputs[0])
+    links.new(column.outputs[0], shift.inputs[0])
     links.new(shift.outputs[0], u.inputs[0])
     uv = nodes.new("ShaderNodeCombineXYZ")
     uv.inputs[1].default_value = 0.5
@@ -594,7 +604,7 @@ def ensure_metadata_group():
 
     # numbers: min..max -> ramp, no data (0 below the range) stays uncolored
     span = nodes.new("ShaderNodeMapRange")
-    links.new(attr.outputs["Fac"], span.inputs["Value"])
+    links.new(column.outputs[0], span.inputs["Value"])
     links.new(lo.outputs[0], span.inputs["From Min"])
     links.new(hi.outputs[0], span.inputs["From Max"])
     ramp = nodes.new("ShaderNodeValToRGB")
@@ -606,7 +616,7 @@ def ensure_metadata_group():
     links.new(span.outputs[0], ramp.inputs["Fac"])
     above = nodes.new("ShaderNodeMath")
     above.operation = "GREATER_THAN"
-    links.new(attr.outputs["Fac"], above.inputs[0])
+    links.new(column.outputs[0], above.inputs[0])
     low = nodes.new("ShaderNodeMath")
     low.operation = "SUBTRACT"
     low.inputs[1].default_value = 1e-3
@@ -760,10 +770,16 @@ def _emission_target(mat):
     return socket if socket.links else None
 
 
+TEXEL_NODE = "OGC3D Metadata Texel"
+
+
 def _insert_metadata_node(nt, name, target):
     node = nt.nodes.new("ShaderNodeGroup")
     node.node_tree = ensure_metadata_group()
     node.name = node.label = name
+    texel = nt.nodes.get(TEXEL_NODE)
+    if texel is not None:
+        nt.links.new(texel.outputs["Color"], node.inputs["Texel"])
     node.location = (target.node.location.x - 220, target.node.location.y + 260)
     if target.links:
         nt.links.new(target.links[0].from_socket, node.inputs[0])
@@ -880,7 +896,11 @@ def draw_metadata_panel(layout, props):
     layout.prop(props, "voxel_display")
     if props.voxel_display == "VOLUME":
         layout.prop(props, "voxel_opacity")
-    layout.prop(props, "voxel_exaggeration")
+    if props.voxel_display == "PROJECT":
+        layout.prop(props, "voxel_mix")
+        layout.prop(props, "voxel_cut")
+    else:
+        layout.prop(props, "voxel_exaggeration")
     from .tileset.feature_meta import TILESET_METADATA
     if TILESET_METADATA.tileset:
         box = layout.column(align=True)

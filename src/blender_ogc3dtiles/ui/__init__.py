@@ -34,6 +34,7 @@ from ..io import (
     ensure_root_empty,
     http_get,
     build_tile_from_payload,
+    build_voxel_lookup,
     build_voxel_volume,
     import_glb_file,
     remove_tiles,
@@ -845,8 +846,8 @@ def _start_stream(scene, props, st, choice, cache) -> None:
                            cache_dir=cache.root if props.use_disk_cache else None,
                            direct_mesh=props.native_direct_mesh,
                            read_metadata=props.read_metadata,
-                           voxel_volume=props.voxel_display == "VOLUME",
-                           voxel_exaggeration=props.voxel_exaggeration,
+                           voxel_grids=props.voxel_display != "FACES",
+                           voxel_exaggeration=1.0 if props.voxel_display == "PROJECT" else props.voxel_exaggeration,
                            foveated_cone=props.foveated_cone,
                            foveated_relaxation=props.foveated_relaxation)
     # two entries can share a label (same share-link token, user-typed names):
@@ -1546,7 +1547,10 @@ def _build_native_tile(scene, props, st, rt) -> bool:
     t_imp = time.perf_counter()
     if rt.mesh_payload is not None:
         # build_tile_from_payload folds payload["offset"] into the matrix (float64)
-        builder = build_voxel_volume if rt.mesh_payload.get("voxel_grid") else build_tile_from_payload
+        if rt.mesh_payload.get("voxel_grid"):
+            builder = build_voxel_lookup if props.voxel_display == "PROJECT" else build_voxel_volume
+        else:
+            builder = build_tile_from_payload
         r = builder(rt.mesh_payload, rt.key, scene, root_obj, m.tolist(), hidden=True, coll=coll)
     else:
         r = import_glb_file(rt.glb_path, rt.key, scene, root_obj, m.tolist(), hidden=True, coll=coll)

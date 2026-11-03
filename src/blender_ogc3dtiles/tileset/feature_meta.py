@@ -17,6 +17,10 @@ Point clouds have one value per point instead, as property attributes or as a
 table without ids: millions of rows would not fit a Python table, so these numeric
 columns are read straight from the buffer and always become attributes.
 
+Textures hold them per pixel: a feature id texture points at table rows, a property
+texture holds the values. A tile keeps these grids and only the column in use becomes
+an image, sampled in its material (``texel_values``).
+
 Tileset, group, tile and content metadata live in tileset.json: ``note_tileset_json``
 collects them as the JSON comes in, by content URL.
 """
@@ -353,6 +357,121 @@ def vertex_columns(parts, n_total, registry=REGISTRY):
         coded = np.zeros(n_total, np.int32)
         coded[has] = codes[np.searchsorted(uniq, values[has])]
         out[attribute_name(name)] = coded
+    return out
+
+
+def _pixels(model, texture_index):
+    """(height, width, channels) bytes of a glTF texture, top row first, or None."""
+    if not 0 <= texture_index < len(model.textures):
+        return None
+    source = model.textures[texture_index].source
+    if source is None or not 0 <= source < len(model.images):
+        return None
+    asset = model.images[source].asset
+    asset = asset() if callable(asset) else asset
+    if asset is None or asset.bytes_per_channel != 1 or int(asset.compressed_pixel_format) != 0:
+        return None
+    data = np.asarray(asset.pixel_data, np.uint8)
+    size = asset.height * asset.width * asset.channels
+    return data[:size].reshape(asset.height, asset.width, asset.channels) if data.size >= size else None
+
+
+def _channel_value(pixels, channels):
+    """An integer per pixel from one or more channels, low byte first."""
+    value = np.zeros(pixels.shape[:2], np.int64)
+    for shift, channel in enumerate(channels):
+        if not 0 <= channel < pixels.shape[2]:
+            return None
+        value |= pixels[..., channel].astype(np.int64) << (8 * shift)
+    return value
+
+
+def _number_or_codes(name, values, is_integer, enum, registry):
+    """Per-pixel values as a float32 grid: class codes or numbers. 0 means no class."""
+    known = registry.get(name)
+    uniq = np.unique(values)
+    as_class = known.kind == "class" if known is not None else bool(enum) or (is_integer and len(uniq) <= _MAX_POINT_CLASSES)
+    if as_class:
+        codes = registry.codes_for(name, [enum.get(int(v), str(int(v))) for v in uniq])
+        return None if codes is None else codes[np.searchsorted(uniq, values)].astype(np.float32)
+    registry.note_range(name, values.astype(np.float64).ravel())
+    known = registry.get(name)
+    return values.astype(np.float32) if known is not None and known.kind == "number" else None
+
+
+def texel_features(cs, model, prim, registry=REGISTRY):
+    """What a primitive's textures hold, or None: {"columns": {name: grid},
+    "ids": feature id grid or None, "table": its table or None}. Texture coordinate 0
+    only, the one a tile's mesh keeps."""
+    ext = _structural(model)
+    columns, ids, table = {}, None, None
+    prim_ext = prim.ext_structural_metadata
+    prim_ext = prim_ext() if callable(prim_ext) else prim_ext
+    for i in (prim_ext.property_textures if prim_ext is not None and ext is not None else ()):
+        if not 0 <= i < len(ext.property_textures):
+            continue
+        spec = ext.property_textures[i]
+        for name, prop in spec.properties.items():
+            cls = _class_property(ext, spec.class_property, name)
+            pixels = _pixels(model, prop.index) if prop.tex_coord == 0 else None
+            if pixels is None or cls is None or str(cls.type).rsplit(".", 1)[-1].upper() != "SCALAR":
+                continue
+            value = _channel_value(pixels, list(prop.channels))
+            if value is None:
+                continue
+            numeric = value.astype(np.float64)
+            if cls.normalized:
+                numeric = numeric / float((1 << (8 * len(prop.channels))) - 1)
+            grid = _number_or_codes(name, numeric, not cls.normalized, _enum_names(ext, cls), registry)
+            if grid is not None:
+                columns[name] = grid
+    features = prim.ext_mesh_features
+    features = features() if callable(features) else features
+    for fid in (features.feature_ids if features is not None else ()):
+        texture = fid.texture
+        if texture is None or ids is not None or texture.tex_coord != 0:
+            continue
+        pixels = _pixels(model, texture.index)
+        value = _channel_value(pixels, list(texture.channels)) if pixels is not None else None
+        if value is None:
+            continue
+        if fid.null_feature_id is not None:
+            value = np.where(value == fid.null_feature_id, -1, value)
+        if fid.property_table is None or fid.property_table < 0:
+            name = fid.label or "feature id"
+            valid = value[value >= 0]
+            uniq = np.unique(valid)
+            codes = registry.codes_for(name, [str(int(v)) for v in uniq])
+            if codes is not None and len(uniq):
+                grid = np.zeros(value.shape, np.float32)
+                grid[value >= 0] = codes[np.searchsorted(uniq, valid)]
+                columns[name] = grid
+            continue
+        cells = read_table(cs, model, fid.property_table)
+        if cells:
+            names = sorted(cells)
+            rows = [[cells[n][i] for n in names] for i in range(len(cells[names[0]]))]
+            for n in names:
+                column_values(n, cells[n], registry)
+            ids, table = value.astype(np.int32), {"columns": names, "rows": rows}
+    return {"columns": columns, "ids": ids, "table": table} if columns or ids is not None else None
+
+
+def texel_values(texel, name, registry=REGISTRY):
+    """Float32 grid of a column in a primitive's textures, None when it has none."""
+    if name in texel["columns"]:
+        return texel["columns"][name]
+    table = texel.get("table")
+    if table is None or name not in table["columns"]:
+        return None
+    i = table["columns"].index(name)
+    per_row = column_values(name, [r[i] for r in table["rows"]], registry)
+    if per_row is None:
+        return None
+    ids = texel["ids"]
+    has = (ids >= 0) & (ids < len(per_row))
+    out = np.zeros(ids.shape, np.float32)
+    out[has] = per_row[ids[has]]
     return out
 
 

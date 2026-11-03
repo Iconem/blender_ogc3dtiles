@@ -356,6 +356,7 @@ def extract_mesh_payload(cs, model, read_metadata=False):
     base = 0
     feature_parts = []        # (vertex count, feature ids or None) per primitive
     column_parts = []         # (vertex count, per-vertex columns) per primitive
+    texels = {}               # material slot -> what the primitive's textures hold
     for prim, T in prims:
         mode = prim.mode if prim.mode is not None else _MODE_TRIANGLES
         pos = _as_array(cs.gltf.get_position_accessor_view(model, prim), np.float64)
@@ -452,6 +453,10 @@ def extract_mesh_payload(cs, model, read_metadata=False):
 
         mi = prim.material if prim.material is not None and prim.material >= 0 else -1
         slot = mats_used.setdefault(mi, len(mats_used))
+        if read_metadata and slot not in texels:
+            texel = feature_meta.texel_features(cs, model, prim)
+            if texel is not None:
+                texels[slot] = texel
         face_mat.append(np.full(len(tris), slot, np.int32))
         base += n
 
@@ -510,6 +515,7 @@ def extract_mesh_payload(cs, model, read_metadata=False):
         "images": images,          # image index → payload (or None)
         "features": feature_meta.combine(cs, model, feature_parts, len(V)) if read_metadata else None,
         "vertex_columns": feature_meta.vertex_columns(column_parts, len(V)) if read_metadata else None,
+        "texels": texels or None,
     })
 
 

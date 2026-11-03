@@ -444,8 +444,13 @@ own values show in the Metadata panel; the others, merged per tile, are in the
 With raster overlays, the metadata colors stay on top: lower **Strength** to see the map
 through them.
 
-Not read yet: vector columns (the binding can't convert them on v0.59), feature ids and
-properties stored in textures, and tile metadata stored in implicit subtrees.
+**Textures** can hold metadata per pixel: feature id textures point at table rows, and
+property textures hold the values directly. The column in use becomes one image per tile,
+sampled in its material with Closest interpolation, on the mesh's first UV set. Only 8-bit
+channels are read.
+
+Not read yet: vector columns (the binding can't convert them on v0.59), and tile metadata
+stored in implicit subtrees.
 
 ### Voxels
 
@@ -464,11 +469,16 @@ The **Voxels** setting (Metadata panel, before Start) picks how they show:
   because Blender has no nearest sampling for Volumes, so better for continuous fields.
   Box tiles only, no clipping.
 
+- **Color other tilesets**: nothing is drawn for the voxel tiles. Every other tile's
+  material reads the voxel under each pixel from its world position, so a scan keeps its
+  geometry and its texture or vertex color, and **Voxel color** mixes in the class. **Keep
+  only inside voxels** makes the pixels outside transparent: a boolean intersect that
+  doesn't touch the geometry. Box tiles only.
+
 **Voxel height scale** stretches thin datasets vertically (GeoTOP is 62 m thick over
 33 km); stretched tiles no longer line up with other data. Both settings apply at the
 next Start. Box and region tiles work; cylinder tiles are skipped. See
-[docs/voxels.md](docs/voxels.md) for the measurements, and for how a voxel grid could
-color a mesh.
+[docs/voxels.md](docs/voxels.md) for the measurements.
 
 ### Editing tile geometry
 
@@ -939,9 +949,9 @@ the converters compiled into cesium-native.
 - [x] Feature tables → vertex attributes and per-class colors
 - [x] Per-point metadata on point clouds
 - [x] Tileset, group, tile and content metadata from `tileset.json`
-- [ ] Metadata stored in textures (feature ids and property textures)
+- [x] Metadata stored in textures (feature ids and property textures)
 - [x] Voxel tilesets: box and region tiles as blocks, box tiles as OpenVDB Volumes ([notes](docs/voxels.md))
-- [ ] Voxel colors projected on another tileset's meshes (one-tile prototype)
+- [x] Voxel classes colored onto another tileset, with a boolean intersect
 
 ## License
 

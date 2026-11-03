@@ -167,7 +167,7 @@ class _GlbPreparer:
                 if shape == "cylinder":
                     print("[3DTiles/native] cylinder voxel tiles are not supported, skipped")
                     return None
-                payload = voxels.tile_payload(cs, model, raw, shape == "box", self._owner.voxel_volume)
+                payload = voxels.tile_payload(cs, model, raw, shape == "box", self._owner.voxel_grids)
                 if payload is not None:
                     return ReadyTile(key, "", [], np.eye(4).tolist(), 0, None, up_axis, payload) if payload else None
             if self._owner.direct_mesh:
@@ -503,10 +503,10 @@ class CesiumNativeBackend:
     def __init__(self, max_sse=16.0, cache_dir=None,
                  max_cached_mb=512, max_simultaneous_loads=20,
                  max_dist=float("inf"), detail_falloff=600.0, direct_mesh=True, read_metadata=False,
-                 voxel_volume=False, voxel_exaggeration=1.0, **_ignored):
+                 voxel_grids=False, voxel_exaggeration=1.0, **_ignored):
         self._max_sse = max_sse
         self.read_metadata = bool(read_metadata)
-        self.voxel_volume = bool(voxel_volume)  # keep the whole grid of voxel tiles for a Volume
+        self.voxel_grids = bool(voxel_grids)    # keep the whole grid of voxel tiles (Volume, lookup)
         self.voxel_exaggeration = float(voxel_exaggeration)
         self.direct_mesh = bool(direct_mesh)   # numpy -> bpy mesh instead of GLB re-import
         self.on_main_thread_ready = None        # UI callback: ReadyTile -> bool (built now?)
@@ -770,6 +770,11 @@ class CesiumNativeBackend:
                                           region.minimum_height, region.maximum_height), stretch=stretch)
             return True
         obb = bv.as_oriented_bounding_box()
+        root = self._tileset.root_tile
+        if root.child_count == 1 and root.geometric_error == float("inf"):
+            root = root.children[0]
+        whole = root.bounding_volume.as_oriented_bounding_box()
+        payload["voxel_root"] = voxels.box_matrix(whole.center, whole.half_axes)
         voxels.place(payload, box=voxels.box_matrix(obb.center, obb.half_axes), stretch=stretch)
         return True
 

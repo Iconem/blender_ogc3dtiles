@@ -1,8 +1,7 @@
 # Voxel tilesets in Blender: what was measured
 
-Status: blocks and Volumes are in the add-on (`tileset/voxels.py`,
-`tileset/asset_fixes.py`, `io.build_voxel_volume`). Coloring another tileset's mesh from
-a voxel grid is still a prototype. Measured on 2026-11-03 on Blender 5.3 beta and the
+Status: blocks, Volumes and coloring other tilesets are in the add-on (`tileset/voxels.py`,
+`tileset/asset_fixes.py`, `io.build_voxel_volume`, `voxel_lookup.py`). Measured on 2026-11-03 on Blender 5.3 beta and the
 binding's cesium-native v0.59.
 
 ## Test data
@@ -21,8 +20,14 @@ binding's cesium-native v0.59.
   `voxeldam` (loaded here, 10 × 10 × 10) and `voxelgorinchem`, in unit boxes.
 - `Jastman/shizuoka-demo-cesium-BD` has no voxel tileset yet: its URL is empty and it
   draws an illustrative fallback. It does list open LiDAR data.
+- [swissgeol](https://viewer.swissgeol.ch): its voxel layers are Cesium ion assets, listed in
+  [`layers/special/voxels.json5`](https://github.com/swisstopo/swissgeol-viewer-suite/blob/develop/layers/special/voxels.json5).
+  The API answers 401 without a token, so they need swisstopo's permission. Its open GOCAD
+  download of the GMT15 temperature model loads when written as one voxel tile: 317 × 70 ×
+  107 cells, 1 km × 100 m, on a grid rotated 30 degrees in LV95, 10 to 300 °C. A good
+  continuous field, on the ramp as blocks and as a Volume.
 - Not tried: [felipecarrillo100/vox3dt](https://github.com/felipecarrillo100/vox3dt)
-  (LAS to voxel tiles), [viewer.swissgeol.ch](https://viewer.swissgeol.ch) (Swiss geology).
+  (LAS to voxel tiles).
 
 ## Findings
 
@@ -77,10 +82,20 @@ latitude, which a stretch of 80 turns into about 4 km of slant.
 `Grid.copyFromArray` needs a contiguous array: a transposed view gives stripes with the
 period of the leaf nodes. Use `np.ascontiguousarray`.
 
-**Coloring a mesh from a voxel tileset.** A shader can look up the voxel under each pixel:
-the voxel grid as slices in one 2D atlas image (882 × 735 built in 24 ms for the root),
-sampled with Closest interpolation from the surface position. It works in EEVEE and
-Cycles with blocky borders. The atlas alpha says whether a voxel exists, so it also
-drives a Mix Shader to Transparent: that is the boolean intersect. Tested on a sphere and
-a plane, with one tile. Several tiles need one atlas per tile, or one atlas rebuilt from
-the tiles in use.
+**Coloring a tileset from a voxel tileset.** `voxel_lookup.py` pastes the tiles, coarse
+first, into one grid over the root box, kept as slices of one 2D atlas: 338 × 282 × 126
+cells in a 4056 × 3102 image for GeoTOP, a budget of 12 M cells. A shared shader group goes
+from world position to the root box's axes to the atlas, with Closest interpolation, to
+the shared palette. The byte is 0 where no voxel exists, which drives the Mix Shader to
+Transparent: the boolean intersect. New tiles and palette edits only rewrite pixels.
+
+Checked in Cycles against the Python grid on a plane through the model: 99.97 % of 360,000
+pixels have the expected color; the rest sit on borders. Colors, cut and mix also shown on
+Google Photorealistic 3D Tiles in EEVEE. Points use the same group, not tested. The atlas
+has to be gray, because a shader turns color into a number by luminance, and packed,
+because Cycles doesn't see the pixels of a generated image otherwise.
+
+Limits: the root box is the only region, so the cell size is the model's size over about
+230, and tiles that go out of view stay in the grid. World position means a moved tileset
+root needs a rebuild. A scan on top of the model mostly falls outside it: on GeoTOP only
+low ground and canals are inside.

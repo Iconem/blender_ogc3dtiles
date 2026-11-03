@@ -643,9 +643,60 @@ def _add_feature_attributes(me, features, scene):
                             metadata_columns(scene.ogc3dtiles))
 
 
+_texels = {}      # material name -> what its tile's textures hold
+
+
+def _set_texel_image(mat, texel, column):
+    """The column as a per-pixel image in the material, sampled by the tile's UVs.
+    Gray: a shader turns color into a number by luminance."""
+    import numpy as np
+    from ..materials import TEXEL_NODE
+    from ..tileset.feature_meta import texel_values
+    grid = texel_values(texel, column) if column else None
+    node = mat.node_tree.nodes.get(TEXEL_NODE)
+    if node is None:
+        node = mat.node_tree.nodes.new("ShaderNodeTexImage")
+        node.name = node.label = TEXEL_NODE
+        node.interpolation = "Closest"
+        node.extension = "EXTEND"
+    old = node.image
+    if grid is None:
+        node.image = None
+    else:
+        height, width = grid.shape
+        img = bpy.data.images.new(f"{TEXEL_NODE} {mat.name}"[:60], width, height, alpha=False, float_buffer=True)
+        img.colorspace_settings.name = "Non-Color"
+        rgba = np.ones((height, width, 4), np.float32)
+        rgba[..., :3] = grid[::-1, :, None]    # the first row is the image's top
+        img.pixels.foreach_set(rgba.ravel())
+        img.update()
+        img.pack()
+        node.image = img
+    if old is not None:
+        bpy.data.images.remove(old)
+    return node
+
+
+def _add_texels(me, payload, scene):
+    from ..materials import META_NODE
+    props = scene.ogc3dtiles
+    for slot, texel in (payload.get("texels") or {}).items():
+        if slot < len(me.materials) and me.materials[slot] is not None:
+            mat = me.materials[slot]
+            _texels[mat.name] = texel
+            _set_texel_image(mat, texel, props.meta_column)
+            group = mat.node_tree.nodes.get(META_NODE)
+            if group is not None:
+                mat.node_tree.links.new(mat.node_tree.nodes["OGC3D Metadata Texel"].outputs["Color"], group.inputs["Texel"])
+
+
 def refresh_feature_attributes(scene):
     """Give the tiles already loaded the columns now in use."""
     import numpy as np
+    for name in [n for n in _texels if n not in bpy.data.materials]:
+        del _texels[name]
+    for name, texel in _texels.items():
+        _set_texel_image(bpy.data.materials[name], texel, scene.ogc3dtiles.meta_column)
     from ..materials import metadata_columns
     from ..tileset.feature_meta import FEATURE_ID_ATTR, attribute_name
     columns = metadata_columns(scene.ogc3dtiles)
@@ -676,6 +727,32 @@ def _voxel_colors_on(scene):
 def _tileset_metadata_import():
     from ..tileset.feature_meta import TILESET_METADATA
     return TILESET_METADATA
+
+
+def build_voxel_lookup(payload: dict, key: str, scene: bpy.types.Scene,
+                       root: bpy.types.Object, matrix_rows, hidden: bool = True,
+                       coll: Optional[bpy.types.Collection] = None) -> Optional[Tuple[str, List[str]]]:
+    """A voxel tile that colors other tilesets: an Empty, its grid goes in the lookup.
+    Blocks for what a lookup can't hold: regions."""
+    from mathutils import Matrix
+
+    from .. import voxel_lookup
+    from ..materials import sync_metadata
+    if payload.get("voxel_grid") is None or payload.get("voxel_matrix") is None:
+        return build_tile_from_payload(payload, key, scene, root, matrix_rows, hidden, coll)
+    if coll is None:
+        coll = root.users_collection[0] if root.users_collection else ensure_collection(scene)
+    _voxel_colors_on(scene)
+    sync_metadata(scene)
+    voxel_lookup.add_tile(payload, key, matrix_rows, scene)
+    obj = bpy.data.objects.new(_short_name(key), None)
+    obj["tile_url"] = key
+    coll.objects.link(obj)
+    obj.parent = root
+    obj.matrix_parent_inverse = Matrix.Identity(4)
+    obj.hide_viewport = hidden
+    obj.hide_render = hidden
+    return obj.name, []
 
 
 def build_voxel_volume(payload: dict, key: str, scene: bpy.types.Scene,
@@ -829,6 +906,8 @@ def build_tile_from_payload(payload: dict, key: str, scene: bpy.types.Scene,
         me.materials.append(mat)
         data_names.append(mat.name)
 
+    if payload.get("texels"):
+        _add_texels(me, payload, scene)
     obj = bpy.data.objects.new(_short_name(key), me)
     obj["tile_url"] = key
     if payload.get("features"):
@@ -1477,6 +1556,10 @@ def _new_tile_hooks(scene, objs, mats):
         if getattr(props, "meta_color", False):
             for m in mats:
                 apply_metadata(m)
+    if getattr(props, "voxel_display", "") == "PROJECT":
+        from ..voxel_lookup import apply_material
+        for m in mats:
+            apply_material(m)
     from ..materials import apply_backface
     for m in mats:
         apply_backface(m, getattr(props, "backface_mode", "DOUBLE"))

@@ -186,7 +186,7 @@ def make_backend(choice, max_sse: float = 16.0, max_tiles: int = 200,
                                    max_dist=max_dist, detail_falloff=detail_falloff,
                                    direct_mesh=kw.get("direct_mesh", True),
                                    read_metadata=kw.get("read_metadata", False),
-                                   voxel_volume=kw.get("voxel_volume", False),
+                                   voxel_grids=kw.get("voxel_grids", False),
                                    voxel_exaggeration=kw.get("voxel_exaggeration", 1.0))
     print(f"[3DTiles] Backend: Pure Python (cesium-native unavailable: {msg})")
     return PythonBackend(max_sse=max_sse, max_tiles=max_tiles,

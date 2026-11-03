@@ -227,3 +227,38 @@ class TestStableCodes:
         reg.codes_for("c", ["0", "roof", "1", "wall"])
         codes = [c for _t, c in reg.classes("c")]
         assert len(set(codes)) == 4 and min(codes) == 1
+
+
+class TestTexels:
+    def test_channels_make_one_integer(self):
+        pixels = np.array([[[1, 2, 0, 255]]], np.uint8)
+        assert fm._channel_value(pixels, [0]).tolist() == [[1]]
+        assert fm._channel_value(pixels, [0, 1]).tolist() == [[1 + (2 << 8)]]
+        assert fm._channel_value(pixels, [7]) is None
+
+    def test_few_whole_numbers_are_classes(self):
+        reg = fm.Registry()
+        grid = fm._number_or_codes("c", np.array([[0.0, 7.0]]), True, {}, reg)
+        assert reg.get("c").kind == "class"
+        assert grid.tolist() == [[1.0, 8.0]]
+
+    def test_enum_names(self):
+        reg = fm.Registry()
+        fm._number_or_codes("c", np.array([[1.0]]), True, {1: "roof"}, reg)
+        assert [t for t, _c in reg.classes("c")] == ["roof"]
+
+    def test_normalized_values_are_numbers(self):
+        reg = fm.Registry()
+        grid = fm._number_or_codes("n", np.array([[0.25, 0.5]]), False, {}, reg)
+        assert reg.get("n").kind == "number" and grid.tolist() == [[0.25, 0.5]]
+
+    def test_values_from_ids_and_a_table(self):
+        reg = fm.Registry()
+        texel = {"columns": {}, "ids": np.array([[0, 1], [-1, 9]], np.int32),
+                 "table": {"columns": ["h"], "rows": [[3.5], [7.5]]}}
+        assert fm.texel_values(texel, "h", reg).tolist() == [[3.5, 7.5], [0.0, 0.0]]
+        assert fm.texel_values(texel, "other", reg) is None
+
+    def test_values_from_a_property_texture(self):
+        grid = np.array([[1.0]], np.float32)
+        assert fm.texel_values({"columns": {"t": grid}, "ids": None, "table": None}, "t") is grid

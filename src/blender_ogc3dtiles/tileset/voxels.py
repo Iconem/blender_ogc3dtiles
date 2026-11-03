@@ -28,6 +28,8 @@ _MAX_CLASSES_IN_TILE = 32
 _MAX_NUMBER_ROWS = 1024
 _QUANTIZE_LEVELS = 256
 _QUAD_TRIS = np.array([[0, 1, 2], [0, 2, 3]], np.int32)
+MAX_ATLAS = 4096
+_LOOKUP_BUDGET = 12_000_000
 _WGS84_A = 6378137.0
 _WGS84_E2 = 6.69437999014e-3
 
@@ -302,7 +304,7 @@ def exaggeration_matrix(center, factor):
     return m
 
 
-def _grid_to_box(payload, box):
+def grid_to_box(payload, box):
     """Diagonal sign matrix from the grid's axes to the box: flips y on a Y-up grid
     unless the box is mirrored, see the module docstring."""
     flip = payload.get("voxel_y_up") and np.linalg.det(box[:3, :3]) > 0
@@ -315,7 +317,7 @@ def place(payload, box=None, region=None, stretch=None):
     metres. ``stretch``: matrix applied last. Returns the payload."""
     unit = payload.pop("unit_verts")
     if box is not None:
-        linear = box[:3, :3] @ _grid_to_box(payload, box)
+        linear = box[:3, :3] @ grid_to_box(payload, box)
         points = unit @ linear.T + box[:3, 3]
         if np.linalg.det(linear) < 0:          # faces stay wound outward
             payload["faces"] = payload["faces"][:, [0, 2, 1]]
@@ -333,6 +335,79 @@ def place(payload, box=None, region=None, stretch=None):
     return finalize_payload(payload)
 
 
+def box_range(root, box):
+    """(lo, hi) of a tile's box along the root box's axes, in -1..1."""
+    inverse = np.linalg.inv(root)
+    center = inverse[:3, :3] @ box[:3, 3] + inverse[:3, 3]
+    half = np.abs(inverse[:3, :3] @ box[:3, :3]).sum(axis=1)
+    return center - half, center + half
+
+
+def lookup_shape(tile_shape, fraction, budget=_LOOKUP_BUDGET):
+    """Cells of the lookup grid over the root box: the proportions of the data,
+    as fine as ``budget`` allows and as one atlas holds. ``fraction``: the share of
+    the root box that a tile of ``tile_shape`` covers, per axis."""
+    whole = np.asarray(tile_shape, np.float64) / np.maximum(np.asarray(fraction, np.float64), 1e-9)
+    scale = np.cbrt(budget / np.prod(whole))
+    while True:
+        shape = tuple(int(n) for n in np.maximum(np.round(whole * scale), 1))
+        if max(shape[0], shape[1]) <= MAX_ATLAS and atlas_layout(shape, strict=False) is not None:
+            return shape
+        scale *= 0.95
+
+
+def atlas_layout(shape, max_size=MAX_ATLAS, strict=True):
+    """(columns, rows) of slices in the atlas image."""
+    nx, ny, nz = shape
+    cols = max(int(max_size // nx), 1)
+    rows = int(np.ceil(nz / cols))
+    if rows * ny > max_size:
+        if strict:
+            raise ValueError(f"{shape} does not fit an atlas of {max_size}")
+        return None
+    return cols, rows
+
+
+def lookup_codes(values, span=None):
+    """A tile's grid as atlas bytes, 0 for no voxel. ``span``: (lo, hi) of a number
+    column, mapped to 1..255; classes are already codes."""
+    if span is None:
+        return np.clip(np.rint(values), 0, 255).astype(np.uint8)
+    lo, hi = span
+    codes = np.rint((np.asarray(values, np.float64) - lo) / (hi - lo) * 254.0 + 1.0)
+    return np.where(values != 0, np.clip(codes, 1, 255), 0).astype(np.uint8)
+
+
+def paste(volume, codes, lo, hi):
+    """Put a tile's bytes in the lookup grid, nearest cell, over what was there."""
+    picks, slices = [], []
+    for axis, n in enumerate(volume.shape):
+        start = int(round((lo[axis] + 1.0) / 2.0 * n))
+        stop = max(int(round((hi[axis] + 1.0) / 2.0 * n)), start + 1)
+        start, stop = max(start, 0), min(stop, n)
+        slices.append(slice(start, stop))
+        if stop <= start:
+            return
+        centres = (np.arange(start, stop) + 0.5) / n * 2.0 - 1.0
+        at = ((centres - lo[axis]) / (hi[axis] - lo[axis]) * codes.shape[axis]).astype(int)
+        picks.append(np.clip(at, 0, codes.shape[axis] - 1))
+    volume[tuple(slices)] = codes[np.ix_(*picks)]
+
+
+def atlas_pixels(volume, cols, rows):
+    """(height, width, 4) float32 RGBA of the grid's z slices. Gray: a shader turns
+    color into a number by luminance, red alone would read as a fifth of the byte."""
+    nx, ny, nz = volume.shape
+    gray = np.zeros((rows * ny, cols * nx), np.float32)
+    for k in range(nz):
+        row, col = divmod(k, cols)
+        gray[row * ny:(row + 1) * ny, col * nx:(col + 1) * nx] = volume[:, :, k].T / 255.0
+    rgba = np.zeros(gray.shape + (4,), np.float32)
+    rgba[..., :3] = gray[..., None]
+    rgba[..., 3] = 1.0
+    return rgba
+
+
 def volume_matrix(payload):
     """Unit-index VDB cells → ECEF, or None when the tile can't be a Volume.
     Blender puts a VDB cell's centre on its integer index."""
@@ -344,6 +419,6 @@ def volume_matrix(payload):
     index[:3, :3] = np.diag(cell)
     index[:3, 3] = cell / 2.0 - 1.0
     signs = np.eye(4)
-    signs[:3, :3] = _grid_to_box(payload, box)
+    signs[:3, :3] = grid_to_box(payload, box)
     stretch = payload.get("voxel_stretch")
     return (stretch if stretch is not None else np.eye(4)) @ box @ signs @ index

@@ -127,3 +127,103 @@ def test_no_features_gives_nothing():
 
 def test_attribute_names_are_sanitised():
     assert fm.attribute_name("Roof Height (m)") == "meta_Roof_Height_m_"
+
+
+class TestVertexColumns:
+    def _reg(self):
+        return fm.Registry()
+
+    def test_classification_is_a_class(self):
+        reg = self._reg()
+        arr = np.array([2, 2, 5], np.uint8)
+        out = fm.vertex_columns([(3, {"Classification": (arr, {})})], 3, reg)
+        codes = out["meta_Classification"]
+        assert codes.dtype.kind == "i" and codes[0] == codes[1] != codes[2]
+        assert [t for t, _c in reg.classes("Classification")] == ["2", "5"]
+
+    def test_enum_names_win(self):
+        reg = self._reg()
+        arr = np.array([0.0, 1.0], np.float32)
+        fm.vertex_columns([(2, {"kind": (arr, {0: "Buildings", 1: "Trees"})})], 2, reg)
+        assert [t for t, _c in reg.classes("kind")] == ["Buildings", "Trees"]
+
+    def test_intensity_is_a_number(self):
+        reg = self._reg()
+        arr = np.array([0.25, 0.75], np.float32)
+        out = fm.vertex_columns([(2, {"intensity": (arr, {})})], 2, reg)
+        assert out["meta_intensity"].tolist() == [0.25, 0.75]
+        assert (reg.get("intensity").lo, reg.get("intensity").hi) == (0.25, 0.75)
+
+    def test_many_whole_numbers_are_numbers(self):
+        reg = self._reg()
+        arr = np.arange(100, dtype=np.uint16)
+        fm.vertex_columns([(100, {"intensity": (arr, {})})], 100, reg)
+        assert reg.get("intensity").kind == "number"
+
+    def test_primitive_without_the_column_gets_zero(self):
+        reg = self._reg()
+        arr = np.array([3.5], np.float32)
+        out = fm.vertex_columns([(2, {}), (1, {"h": (arr, {})})], 3, reg)
+        assert out["meta_h"].tolist() == [0.0, 0.0, 3.5]
+
+    def test_first_tile_decides(self):
+        reg = self._reg()
+        fm.vertex_columns([(2, {"c": (np.array([1, 2], np.uint8), {})})], 2, reg)
+        out = fm.vertex_columns([(1, {"c": (np.array([7], np.uint8), {})})], 1, reg)
+        assert out["meta_c"].dtype.kind == "i"
+
+
+class TestTilesetMetadata:
+    DOC = {
+        "metadata": {"class": "t", "properties": {"author": "Cesium", "tileCount": 3}},
+        "groups": [{"class": "g", "properties": {"layer": "buildings"}}],
+        "root": {
+            "metadata": {"class": "x", "properties": {"district": "A"}},
+            "content": {"uri": "a.glb", "group": 0},
+            "children": [
+                {"metadata": {"properties": {"population": 9}},
+                 "content": {"uri": "sub/b.glb", "metadata": {"properties": {"triangles": 12}}}},
+                {"contents": [{"uri": "c.glb"}, {"uri": "d.glb", "group": 0}]},
+            ],
+        },
+    }
+
+    def _noted(self):
+        meta = fm.TilesetMetadata()
+        meta.note("https://x/y/tileset.json", self.DOC)
+        return meta
+
+    def test_tileset_level(self):
+        assert self._noted().tileset == {"author": "Cesium", "tileCount": 3}
+
+    def test_group_and_tile(self):
+        assert self._noted().by_content["https://x/y/a.glb"] == {"district": "A", "layer": "buildings"}
+
+    def test_child_inherits_and_content_adds(self):
+        assert self._noted().by_content["https://x/y/sub/b.glb"] == {
+            "district": "A", "population": 9, "triangles": 12}
+
+    def test_multiple_contents(self):
+        got = self._noted().by_content
+        assert got["https://x/y/c.glb"] == {"district": "A"}
+        assert got["https://x/y/d.glb"] == {"district": "A", "layer": "buildings"}
+
+    def test_note_ignores_other_json(self):
+        fm.TILESET_METADATA.clear()
+        fm.note_tileset_json("https://x/s.json", b'{"tileAvailability": {}}')
+        fm.note_tileset_json("https://x/t.json", b'{"metadata": 1, "root": broken')
+        assert fm.TILESET_METADATA.tileset == {}
+
+
+class TestStableCodes:
+    def test_whole_numbers_keep_their_code_in_any_order(self):
+        a, b = fm.Registry(), fm.Registry()
+        a.codes_for("c", ["7", "0"])
+        b.codes_for("c", ["0", "3", "7"])
+        assert dict(a.classes("c"))["7"] == dict(b.classes("c"))["7"] == 8
+
+    def test_text_never_takes_a_used_code(self):
+        reg = fm.Registry()
+        reg.codes_for("c", ["0", "roof", "1", "wall"])
+        codes = [c for _t, c in reg.classes("c")]
+        assert len(set(codes)) == 4 and min(codes) == 1

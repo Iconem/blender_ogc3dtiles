@@ -142,11 +142,12 @@ def _enum_int(v):
         return None
 
 
-def _raw_accessor(model, ai):
+def _raw_accessor(model, ai, keep_integers=False):
     """Accessor data straight from the buffer as float32 (N, ncomp), honouring
     the component type, byte stride and KHR normalisation.  The binding's
     typed AccessorViews are float-only, so ubyte/ushort colours (the usual
-    COLOR_0 encoding of point clouds) must be decoded here."""
+    COLOR_0 encoding of point clouds) must be decoded here.  ``keep_integers``:
+    unsigned values stay as they are unless the accessor says normalized."""
     acc = model.accessors[ai]
     ct = _enum_int(acc.component_type)
     dtype = _CT_DTYPE.get(ct)
@@ -167,7 +168,7 @@ def _raw_accessor(model, ai):
         rows = np.lib.stride_tricks.as_strided(buf[start:], shape=(n, item), strides=(stride, 1))
         arr = np.ascontiguousarray(rows).view(dtype).reshape(n, ncomp)
     out = arr.astype(np.float32)
-    if dtype is not np.float32 and (acc.normalized or ct in (5121, 5123)):
+    if dtype is not np.float32 and (acc.normalized or (ct in (5121, 5123) and not keep_integers)):
         out = out / float(np.iinfo(dtype).max)
     return out
 
@@ -354,6 +355,7 @@ def extract_mesh_payload(cs, model, read_metadata=False):
     mats_used = {}
     base = 0
     feature_parts = []        # (vertex count, feature ids or None) per primitive
+    column_parts = []         # (vertex count, per-vertex columns) per primitive
     for prim, T in prims:
         mode = prim.mode if prim.mode is not None else _MODE_TRIANGLES
         pos = _as_array(cs.gltf.get_position_accessor_view(model, prim), np.float64)
@@ -366,6 +368,7 @@ def extract_mesh_payload(cs, model, read_metadata=False):
         verts.append(p.astype(np.float32))
         if read_metadata:
             feature_parts.append((n, feature_meta.primitive_features(cs, model, prim, n)))
+            column_parts.append((n, feature_meta.point_columns(model, prim, n, _raw_accessor)))
 
         nrm = _as_array(cs.gltf.get_normal_accessor_view(model, prim), np.float64)
         if nrm is not None and len(nrm) == n:
@@ -506,6 +509,7 @@ def extract_mesh_payload(cs, model, read_metadata=False):
         "materials": materials,
         "images": images,          # image index → payload (or None)
         "features": feature_meta.combine(cs, model, feature_parts, len(V)) if read_metadata else None,
+        "vertex_columns": feature_meta.vertex_columns(column_parts, len(V)) if read_metadata else None,
     })
 
 

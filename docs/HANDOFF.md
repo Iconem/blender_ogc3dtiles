@@ -119,10 +119,17 @@ or keys; the files that do are named below and stay out of git.
 ### Known limitations and open threads
 
 - **Feature metadata** (`tileset/feature_meta.py`, Metadata panel) is checked in a GUI
-  session on 5.3 only, with swissBUILDINGS3D. Point clouds, raster overlays on top,
-  and reopening a saved .blend are untested. `VEC3` table columns raise in the binding.
-- **Voxels:** prototype only, see `docs/voxels.md`. `data:` URIs in subtree JSON fail on
-  v0.59, which blocks GeoTOP without a local copy of its subtree.
+  session on 5.3 only: swissBUILDINGS3D, with an OSM overlay, and Cesium's point cloud
+  samples. Reopening a saved .blend is untested. `VEC3` table columns raise in the
+  binding, texture metadata isn't read, and `contents` (several per tile) loads nothing
+  on v0.59, so tiles of that kind give no metadata either.
+- **Voxels** (`tileset/voxels.py`, see `docs/voxels.md`) are also checked on 5.3 only.
+  Volumes are written on the main thread and aren't clipped. Blocks take no raster
+  overlays: they have no overlay coordinates. Cylinder tiles are skipped.
+- **Upstream candidates, nothing posted:** `data:` URIs and a missing `byteLength` in
+  subtree JSON, Python continuations released without the GIL, no
+  `EXT_primitive_voxels` accessor, voxel mode values above int32, and GeoTOP's flip,
+  which may need raising with Bedrock.
 
 - **`GltfModifier` from Python fails** ("Tried to call pure virtual function
   GltfModifier.apply", tiles don't load) until #7 merges. Jonathan wants the clip

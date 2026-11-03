@@ -693,6 +693,52 @@ def metadata_columns(props):
     return [props.meta_column] if props.meta_column else []
 
 
+VOXEL_VOLUME_MAT = "OGC3D Voxel Volume"
+
+
+def voxel_volume_material(scene):
+    """Shared by all voxel Volumes: the metadata group sets the color, from the
+    meta_<column> grid, so the panel's column and palette apply as on meshes."""
+    mat = bpy.data.materials.get(VOXEL_VOLUME_MAT)
+    if mat is None:
+        mat = bpy.data.materials.new(VOXEL_VOLUME_MAT)
+        mat.use_nodes = True
+        nt = mat.node_tree
+        nt.nodes.clear()
+        out = nt.nodes.new("ShaderNodeOutputMaterial")
+        vol = nt.nodes.new("ShaderNodeVolumePrincipled")
+        vol.name = "Volume"
+        vol.inputs["Density Attribute"].default_value = "density"
+        # self-lit: thick parts reach the class color, scattering would wash it to white.
+        # Emission is per metre, not scaled by density: the same density makes it level off
+        vol.inputs["Color"].default_value = (0.0, 0.0, 0.0, 1.0)
+        opacity = nt.nodes.new("ShaderNodeValue")
+        opacity.name = "Opacity"
+        nt.links.new(opacity.outputs[0], vol.inputs["Density"])
+        amount = nt.nodes.new("ShaderNodeAttribute")
+        amount.attribute_name = "density"
+        emission = nt.nodes.new("ShaderNodeMath")
+        emission.operation = "MULTIPLY"
+        nt.links.new(amount.outputs["Fac"], emission.inputs[0])
+        nt.links.new(opacity.outputs[0], emission.inputs[1])
+        nt.links.new(emission.outputs[0], vol.inputs["Emission Strength"])
+        colors = nt.nodes.new("ShaderNodeAttribute")
+        colors.attribute_name = "color"
+        group = nt.nodes.new("ShaderNodeGroup")
+        group.node_tree = ensure_metadata_group()
+        nt.links.new(colors.outputs["Color"], group.inputs[0])
+        nt.links.new(group.outputs[0], vol.inputs["Emission Color"])
+        nt.links.new(vol.outputs[0], out.inputs["Volume"])
+    update_voxel_volume_material(scene)
+    return mat
+
+
+def update_voxel_volume_material(scene):
+    mat = bpy.data.materials.get(VOXEL_VOLUME_MAT)
+    if mat is not None:
+        mat.node_tree.nodes["Opacity"].outputs[0].default_value = scene.ogc3dtiles.voxel_opacity
+
+
 def _color_target(mat):
     """Input a tile's color ends in: the Relight group's, else the Principled's."""
     nt = mat.node_tree
@@ -704,6 +750,28 @@ def _color_target(mat):
     return bsdf.inputs["Base Color"] if bsdf is not None else None
 
 
+def _emission_target(mat):
+    """Input of an unlit point material's own color, which would show under the
+    metadata colors."""
+    bsdf = next((n for n in mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED" and not n.mute), None)
+    if bsdf is None or "Emission Color" not in bsdf.inputs:
+        return None
+    socket = bsdf.inputs["Emission Color"]
+    return socket if socket.links else None
+
+
+def _insert_metadata_node(nt, name, target):
+    node = nt.nodes.new("ShaderNodeGroup")
+    node.node_tree = ensure_metadata_group()
+    node.name = node.label = name
+    node.location = (target.node.location.x - 220, target.node.location.y + 260)
+    if target.links:
+        nt.links.new(target.links[0].from_socket, node.inputs[0])
+    else:
+        node.inputs[0].default_value = target.default_value
+    nt.links.new(node.outputs[0], target)
+
+
 def apply_metadata(mat) -> bool:
     if mat is None or not mat.use_nodes or mat.node_tree is None:
         return False
@@ -713,15 +781,10 @@ def apply_metadata(mat) -> bool:
     target = _color_target(mat)
     if target is None:
         return False
-    node = nt.nodes.new("ShaderNodeGroup")
-    node.node_tree = ensure_metadata_group()
-    node.name = node.label = META_NODE
-    node.location = (target.node.location.x - 220, target.node.location.y + 260)
-    if target.links:
-        nt.links.new(target.links[0].from_socket, node.inputs[0])
-    else:
-        node.inputs[0].default_value = target.default_value
-    nt.links.new(node.outputs[0], target)
+    _insert_metadata_node(nt, META_NODE, target)
+    emission = _emission_target(mat)
+    if emission is not None:
+        _insert_metadata_node(nt, META_NODE + " Emission", emission)
     return True
 
 
@@ -729,16 +792,19 @@ def remove_metadata(mat) -> bool:
     if mat is None or not mat.use_nodes or mat.node_tree is None:
         return False
     nt = mat.node_tree
-    node = nt.nodes.get(META_NODE)
-    if node is None:
-        return False
-    source = node.inputs[0].links[0].from_socket if node.inputs[0].links else None
-    targets = [l.to_socket for l in node.outputs[0].links]
-    nt.nodes.remove(node)
-    if source is not None:
-        for t in targets:
-            nt.links.new(source, t)
-    return True
+    removed = False
+    for name in (META_NODE, META_NODE + " Emission"):
+        node = nt.nodes.get(name)
+        if node is None:
+            continue
+        source = node.inputs[0].links[0].from_socket if node.inputs[0].links else None
+        targets = [l.to_socket for l in node.outputs[0].links]
+        nt.nodes.remove(node)
+        if source is not None:
+            for t in targets:
+                nt.links.new(source, t)
+        removed = True
+    return removed
 
 
 def set_metadata_colors(scene) -> int:
@@ -811,11 +877,21 @@ _MAX_LEGEND_ROWS = 32
 
 def draw_metadata_panel(layout, props):
     """Body of the collapsible "Metadata" sub-panel."""
+    layout.prop(props, "voxel_display")
+    if props.voxel_display == "VOLUME":
+        layout.prop(props, "voxel_opacity")
+    layout.prop(props, "voxel_exaggeration")
+    from .tileset.feature_meta import TILESET_METADATA
+    if TILESET_METADATA.tileset:
+        box = layout.column(align=True)
+        box.label(text="Tileset", icon="INFO")
+        for name, value in sorted(TILESET_METADATA.tileset.items()):
+            box.label(text=f"{name}: {value}")
     layout.prop(props, "read_metadata")
     if not props.read_metadata:
         return
     if not props.meta_columns:
-        layout.label(text="No feature table loaded yet", icon="INFO")
+        layout.label(text="No metadata column loaded yet", icon="INFO")
         return
     layout.prop(props, "meta_color")
     layout.prop_search(props, "meta_column", props, "meta_columns", text="Column")

@@ -427,8 +427,48 @@ about 10 ms per tile on the worker threads, 2.7 MB of JSON for 468 tiles on scre
 0.5 s to switch to another column. Columns that differ on every row, like UUIDs, stay in
 the table only.
 
-Not read yet: vector columns (the binding can't convert them on v0.59), texture feature
-ids, and tileset, group and tile metadata.
+![swissBUILDINGS3D over Bern colored by building type, with the per-class legend in the Metadata panel](docs/img/metadata_classes.jpg)
+
+![swissBUILDINGS3D over Bern colored by building height through the Color Ramp](docs/img/metadata_ramp.jpg)
+
+**Point clouds** work the same way, per point: `EXT_structural_metadata` property
+attributes and `pnts` batch tables without `BATCH_ID` always become `meta_<column>`
+attributes (a table of millions of rows wouldn't fit a Python list). Whole numbers with
+few values and enums are classes, named when the schema has an enum; other values go
+through the ramp. Batched `pnts` use the table path above.
+
+**Tileset, group, tile and content metadata** are read from `tileset.json`. The tileset's
+own values show in the Metadata panel; the others, merged per tile, are in the
+`ogc3d_tile_metadata` custom property as JSON.
+
+With raster overlays, the metadata colors stay on top: lower **Strength** to see the map
+through them.
+
+Not read yet: vector columns (the binding can't convert them on v0.59), feature ids and
+properties stored in textures, and tile metadata stored in implicit subtrees.
+
+### Voxels
+
+Voxel tilesets (`3DTILES_content_voxels`, `EXT_primitive_voxels`) stream like any other
+tileset: cesium-native selects the tiles for the view. Their values reach the Metadata
+panel as columns, so classes, legend and ramp work the same, and they turn on by
+themselves at the first voxel tile. Tested on [GeoTOP](https://bedrock.engineer/geotop-voxels/),
+the Dutch geological model, with 73 tiles over Amsterdam.
+
+The **Voxels** setting (Metadata panel, before Start) picks how they show:
+
+- **Blocks**: a mesh of the cell faces next to empty space. Crisp and opaque. Best for
+  classes. About 50,000 faces and 80 ms per tile on
+  GeoTOP.
+- **Volume (see-through)**: one OpenVDB Volume per tile, with **Volume opacity**. Soft,
+  because Blender has no nearest sampling for Volumes, so better for continuous fields.
+  Box tiles only, no clipping.
+
+**Voxel height scale** stretches thin datasets vertically (GeoTOP is 62 m thick over
+33 km); stretched tiles no longer line up with other data. Both settings apply at the
+next Start. Box and region tiles work; cylinder tiles are skipped. See
+[docs/voxels.md](docs/voxels.md) for the measurements, and for how a voxel grid could
+color a mesh.
 
 ### Editing tile geometry
 
@@ -897,8 +937,11 @@ the converters compiled into cesium-native.
 - [x] `pnts` point clouds on the native path (Angkor tilesets verified)
 - [ ] `pnts` / `i3dm` on the pure Python path
 - [x] Feature tables → vertex attributes and per-class colors
-- [ ] Tileset, group and tile metadata (`3DTILES_metadata`, core in 3D Tiles 1.1) → custom properties
-- [ ] Voxel tilesets: prototype measured in [docs/voxels.md](docs/voxels.md)
+- [x] Per-point metadata on point clouds
+- [x] Tileset, group, tile and content metadata from `tileset.json`
+- [ ] Metadata stored in textures (feature ids and property textures)
+- [x] Voxel tilesets: box and region tiles as blocks, box tiles as OpenVDB Volumes ([notes](docs/voxels.md))
+- [ ] Voxel colors projected on another tileset's meshes (one-tile prototype)
 
 ## License
 

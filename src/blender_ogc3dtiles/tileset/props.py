@@ -35,6 +35,14 @@ def _on_meta_color(self, context):
         print(f"[3DTiles] metadata colors: {e}")
 
 
+def _on_voxel_opacity(self, context):
+    try:
+        from .. import materials
+        materials.update_voxel_volume_material(context.scene)
+    except Exception as e:                        # noqa: BLE001
+        print(f"[3DTiles] voxel opacity: {e}")
+
+
 def _on_meta_column(self, context):
     try:
         from .. import materials
@@ -558,6 +566,26 @@ class TilesSceneProps(PropertyGroup):
                     "shaders, not only the active one. One float per vertex per column: "
                     "about 40 MB per column on 10 M vertices",
         default=False, update=_on_meta_column,
+    )
+    voxel_display: EnumProperty(
+        name="Voxels",
+        description="How voxel tiles are shown. Applies to tiles loaded after the next Start",
+        items=(("FACES", "Blocks", "Opaque mesh of the cell faces next to empty space: crisp. "
+                                   "Best for classes"),
+               ("VOLUME", "Volume (see-through)", "OpenVDB Volume per box tile: soft, see-through. "
+                                                  "Best for continuous fields. No clipping")),
+        default="FACES",
+    )
+    voxel_exaggeration: FloatProperty(
+        name="Voxel height scale",
+        description="Stretch voxel tiles vertically around the tileset's center, for thin "
+                    "datasets. They no longer line up with other data. Applies after the next Start",
+        default=1.0, min=0.01, soft_max=200.0,
+    )
+    voxel_opacity: FloatProperty(
+        name="Volume opacity",
+        description="Density of voxel Volumes: 1 is about one optical depth per cell",
+        default=0.5, min=0.0, soft_max=5.0, update=_on_voxel_opacity,
     )
     meta_columns: CollectionProperty(type=MetaColumnItem)
     meta_classes: CollectionProperty(type=MetaClassItem)

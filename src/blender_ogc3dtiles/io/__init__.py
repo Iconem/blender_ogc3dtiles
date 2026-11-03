@@ -615,6 +615,7 @@ def _ensure_instancer_color(mat) -> bool:
 
 
 FEATURES_PROP = "ogc3d_features"     # per-tile lookup: {"columns": [...], "rows": [[...], ...]}
+TILE_META_PROP = "ogc3d_tile_metadata"  # tile, group and content metadata of tileset.json
 
 
 def _set_feature_attributes(me, feature_ids, table, columns):
@@ -659,6 +660,83 @@ def refresh_feature_attributes(scene):
         ids = np.zeros(len(me.vertices), np.int32)
         ids_attr.data.foreach_get("value", ids)
         _set_feature_attributes(me, ids, json.loads(o[FEATURES_PROP]), missing)
+
+
+def _voxel_colors_on(scene):
+    """A voxel tile has no color of its own: its values show once, the user can
+    turn them off after that."""
+    if scene.get("ogc3d_voxel_colors"):
+        return
+    scene["ogc3d_voxel_colors"] = True
+    props = scene.ogc3dtiles
+    props["read_metadata"] = True
+    props["meta_color"] = True
+
+
+def _tileset_metadata_import():
+    from ..tileset.feature_meta import TILESET_METADATA
+    return TILESET_METADATA
+
+
+def build_voxel_volume(payload: dict, key: str, scene: bpy.types.Scene,
+                       root: bpy.types.Object, matrix_rows, hidden: bool = True,
+                       coll: Optional[bpy.types.Collection] = None) -> Optional[Tuple[str, List[str]]]:
+    """One OpenVDB Volume for a box voxel tile; blocks when that isn't possible
+    (no openvdb module, or a region). Grids are written here: their colors follow
+    the panel's column through ``meta_<column>``."""
+    import tempfile
+
+    import numpy as np
+    from mathutils import Matrix
+
+    from ..materials import sync_metadata, voxel_volume_material
+    from ..tileset import voxels
+    to_ecef = voxels.volume_matrix(payload)
+    try:
+        import openvdb
+    except ImportError:
+        openvdb = None
+    if to_ecef is None or openvdb is None:
+        return build_tile_from_payload(payload, key, scene, root, matrix_rows, hidden, coll)
+
+    grid = payload["voxel_grid"]
+    if coll is None:
+        coll = root.users_collection[0] if root.users_collection else ensure_collection(scene)
+    _voxel_colors_on(scene)
+    sync_metadata(scene)
+    world = np.asarray(matrix_rows, np.float64) @ to_ecef
+    # 1 means an optical depth per cell, whatever the tile's level
+    cell = np.linalg.norm(to_ecef[:3, :3], axis=0)
+    density = grid["mask"].astype(np.float32) / float(np.cbrt(cell.prod()))
+    arrays = {"density": density, **grid["grids"]}
+    grids = []
+    for name, values in arrays.items():
+        g = openvdb.FloatGrid()
+        g.copyFromArray(np.ascontiguousarray(values))
+        g.name = name
+        grids.append(g)
+    if grid["colors"] is not None:
+        g = openvdb.Vec3SGrid()
+        g.copyFromArray(np.ascontiguousarray(grid["colors"]))
+        g.name = "color"
+        grids.append(g)
+    folder = bpy.app.tempdir or tempfile.gettempdir()
+    path = os.path.join(folder, f"ogc3d_voxel_{abs(hash(key)):x}.vdb")
+    openvdb.write(path, grids=grids)
+
+    vol = bpy.data.volumes.new(_short_name(key))
+    vol.filepath = path
+    vol.materials.append(voxel_volume_material(scene))
+    obj = bpy.data.objects.new(_short_name(key), vol)
+    obj["tile_url"] = key
+    coll.objects.link(obj)
+    obj.parent = root
+    obj.matrix_parent_inverse = Matrix.Identity(4)
+    obj.matrix_world = root.matrix_world @ Matrix(world.tolist())
+    obj.hide_viewport = hidden
+    obj.hide_render = hidden
+    obj.select_set(False)
+    return obj.name, [vol.name]
 
 
 def build_tile_from_payload(payload: dict, key: str, scene: bpy.types.Scene,
@@ -720,7 +798,12 @@ def build_tile_from_payload(payload: dict, key: str, scene: bpy.types.Scene,
         me.color_attributes.render_color_index = 0
         me.color_attributes.active_color_index = 0
 
+    if payload.get("voxel"):
+        _voxel_colors_on(scene)
     _add_feature_attributes(me, payload.get("features"), scene)
+    for name, values in (payload.get("vertex_columns") or {}).items():
+        kind = "INT" if values.dtype.kind == "i" else "FLOAT"
+        me.attributes.new(name, kind, "POINT").data.foreach_set("value", np.ascontiguousarray(values))
 
     # materials (one slot per payload material, textures packed from bytes)
     image_cache = image_cache if image_cache is not None else {}
@@ -736,7 +819,7 @@ def build_tile_from_payload(payload: dict, key: str, scene: bpy.types.Scene,
                 image_cache[ck] = img
                 data_names.append(img.name)
         mat = _material_from_payload(mp, img, key)
-        if payload.get("points") and cols is not None:
+        if (payload.get("points") or payload.get("voxel")) and cols is not None:
             _wire_point_colors(mat)
         me.materials.append(mat)
         data_names.append(mat.name)
@@ -750,6 +833,9 @@ def build_tile_from_payload(payload: dict, key: str, scene: bpy.types.Scene,
     obj["tile_url"] = key
     if payload.get("features"):
         obj[FEATURES_PROP] = json.dumps(payload["features"]["table"], separators=(",", ":"))
+    tile_meta = _tileset_metadata_import().by_content.get(key.split("?", 1)[0])
+    if tile_meta:
+        obj[TILE_META_PROP] = json.dumps(tile_meta, separators=(",", ":"))
     coll.objects.link(obj)
     obj.parent = root
     obj.matrix_parent_inverse = Matrix.Identity(4)
@@ -1490,7 +1576,7 @@ def remove_tiles(records, extra_objects=()) -> int:
             stack.extend(children.get(o.as_pointer(), ()))
     for _h, data_names in records:
         for n in data_names:
-            for store in (bpy.data.meshes, bpy.data.materials, bpy.data.images):
+            for store in (bpy.data.meshes, bpy.data.volumes, bpy.data.materials, bpy.data.images):
                 d = store.get(n)
                 if d is not None:
                     add(d)

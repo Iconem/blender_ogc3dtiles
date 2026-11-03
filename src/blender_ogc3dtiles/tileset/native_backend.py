@@ -33,6 +33,8 @@ from typing import NamedTuple
 
 import numpy as np
 
+from . import asset_fixes
+
 _YUP_TO_ZUP = np.array([[1, 0, 0, 0],
                         [0, 0, -1, 0],
                         [0, 1, 0, 0],
@@ -157,6 +159,17 @@ class _GlbPreparer:
             T = np.asarray(transform, dtype=np.float64).reshape(4, 4).T.tolist()
             base = "tile_%d" % self._owner._next_id()
             key = url or base
+            from . import voxels
+            if voxels.is_voxel_model(model):
+                # placed in prepare_in_main_thread, where the bounding volume is known
+                raw = bytes(req.response.data) if req is not None and req.response is not None else b""
+                shape = self._owner.root_shape()
+                if shape == "cylinder":
+                    print("[3DTiles/native] cylinder voxel tiles are not supported, skipped")
+                    return None
+                payload = voxels.tile_payload(cs, model, raw, shape == "box", self._owner.voxel_volume)
+                if payload is not None:
+                    return ReadyTile(key, "", [], np.eye(4).tolist(), 0, None, up_axis, payload) if payload else None
             if self._owner.direct_mesh:
                 try:
                     from . import native_mesh
@@ -225,6 +238,9 @@ class _GlbPreparer:
         screen (no holes while our import queue catches up). Otherwise queue."""
         if load_result is None:
             return None
+        payload = load_result.mesh_payload
+        if payload is not None and "unit_verts" in payload:
+            self._owner.place_voxels(tile, payload)
         cb = self._owner.on_main_thread_ready
         if cb is not None:
             try:
@@ -475,6 +491,7 @@ def _shared_externals(cs, cache_dir, max_loads):
         accessor = cs.async_.CachingAssetAccessor(inner, _cache_db_path(cache_dir))
     else:
         accessor = inner
+    accessor = asset_fixes.make_accessor(cs, accessor)
     ent = (tp, asys, accessor)
     _SHARED[key] = ent
     return ent
@@ -485,9 +502,12 @@ class CesiumNativeBackend:
 
     def __init__(self, max_sse=16.0, cache_dir=None,
                  max_cached_mb=512, max_simultaneous_loads=20,
-                 max_dist=float("inf"), detail_falloff=600.0, direct_mesh=True, read_metadata=False, **_ignored):
+                 max_dist=float("inf"), detail_falloff=600.0, direct_mesh=True, read_metadata=False,
+                 voxel_volume=False, voxel_exaggeration=1.0, **_ignored):
         self._max_sse = max_sse
         self.read_metadata = bool(read_metadata)
+        self.voxel_volume = bool(voxel_volume)  # keep the whole grid of voxel tiles for a Volume
+        self.voxel_exaggeration = float(voxel_exaggeration)
         self.direct_mesh = bool(direct_mesh)   # numpy -> bpy mesh instead of GLB re-import
         self.on_main_thread_ready = None        # UI callback: ReadyTile -> bool (built now?)
         self.main_thread_ms = 12.0              # cesium-native main-thread load budget per tick
@@ -736,6 +756,33 @@ class CesiumNativeBackend:
             return float(np.sqrt((h * h).sum()))
         except Exception:
             return None
+
+    def place_voxels(self, tile, payload):
+        """Fit a voxel tile into its bounding volume, in ECEF."""
+        from . import voxels
+        center = self.root_center_ecef()
+        stretch = voxels.exaggeration_matrix(center, self.voxel_exaggeration) if center is not None else None
+        bv = tile.bounding_volume
+        region = bv.bounding_region
+        if region is not None:
+            r = region.rectangle
+            voxels.place(payload, region=(r.west, r.south, r.east, r.north,
+                                          region.minimum_height, region.maximum_height), stretch=stretch)
+            return True
+        obb = bv.as_oriented_bounding_box()
+        voxels.place(payload, box=voxels.box_matrix(obb.center, obb.half_axes), stretch=stretch)
+        return True
+
+    def root_shape(self):
+        """"box", "region" or "cylinder": the root's bounding volume, which also
+        decides the cell order of voxel tiles. Fixed once the tiles load."""
+        root = self._tileset.root_tile
+        if root.child_count == 1 and root.geometric_error == float("inf"):
+            root = root.children[0]
+        bv = root.bounding_volume
+        if bv.bounding_region is not None:
+            return "region"
+        return "cylinder" if "cylinder" in repr(bv).lower() else "box"
 
     def root_center_ecef(self):
         """ECEF centre of the root bounding volume once tileset.json is in."""

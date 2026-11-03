@@ -61,9 +61,12 @@ def _insert_mix(nt, mix) -> None:
         src = _color_source(nt)
         dst = [lk.to_socket for lk in src.links]
         if not dst:
-            # untextured material: the base colour was a plain value, feed the BSDF
+            # untextured material: the base colour was a plain value, feed the
+            # metadata colors when they are on (they stay on top), else the BSDF
+            from .materials import META_NODE
+            meta = nt.nodes.get(META_NODE)
             bsdf = next((n for n in nt.nodes if n.type == "BSDF_PRINCIPLED"), None)
-            dst = [bsdf.inputs["Base Color"]] if bsdf is not None else []
+            dst = [meta.inputs[0]] if meta is not None else [bsdf.inputs["Base Color"]] if bsdf is not None else []
     acc = src
     for m in sorted(others + [mix], key=lambda m: m.get(ORDER_PROP, 0)):
         nt.links.new(acc, m.inputs[6])

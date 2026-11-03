@@ -12,11 +12,20 @@ table each vertex belongs to, so a column becomes a vertex attribute by a lookup
 A tile keeps its feature ids and its table, a per-tile lookup by feature id.
 Only the columns in use become attributes: all of them cost 0.8 GB on 440 tiles
 of swissBUILDINGS3D (9.5 M vertices, 22 columns), one costs 40 MB.
+
+Point clouds have one value per point instead, as property attributes or as a
+table without ids: millions of rows would not fit a Python table, so these numeric
+columns are read straight from the buffer and always become attributes.
+
+Tileset, group, tile and content metadata live in tileset.json: ``note_tileset_json``
+collects them as the JSON comes in, by content URL.
 """
 from __future__ import annotations
 
+import json
 import re
 import threading
+from urllib.parse import urljoin
 
 import numpy as np
 
@@ -25,6 +34,7 @@ FEATURE_ID_ATTR = "ogc3d_feature"
 MAX_CLASSES = 255        # code 0 means "no class"; see materials.palette
 _MIN_ROWS_FOR_ID_TEST = 8
 _NO_DATA_TEXT = {"", "null", "none", "nan"}   # batch tables written by converters
+_MAX_POINT_CLASSES = 32
 
 
 class Column:
@@ -38,6 +48,15 @@ class Column:
         self.hi = float("-inf")
         self.dropped = False    # more classes than a palette holds
         self.filled = 0         # rows with a value
+
+
+def _free_code(taken, text):
+    """A class code: from the value for whole numbers, so that a class keeps its
+    color from one session to the next whatever tile a worker finishes first."""
+    if text.isdecimal() and 0 <= int(text) < MAX_CLASSES and int(text) + 1 not in taken.values():
+        return int(text) + 1
+    used = set(taken.values())
+    return next(c for c in range(1, MAX_CLASSES + 1) if c not in used)
 
 
 class Registry:
@@ -80,7 +99,7 @@ class Registry:
                         col.dropped = True
                         self.version += 1
                         return None
-                    code = col.codes[v] = len(col.codes) + 1
+                    code = col.codes[v] = _free_code(col.codes, v)
                     self.version += 1
                 out[i] = code
             return out
@@ -229,6 +248,168 @@ def combine(cs, model, parts, n_total, registry=REGISTRY):
         "feature_id": row.astype(np.int32),
         "table": {"columns": names, "rows": [[cells[n][i] for n in names] for i in range(n_rows)]},
     }
+
+
+_COMPONENT_DTYPE = {"INT8": np.int8, "UINT8": np.uint8, "INT16": np.int16, "UINT16": np.uint16,
+                    "INT32": np.int32, "UINT32": np.uint32, "FLOAT32": np.float32, "FLOAT64": np.float64}
+
+
+def _structural(model):
+    ext = model.ext_structural_metadata
+    return ext() if callable(ext) else ext
+
+
+def _class_property(ext, class_name, name):
+    schema = ext.schema
+    cls = schema.classes.get(class_name) if schema is not None else None
+    return cls.properties.get(name) if cls is not None else None
+
+
+def _enum_names(ext, class_property):
+    """{integer value: name} of an enum property."""
+    enum = ext.schema.enums.get(class_property.enum_type) if class_property.enum_type else None
+    return {v.value: v.name for v in enum.values} if enum is not None else {}
+
+
+def _plain_table_columns(model, ext, table):
+    """{name: (values, enum names)} of the numeric scalar columns of a table."""
+    out = {}
+    for name, prop in table.properties.items():
+        spec = _class_property(ext, table.class_property, name)
+        if spec is None or str(spec.type).rsplit(".", 1)[-1].upper() != "SCALAR" or spec.array:
+            continue
+        dtype = _COMPONENT_DTYPE.get(str(spec.component_type or "").rsplit(".", 1)[-1].upper())
+        if dtype is None or not 0 <= prop.values < len(model.buffer_views):
+            continue
+        view = model.buffer_views[prop.values]
+        data = np.asarray(model.buffers[view.buffer].cesium.data, np.uint8)
+        out[name] = (np.frombuffer(data, dtype, int(table.count), int(view.byte_offset)), _enum_names(ext, spec))
+    return out
+
+
+def point_columns(model, prim, n_verts, read_accessor):
+    """{column: (per-vertex values, enum names)} of a primitive, from its property
+    attributes and from tables with one implicit row per vertex."""
+    ext = _structural(model)
+    if ext is None:
+        return {}
+    out = {}
+    prim_ext = prim.ext_structural_metadata
+    prim_ext = prim_ext() if callable(prim_ext) else prim_ext
+    for i in (prim_ext.property_attributes if prim_ext is not None else ()):
+        if not 0 <= i < len(ext.property_attributes):
+            continue
+        spec = ext.property_attributes[i]
+        for name, prop in spec.properties.items():
+            index = prim.attributes.get(prop.attribute)
+            arr = read_accessor(model, index, keep_integers=True) if index is not None else None
+            if arr is None or len(arr) != n_verts or arr.shape[1] != 1:
+                continue
+            cls = _class_property(ext, spec.class_property, name)
+            out[name] = (arr[:, 0], _enum_names(ext, cls) if cls is not None else {})
+    features = prim.ext_mesh_features
+    features = features() if callable(features) else features
+    for fid in (features.feature_ids if features is not None else ()):
+        if fid.attribute is not None or fid.texture is not None or fid.property_table is None:
+            continue
+        if not 0 <= fid.property_table < len(ext.property_tables):
+            continue
+        table = ext.property_tables[fid.property_table]
+        if int(table.count) == n_verts:
+            out.update(_plain_table_columns(model, ext, table))
+    return out
+
+
+def vertex_columns(parts, n_total, registry=REGISTRY):
+    """{attribute name: per-vertex array} from ``parts``, one (vertex count, columns)
+    per primitive. Whole numbers with few values, or an enum, are classes, as in
+    point classification; the first tile decides."""
+    names = {name for _n, cols in parts for name in cols}
+    out = {}
+    for name in sorted(names):
+        known = registry.get(name)
+        values = np.zeros(n_total, np.float64)
+        has = np.zeros(n_total, bool)
+        enum, at, integers = {}, 0, True
+        for n, cols in parts:
+            if name in cols:
+                arr, names_of = cols[name]
+                values[at:at + n] = arr
+                has[at:at + n] = True
+                enum = enum or names_of
+                integers = integers and arr.dtype.kind in "iu"
+            at += n
+        uniq = np.unique(values[has])
+        as_class = known.kind == "class" if known is not None else bool(enum) or (integers and len(uniq) <= _MAX_POINT_CLASSES)
+        if not as_class:
+            registry.note_range(name, values[has])
+            known = registry.get(name)
+            if known is not None and known.kind == "number":
+                out[attribute_name(name)] = values.astype(np.float32)
+            continue
+        codes = registry.codes_for(name, [enum.get(int(v), str(int(v))) for v in uniq])
+        if codes is None:
+            continue
+        coded = np.zeros(n_total, np.int32)
+        coded[has] = codes[np.searchsorted(uniq, values[has])]
+        out[attribute_name(name)] = coded
+    return out
+
+
+class TilesetMetadata:
+    """Metadata of tileset.json files seen so far. Written from a Python thread."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.tileset = {}        # {"name": value}
+        self.by_content = {}     # content URL -> {"name": value}
+
+    def clear(self):
+        with self._lock:
+            self.tileset, self.by_content = {}, {}
+
+    def note(self, url, doc):
+        groups = doc.get("groups") or []
+        found = {}
+
+        def walk(tile, inherited):
+            own = {**inherited, **_entity_properties(tile.get("metadata"))}
+            for content in ([tile["content"]] if tile.get("content") else []) + list(tile.get("contents") or []):
+                props = dict(own)
+                group = content.get("group")
+                if isinstance(group, int) and 0 <= group < len(groups):
+                    props.update(_entity_properties(groups[group]))
+                props.update(_entity_properties(content.get("metadata")))
+                if props and content.get("uri"):
+                    found[urljoin(url, content["uri"])] = props
+            for child in tile.get("children") or []:
+                walk(child, own)
+
+        if isinstance(doc.get("root"), dict):
+            walk(doc["root"], {})
+        top = _entity_properties(doc.get("metadata"))
+        with self._lock:
+            self.tileset.update(top)
+            self.by_content.update(found)
+
+
+def _entity_properties(entity):
+    return dict(entity.get("properties") or {}) if isinstance(entity, dict) else {}
+
+
+TILESET_METADATA = TilesetMetadata()
+
+
+def note_tileset_json(url, data):
+    """Collect the metadata of a tileset.json. Anything else is left alone."""
+    if b'"metadata"' not in data or b'"root"' not in data:
+        return
+    try:
+        doc = json.loads(data)
+    except ValueError:
+        return
+    if isinstance(doc, dict):
+        TILESET_METADATA.note(url.split("?", 1)[0], doc)
 
 
 def _clean_text(v):

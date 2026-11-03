@@ -12,8 +12,12 @@ once — in the panel or in the Shader Editor — changes every tile.
 """
 from __future__ import annotations
 
+import colorsys
+
 import bpy
 from bpy.types import Operator
+
+from .tileset.feature_meta import MAX_CLASSES, REGISTRY, attribute_name
 
 GROUP_NAME = "OGC3D Relight"
 TUNABLES = (
@@ -447,6 +451,7 @@ def apply_relight(mat) -> bool:
     nt = mat.node_tree
     if any(n.type == "GROUP" and n.node_tree and n.node_tree.name == GROUP_NAME for n in nt.nodes):
         return False
+    recolor = remove_metadata(mat)       # goes back on the new colour input below
     out = next((n for n in nt.nodes if n.type == "OUTPUT_MATERIAL"), None)
     if out is None:
         return False
@@ -463,6 +468,8 @@ def apply_relight(mat) -> bool:
     if alpha is not None:
         nt.links.new(alpha, grp.inputs["Alpha"])
     nt.links.new(grp.outputs["BSDF"], surface_target(nt))
+    if recolor:
+        apply_metadata(mat)
     return True
 
 
@@ -474,6 +481,7 @@ def remove_relight(mat) -> bool:
                 and n.node_tree.name == GROUP_NAME), None)
     if grp is None:
         return False
+    recolor = remove_metadata(mat)
     bsdf = next((n for n in nt.nodes if n.type == "BSDF_PRINCIPLED"), None)
     nt.nodes.remove(grp)
     if bsdf is not None:
@@ -483,6 +491,8 @@ def remove_relight(mat) -> bool:
         tgt = surface_target(nt)
         if tgt is not None:
             nt.links.new(bsdf.outputs["BSDF"], tgt)
+    if recolor:
+        apply_metadata(mat)
     return True
 
 
@@ -507,6 +517,238 @@ def tile_materials():
                 if m is not None and m.name not in seen:
                     seen.add(m.name)
                     yield m
+
+
+# ── feature metadata → colors ────────────────────────────────────────────────
+# One shared group reads the chosen meta_<column> attribute. Text columns are
+# integer class codes that index a palette image: editing a color or meeting a
+# new class only rewrites pixels, no shader is recompiled. Number columns go
+# through a Color Ramp between the column's min and max.
+META_GROUP = "OGC3D Metadata"
+META_NODE = "OGC3D Metadata Color"
+META_PALETTE = "OGC3D Metadata Palette"
+_PALETTE_SIZE = MAX_CLASSES + 1          # pixel 0 is transparent: no class
+_meta_seen = [-1]
+
+
+def _class_color(code):
+    """Distinct default colors: the golden angle around the hue circle."""
+    return tuple(colorsys.hsv_to_rgb((code * 0.61803398875) % 1.0, 0.75, 0.9))
+
+
+def _palette_image():
+    img = bpy.data.images.get(META_PALETTE)
+    if img is None:
+        img = bpy.data.images.new(META_PALETTE, _PALETTE_SIZE, 1, alpha=True, float_buffer=True)
+        img.colorspace_settings.name = "Non-Color"
+        img.use_fake_user = True
+    return img
+
+
+def write_palette(scene):
+    """Class colors of the active column into the palette image."""
+    props = scene.ogc3dtiles
+    px = [0.0] * (_PALETTE_SIZE * 4)
+    for item in props.meta_classes:
+        if item.column == props.meta_column and 0 < item.code < _PALETTE_SIZE:
+            px[item.code * 4:item.code * 4 + 4] = (*item.color, 1.0)
+    img = _palette_image()
+    img.pixels.foreach_set(px)
+    img.update()
+    img.pack()
+
+
+def ensure_metadata_group():
+    ng = bpy.data.node_groups.get(META_GROUP)
+    if ng is not None:
+        return ng
+    ng = bpy.data.node_groups.new(META_GROUP, "ShaderNodeTree")
+    ng.interface.new_socket("Color", in_out="INPUT", socket_type="NodeSocketColor")
+    ng.interface.new_socket("Color", in_out="OUTPUT", socket_type="NodeSocketColor")
+    nodes, links = ng.nodes, ng.links
+    gin, gout = nodes.new("NodeGroupInput"), nodes.new("NodeGroupOutput")
+    attr = nodes.new("ShaderNodeAttribute")
+    attr.name = "Column"
+    attr.attribute_type = "GEOMETRY"
+    strength = _value_node(ng, "Strength", 1.0)
+    numeric = _value_node(ng, "Is Number", 0.0)
+    lo, hi = _value_node(ng, "Min", 0.0), _value_node(ng, "Max", 1.0)
+
+    # classes: code -> centre of its palette pixel
+    u = nodes.new("ShaderNodeMath")
+    u.operation = "DIVIDE"
+    u.inputs[1].default_value = float(_PALETTE_SIZE)
+    shift = nodes.new("ShaderNodeMath")
+    shift.inputs[1].default_value = 0.5
+    links.new(attr.outputs["Fac"], shift.inputs[0])
+    links.new(shift.outputs[0], u.inputs[0])
+    uv = nodes.new("ShaderNodeCombineXYZ")
+    uv.inputs[1].default_value = 0.5
+    links.new(u.outputs[0], uv.inputs[0])
+    tex = nodes.new("ShaderNodeTexImage")
+    tex.name = "Palette"
+    tex.image = _palette_image()
+    tex.interpolation = "Closest"
+    tex.extension = "EXTEND"
+    links.new(uv.outputs[0], tex.inputs["Vector"])
+
+    # numbers: min..max -> ramp, no data (0 below the range) stays uncolored
+    span = nodes.new("ShaderNodeMapRange")
+    links.new(attr.outputs["Fac"], span.inputs["Value"])
+    links.new(lo.outputs[0], span.inputs["From Min"])
+    links.new(hi.outputs[0], span.inputs["From Max"])
+    ramp = nodes.new("ShaderNodeValToRGB")
+    ramp.name = "Ramp"
+    els = ramp.color_ramp.elements
+    els[0].color = (0.05, 0.03, 0.4, 1.0)
+    els[1].color = (0.98, 0.9, 0.15, 1.0)
+    els.new(0.5).color = (0.1, 0.6, 0.5, 1.0)
+    links.new(span.outputs[0], ramp.inputs["Fac"])
+    above = nodes.new("ShaderNodeMath")
+    above.operation = "GREATER_THAN"
+    links.new(attr.outputs["Fac"], above.inputs[0])
+    low = nodes.new("ShaderNodeMath")
+    low.operation = "SUBTRACT"
+    low.inputs[1].default_value = 1e-3
+    links.new(lo.outputs[0], low.inputs[0])
+    links.new(low.outputs[0], above.inputs[1])
+
+    pick = nodes.new("ShaderNodeMix")
+    pick.data_type = "RGBA"
+    links.new(numeric.outputs[0], pick.inputs[0])
+    links.new(tex.outputs["Color"], pick.inputs[6])
+    links.new(ramp.outputs["Color"], pick.inputs[7])
+    has = nodes.new("ShaderNodeMix")
+    has.data_type = "FLOAT"
+    links.new(numeric.outputs[0], has.inputs[0])
+    links.new(tex.outputs["Alpha"], has.inputs[2])
+    links.new(above.outputs[0], has.inputs[3])
+    fac = nodes.new("ShaderNodeMath")
+    fac.operation = "MULTIPLY"
+    links.new(strength.outputs[0], fac.inputs[0])
+    links.new(has.outputs[0], fac.inputs[1])
+    out = nodes.new("ShaderNodeMix")
+    out.data_type = "RGBA"
+    links.new(fac.outputs[0], out.inputs[0])
+    links.new(gin.outputs[0], out.inputs[6])
+    links.new(pick.outputs[2], out.inputs[7])
+    links.new(out.outputs[2], gout.inputs[0])
+    return ng
+
+
+def update_metadata_group(scene):
+    """Point the shared group at the active column."""
+    props = scene.ogc3dtiles
+    ng = ensure_metadata_group()
+    col = REGISTRY.get(props.meta_column) if props.meta_column else None
+    attr = attribute_name(props.meta_column) if props.meta_column else ""
+    nodes = ng.nodes
+    if nodes["Column"].attribute_name != attr:
+        nodes["Column"].attribute_name = attr
+    nodes["Strength"].outputs[0].default_value = props.meta_strength
+    is_number = col is not None and col.kind == "number"
+    nodes["Is Number"].outputs[0].default_value = 1.0 if is_number else 0.0
+    if is_number and col.hi >= col.lo:
+        nodes["Min"].outputs[0].default_value = col.lo
+        nodes["Max"].outputs[0].default_value = max(col.hi, col.lo + 1e-6)
+    write_palette(scene)
+
+
+def sync_metadata(scene, force=False):
+    """Mirror what the workers found into the panel. Costs nothing until a new
+    column, class or range shows up."""
+    if not force and REGISTRY.version == _meta_seen[0]:
+        return False
+    _meta_seen[0] = REGISTRY.version
+    props = scene.ogc3dtiles
+    columns = REGISTRY.columns()
+    known = {c.name for c in props.meta_columns}
+    wanted = {c[0] for c in columns}
+    if known != wanted:
+        props.meta_columns.clear()
+        for name, kind, *_rest in columns:
+            item = props.meta_columns.add()
+            item.name, item.kind = name, kind
+    have = {(c.column, c.code) for c in props.meta_classes}
+    for name, kind, *_rest in columns:
+        if kind != "class":
+            continue
+        for text, code in REGISTRY.classes(name):
+            if (name, code) not in have:
+                item = props.meta_classes.add()
+                item.name, item.column, item.code = text, name, code
+                item["color"] = _class_color(code)
+    if props.meta_column not in wanted and columns:
+        props["meta_column"] = REGISTRY.best_column()
+        from .io import refresh_feature_attributes
+        refresh_feature_attributes(scene)
+    update_metadata_group(scene)
+    return True
+
+
+def metadata_columns(props):
+    """Columns the tiles keep as attributes."""
+    if props.meta_all_columns:
+        return [c.name for c in props.meta_columns]
+    return [props.meta_column] if props.meta_column else []
+
+
+def _color_target(mat):
+    """Input a tile's color ends in: the Relight group's, else the Principled's."""
+    nt = mat.node_tree
+    grp = next((n for n in nt.nodes if n.type == "GROUP" and n.node_tree
+                and n.node_tree.name == GROUP_NAME), None)
+    if grp is not None:
+        return grp.inputs["Albedo"]
+    bsdf = next((n for n in nt.nodes if n.type == "BSDF_PRINCIPLED" and not n.mute), None)
+    return bsdf.inputs["Base Color"] if bsdf is not None else None
+
+
+def apply_metadata(mat) -> bool:
+    if mat is None or not mat.use_nodes or mat.node_tree is None:
+        return False
+    nt = mat.node_tree
+    if nt.nodes.get(META_NODE) is not None:
+        return False
+    target = _color_target(mat)
+    if target is None:
+        return False
+    node = nt.nodes.new("ShaderNodeGroup")
+    node.node_tree = ensure_metadata_group()
+    node.name = node.label = META_NODE
+    node.location = (target.node.location.x - 220, target.node.location.y + 260)
+    if target.links:
+        nt.links.new(target.links[0].from_socket, node.inputs[0])
+    else:
+        node.inputs[0].default_value = target.default_value
+    nt.links.new(node.outputs[0], target)
+    return True
+
+
+def remove_metadata(mat) -> bool:
+    if mat is None or not mat.use_nodes or mat.node_tree is None:
+        return False
+    nt = mat.node_tree
+    node = nt.nodes.get(META_NODE)
+    if node is None:
+        return False
+    source = node.inputs[0].links[0].from_socket if node.inputs[0].links else None
+    targets = [l.to_socket for l in node.outputs[0].links]
+    nt.nodes.remove(node)
+    if source is not None:
+        for t in targets:
+            nt.links.new(source, t)
+    return True
+
+
+def set_metadata_colors(scene) -> int:
+    """Follow the panel's checkbox on the tiles already loaded."""
+    enabled = scene.ogc3dtiles.meta_color
+    if enabled:
+        sync_metadata(scene, force=True)
+        from .io import refresh_feature_attributes
+        refresh_feature_attributes(scene)
+    return sum(bool(apply_metadata(m) if enabled else remove_metadata(m)) for m in tile_materials())
 
 
 class OGC3D_OT_RelightApply(Operator):
@@ -564,6 +806,37 @@ def draw_panel(layout, props):
                 col.prop(n.outputs[0], "default_value", text=name)
 
 
+_MAX_LEGEND_ROWS = 32
+
+
+def draw_metadata_panel(layout, props):
+    """Body of the collapsible "Metadata" sub-panel."""
+    layout.prop(props, "read_metadata")
+    if not props.read_metadata:
+        return
+    if not props.meta_columns:
+        layout.label(text="No feature table loaded yet", icon="INFO")
+        return
+    layout.prop(props, "meta_color")
+    layout.prop_search(props, "meta_column", props, "meta_columns", text="Column")
+    layout.prop(props, "meta_strength")
+    layout.prop(props, "meta_all_columns")
+    col = REGISTRY.get(props.meta_column)
+    if col is None:
+        return
+    if col.kind == "number":
+        layout.label(text=f"{col.lo:g} to {col.hi:g}", icon="IPO_LINEAR")
+        return
+    box = layout.column(align=True)
+    rows = [c for c in props.meta_classes if c.column == props.meta_column]
+    for item in rows[:_MAX_LEGEND_ROWS]:
+        row = box.row(align=True)
+        row.prop(item, "color", text="")
+        row.label(text=item.name)
+    if len(rows) > _MAX_LEGEND_ROWS:
+        layout.label(text=f"+ {len(rows) - _MAX_LEGEND_ROWS} more classes")
+
+
 _classes = [OGC3D_OT_RelightApply, OGC3D_OT_RelightRemove]
 
 
@@ -588,6 +861,8 @@ def _upgrade_group_on_load(_dummy=None):
                 continue
             if props.clip_materials:
                 set_clip_materials(True)
+            if props.meta_classes:
+                write_palette(scene)     # a generated image's pixels need a refresh
             set_backface_mode(props.backface_mode)
             if props.tile_geometry:
                 from .io import set_tile_geometry

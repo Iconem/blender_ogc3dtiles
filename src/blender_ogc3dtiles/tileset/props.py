@@ -5,7 +5,7 @@ Stored on bpy.types.Scene so they persist with the .blend file.
 import bpy
 from bpy.props import (
     StringProperty, FloatProperty, IntProperty,
-    BoolProperty, EnumProperty, CollectionProperty,
+    BoolProperty, EnumProperty, CollectionProperty, FloatVectorProperty,
 )
 from bpy.types import PropertyGroup
 
@@ -25,6 +25,40 @@ def _on_global_sse(self, context):
         apply_global_sse(self)
     except Exception:          # noqa: BLE001
         pass
+
+
+def _on_meta_color(self, context):
+    try:
+        from .. import materials
+        materials.set_metadata_colors(context.scene)
+    except Exception as e:                        # noqa: BLE001
+        print(f"[3DTiles] metadata colors: {e}")
+
+
+def _on_meta_column(self, context):
+    try:
+        from .. import materials
+        from ..io import refresh_feature_attributes
+        refresh_feature_attributes(context.scene)
+        materials.update_metadata_group(context.scene)
+    except Exception as e:                        # noqa: BLE001
+        print(f"[3DTiles] metadata column: {e}")
+
+
+def _on_meta_strength(self, context):
+    try:
+        from .. import materials
+        materials.update_metadata_group(context.scene)
+    except Exception as e:                        # noqa: BLE001
+        print(f"[3DTiles] metadata strength: {e}")
+
+
+def _on_meta_class_color(self, context):
+    try:
+        from .. import materials
+        materials.write_palette(context.scene)
+    except Exception as e:                        # noqa: BLE001
+        print(f"[3DTiles] metadata palette: {e}")
 
 
 def _on_clip_materials(self, context):
@@ -217,6 +251,19 @@ def _on_item_kind(self, context):
 def _on_item_use_overlays(self, context):
     from ..ui import overlays_live_toggle
     overlays_live_toggle(context.scene, self)
+
+
+class MetaColumnItem(PropertyGroup):
+    kind: StringProperty()         # "number" or "class"
+
+
+class MetaClassItem(PropertyGroup):
+    column: StringProperty()
+    code: IntProperty()
+    color: FloatVectorProperty(
+        name="Color", subtype="COLOR", size=3, min=0.0, max=1.0,
+        update=_on_meta_class_color,
+    )
 
 
 class TilesetItem(PropertyGroup):
@@ -484,6 +531,36 @@ class TilesSceneProps(PropertyGroup):
         name="Point radius (m)", description="Uniform point radius",
         default=0.08, min=0.001, max=50.0, update=_on_point_radius,
     )
+    read_metadata: BoolProperty(
+        name="Read feature metadata",
+        description="Keep each tile's feature table: columns become vertex attributes "
+                    "(meta_<column>, usable in shaders and Geometry Nodes) and the text "
+                    "goes in a per-tile lookup. Applies to tiles loaded after the next "
+                    "Start, with the cesium-native backend and Direct mesh",
+        default=False,
+    )
+    meta_color: BoolProperty(
+        name="Color tiles by",
+        description="Mix a per-class or per-value color into every tile material",
+        default=False, update=_on_meta_color,
+    )
+    meta_column: StringProperty(
+        name="Column", description="Metadata column that drives the colors",
+        update=_on_meta_column,
+    )
+    meta_strength: FloatProperty(
+        name="Strength", description="0 = the tile's own colors, 1 = metadata colors only",
+        default=1.0, min=0.0, max=1.0, subtype="FACTOR", update=_on_meta_strength,
+    )
+    meta_all_columns: BoolProperty(
+        name="All columns as attributes",
+        description="Keep every column as a vertex attribute, for Geometry Nodes or your own "
+                    "shaders, not only the active one. One float per vertex per column: "
+                    "about 40 MB per column on 10 M vertices",
+        default=False, update=_on_meta_column,
+    )
+    meta_columns: CollectionProperty(type=MetaColumnItem)
+    meta_classes: CollectionProperty(type=MetaClassItem)
     clip_materials: BoolProperty(
         name="Clip materials to viewport region",
         description="Copy the 3D viewport's clipping region (Alt+B) into every tile "
@@ -594,6 +671,8 @@ def register():
     print("[OGC3DTiles] registering TilesSceneProps...")
     bpy.utils.register_class(OverlayItem)
     bpy.utils.register_class(ClipPolygonItem)
+    bpy.utils.register_class(MetaColumnItem)
+    bpy.utils.register_class(MetaClassItem)
     bpy.utils.register_class(TilesetItem)
     bpy.utils.register_class(TilesSceneProps)
     bpy.types.Scene.ogc3dtiles = bpy.props.PointerProperty(type=TilesSceneProps)
@@ -603,6 +682,8 @@ def register():
 def unregister():
     del bpy.types.Scene.ogc3dtiles
     bpy.utils.unregister_class(TilesSceneProps)
+    bpy.utils.unregister_class(MetaClassItem)
+    bpy.utils.unregister_class(MetaColumnItem)
     bpy.utils.unregister_class(TilesetItem)
     bpy.utils.unregister_class(ClipPolygonItem)
     bpy.utils.unregister_class(OverlayItem)

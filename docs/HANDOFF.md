@@ -118,6 +118,12 @@ or keys; the files that do are named below and stay out of git.
 
 ### Known limitations and open threads
 
+- **Feature metadata** (`tileset/feature_meta.py`, Metadata panel) is checked in a GUI
+  session on 5.3 only, with swissBUILDINGS3D. Point clouds, raster overlays on top,
+  and reopening a saved .blend are untested. `VEC3` table columns raise in the binding.
+- **Voxels:** prototype only, see `docs/voxels.md`. `data:` URIs in subtree JSON fail on
+  v0.59, which blocks GeoTOP without a local copy of its subtree.
+
 - **`GltfModifier` from Python fails** ("Tried to call pure virtual function
   GltfModifier.apply", tiles don't load) until #7 merges. Jonathan wants the clip
   modifier in cesium-native C++ and bound, not done in Python.

@@ -843,6 +843,7 @@ def _start_stream(scene, props, st, choice, cache) -> None:
                            max_dist=props.load_distance,
                            cache_dir=cache.root if props.use_disk_cache else None,
                            direct_mesh=props.native_direct_mesh,
+                           read_metadata=props.read_metadata,
                            foveated_cone=props.foveated_cone,
                            foveated_relaxation=props.foveated_relaxation)
     # two entries can share a label (same share-link token, user-typed names):
@@ -2125,6 +2126,20 @@ class OGC3D_PT_MaterialsPanel(_OGC3DSidebar, Panel):
         _materials.draw_panel(layout, props)
 
 
+class OGC3D_PT_MetadataPanel(_OGC3DSidebar, Panel):
+    bl_label = "Metadata"
+    bl_idname = "OGC3D_PT_metadata"
+    bl_order = 5
+    bl_options = {"DEFAULT_CLOSED"}
+
+    def draw_header(self, context):
+        self.layout.label(text="", icon="PRESET")
+
+    def draw(self, context):
+        from .. import materials as _materials
+        _materials.draw_metadata_panel(self.layout, context.scene.ogc3dtiles)
+
+
 class OGC3D_PT_CompositorPanel(_OGC3DSidebar, Panel):
     bl_label = "Compositor"
     bl_idname = "OGC3D_PT_compositor"
@@ -2451,6 +2466,7 @@ _classes = [
     OGC3D_PT_LodPanel,
     OGC3D_PT_DisplayPanel,
     OGC3D_PT_MaterialsPanel,
+    OGC3D_PT_MetadataPanel,
     OGC3D_PT_CompositorPanel,
     OGC3D_PT_RenderPanel,
     OGC3D_PT_BackendPanel,

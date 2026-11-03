@@ -407,6 +407,29 @@ through a shared "View Dir" vector refreshed per tick / render; the point
 material reads `Col` through both a Geometry and an Instancer Attribute
 node, since instance attributes only reach EEVEE through the latter).
 
+### Feature metadata
+
+Tiles often carry a table with one row per feature: building type, year, height. With
+**Read feature metadata** on (Metadata panel, before Start), the add-on reads these
+`EXT_structural_metadata` tables, including b3dm batch tables, which cesium-native
+converts. It needs the cesium-native backend and Direct mesh.
+
+Each tile gets an `ogc3d_feature` vertex attribute (the row) and a `meta_<column>`
+attribute for the active column, which shaders and Geometry Nodes can read. *All columns
+as attributes* keeps the others too, at about 40 MB per column on 10 M vertices. Text
+columns become integer classes shared by all tiles. The full table stays on the tile
+object as JSON, in the `ogc3d_features` custom property, for lookups by feature id.
+
+**Color tiles by** mixes colors into every tile material through the shared
+'OGC3D Metadata' group: one editable color per class for text, a Color Ramp between the
+column's min and max for numbers. Measured on swissBUILDINGS3D over Bern, 608 tiles:
+about 10 ms per tile on the worker threads, 2.7 MB of JSON for 468 tiles on screen, and
+0.5 s to switch to another column. Columns that differ on every row, like UUIDs, stay in
+the table only.
+
+Not read yet: vector columns (the binding can't convert them on v0.59), texture feature
+ids, and tileset, group and tile metadata.
+
 ### Editing tile geometry
 
 **Shared geometry nodes** (Display section) puts one Geometry Nodes
@@ -873,7 +896,9 @@ the converters compiled into cesium-native.
 - [x] Gaussian splat tiles (`KHR_gaussian_splatting`, SPZ) as Blender 5.3 splats
 - [x] `pnts` point clouds on the native path (Angkor tilesets verified)
 - [ ] `pnts` / `i3dm` on the pure Python path
-- [ ] `3DTILES_metadata` → Blender custom attributes
+- [x] Feature tables → vertex attributes and per-class colors
+- [ ] Tileset, group and tile metadata (`3DTILES_metadata`, core in 3D Tiles 1.1) → custom properties
+- [ ] Voxel tilesets: prototype measured in [docs/voxels.md](docs/voxels.md)
 
 ## License
 

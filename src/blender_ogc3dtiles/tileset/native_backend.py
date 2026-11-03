@@ -160,7 +160,7 @@ class _GlbPreparer:
             if self._owner.direct_mesh:
                 try:
                     from . import native_mesh
-                    payload = native_mesh.extract_mesh_payload(cs, model)
+                    payload = native_mesh.extract_mesh_payload(cs, model, self._owner.read_metadata)
                 except Exception as exc:          # noqa: BLE001
                     payload = None
                     print("[3DTiles/native] direct mesh failed for %s, using GLB: %r" % (url, exc))
@@ -485,8 +485,9 @@ class CesiumNativeBackend:
 
     def __init__(self, max_sse=16.0, cache_dir=None,
                  max_cached_mb=512, max_simultaneous_loads=20,
-                 max_dist=float("inf"), detail_falloff=600.0, direct_mesh=True, **_ignored):
+                 max_dist=float("inf"), detail_falloff=600.0, direct_mesh=True, read_metadata=False, **_ignored):
         self._max_sse = max_sse
+        self.read_metadata = bool(read_metadata)
         self.direct_mesh = bool(direct_mesh)   # numpy -> bpy mesh instead of GLB re-import
         self.on_main_thread_ready = None        # UI callback: ReadyTile -> bool (built now?)
         self.main_thread_ms = 12.0              # cesium-native main-thread load budget per tick

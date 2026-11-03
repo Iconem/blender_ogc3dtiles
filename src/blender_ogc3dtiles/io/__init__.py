@@ -614,6 +614,53 @@ def _ensure_instancer_color(mat) -> bool:
     return True
 
 
+FEATURES_PROP = "ogc3d_features"     # per-tile lookup: {"columns": [...], "rows": [[...], ...]}
+
+
+def _set_feature_attributes(me, feature_ids, table, columns):
+    """The ``columns`` of a tile's table as point attributes, readable from
+    shaders and Geometry Nodes."""
+    import numpy as np
+    from ..tileset import feature_meta
+    for name, values in feature_meta.vertex_attributes(feature_ids, table, columns).items():
+        attr = me.attributes.get(name)
+        if attr is None:
+            kind = "INT" if values.dtype.kind == "i" else "FLOAT"
+            attr = me.attributes.new(name, kind, "POINT")
+        attr.data.foreach_set("value", np.ascontiguousarray(values))
+
+
+def _add_feature_attributes(me, features, scene):
+    if not features:
+        return
+    import numpy as np
+    from ..materials import metadata_columns
+    from ..tileset.feature_meta import FEATURE_ID_ATTR
+    me.attributes.new(FEATURE_ID_ATTR, "INT", "POINT").data.foreach_set(
+        "value", np.ascontiguousarray(features["feature_id"], dtype=np.int32))
+    _set_feature_attributes(me, features["feature_id"], features["table"],
+                            metadata_columns(scene.ogc3dtiles))
+
+
+def refresh_feature_attributes(scene):
+    """Give the tiles already loaded the columns now in use."""
+    import numpy as np
+    from ..materials import metadata_columns
+    from ..tileset.feature_meta import FEATURE_ID_ATTR, attribute_name
+    columns = metadata_columns(scene.ogc3dtiles)
+    for o in bpy.data.objects:
+        if FEATURES_PROP not in o or o.type != "MESH":
+            continue
+        me = o.data
+        missing = [c for c in columns if attribute_name(c) not in me.attributes]
+        ids_attr = me.attributes.get(FEATURE_ID_ATTR)
+        if not missing or ids_attr is None:
+            continue
+        ids = np.zeros(len(me.vertices), np.int32)
+        ids_attr.data.foreach_get("value", ids)
+        _set_feature_attributes(me, ids, json.loads(o[FEATURES_PROP]), missing)
+
+
 def build_tile_from_payload(payload: dict, key: str, scene: bpy.types.Scene,
                             root: bpy.types.Object, matrix_rows, hidden: bool = True,
                             coll: Optional[bpy.types.Collection] = None,
@@ -673,6 +720,8 @@ def build_tile_from_payload(payload: dict, key: str, scene: bpy.types.Scene,
         me.color_attributes.render_color_index = 0
         me.color_attributes.active_color_index = 0
 
+    _add_feature_attributes(me, payload.get("features"), scene)
+
     # materials (one slot per payload material, textures packed from bytes)
     image_cache = image_cache if image_cache is not None else {}
     images = payload.get("images") or {}
@@ -699,6 +748,8 @@ def build_tile_from_payload(payload: dict, key: str, scene: bpy.types.Scene,
 
     obj = bpy.data.objects.new(_short_name(key), me)
     obj["tile_url"] = key
+    if payload.get("features"):
+        obj[FEATURES_PROP] = json.dumps(payload["features"]["table"], separators=(",", ":"))
     coll.objects.link(obj)
     obj.parent = root
     obj.matrix_parent_inverse = Matrix.Identity(4)
@@ -1334,6 +1385,12 @@ def _new_tile_hooks(scene, objs, mats):
         from ..materials import apply_clip
         for m in mats:
             apply_clip(m)
+    if getattr(props, "read_metadata", False):
+        from ..materials import apply_metadata, sync_metadata
+        sync_metadata(scene)
+        if getattr(props, "meta_color", False):
+            for m in mats:
+                apply_metadata(m)
     from ..materials import apply_backface
     for m in mats:
         apply_backface(m, getattr(props, "backface_mode", "DOUBLE"))

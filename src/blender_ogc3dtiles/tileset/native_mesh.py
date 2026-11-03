@@ -25,6 +25,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from . import feature_meta
+
 _MODE_POINTS = 0
 _MODE_TRIANGLES = 4
 _MODE_TRIANGLE_STRIP = 5
@@ -329,9 +331,10 @@ def _splat_arrays(cs, model, prim, T, n):
     return rot_wxyz, scl.astype(np.float32), sh
 
 
-def extract_mesh_payload(cs, model):
+def extract_mesh_payload(cs, model, read_metadata=False):
     """Flatten every primitive of ``model``'s default scene into one mesh.
-    Returns None when something is unsupported (caller falls back to GLB)."""
+    Returns None when something is unsupported (caller falls back to GLB).
+    ``read_metadata`` adds the feature metadata, see ``feature_meta``."""
     prims = []
     for prim, T in _iter_primitives(model):
         prims.append((prim, T))
@@ -350,6 +353,7 @@ def extract_mesh_payload(cs, model):
     all_splats = True
     mats_used = {}
     base = 0
+    feature_parts = []        # (vertex count, feature ids or None) per primitive
     for prim, T in prims:
         mode = prim.mode if prim.mode is not None else _MODE_TRIANGLES
         pos = _as_array(cs.gltf.get_position_accessor_view(model, prim), np.float64)
@@ -360,6 +364,8 @@ def extract_mesh_payload(cs, model):
         p = pos @ T[:3, :3].T + T[:3, 3]
         p = p @ _YUP_TO_ZUP3.T
         verts.append(p.astype(np.float32))
+        if read_metadata:
+            feature_parts.append((n, feature_meta.primitive_features(cs, model, prim, n)))
 
         nrm = _as_array(cs.gltf.get_normal_accessor_view(model, prim), np.float64)
         if nrm is not None and len(nrm) == n:
@@ -499,6 +505,7 @@ def extract_mesh_payload(cs, model):
         "points": all_points,
         "materials": materials,
         "images": images,          # image index → payload (or None)
+        "features": feature_meta.combine(cs, model, feature_parts, len(V)) if read_metadata else None,
     })
 
 

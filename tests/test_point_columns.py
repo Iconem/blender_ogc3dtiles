@@ -1,0 +1,36 @@
+"""feature_meta.point_columns: application attributes of point tiles, without the metadata extension."""
+import types
+
+import numpy as np
+
+from blender_ogc3dtiles.tileset import feature_meta
+
+
+def _read(values):
+    return lambda model, index, keep_integers=False: values[index]
+
+
+def _prim(mode, attributes):
+    return types.SimpleNamespace(mode=mode, attributes=attributes)
+
+
+def test_underscore_attribute_is_a_column(monkeypatch):
+    monkeypatch.setattr(feature_meta, "_structural", lambda model: None)
+    values = {1: np.arange(4, dtype=np.uint16).reshape(-1, 1), 2: np.zeros((4, 2), np.float32), 3: np.zeros((4, 1))}
+    prim = _prim(0, {"POSITION": 0, "_INTENSITY": 1, "_CESIUMOVERLAY_0": 2, "_BATCHID": 3})
+    columns = feature_meta.point_columns(object(), prim, 4, _read(values))
+    assert list(columns) == ["intensity"]
+    assert columns["intensity"][0].tolist() == [0, 1, 2, 3]
+
+
+def test_mesh_attributes_are_left_alone(monkeypatch):
+    monkeypatch.setattr(feature_meta, "_structural", lambda model: None)
+    prim = _prim(4, {"_INTENSITY": 1})
+    assert feature_meta.point_columns(object(), prim, 4, _read({1: np.zeros((4, 1))})) == {}
+
+
+def test_robust_range_ignores_rare_huge_values():
+    registry = feature_meta.ColumnRegistry() if hasattr(feature_meta, "ColumnRegistry") else type(feature_meta.REGISTRY)()
+    values = np.r_[np.linspace(100.0, 200.0, 2000), [65535.0]]
+    registry.note_range("intensity", values, robust=True)
+    assert registry.get("intensity").hi < 300.0

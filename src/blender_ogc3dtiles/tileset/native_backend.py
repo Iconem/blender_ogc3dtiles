@@ -576,7 +576,9 @@ class CesiumNativeBackend:
         sel = cs.tiles.selection
         self._tp, self._asys, self._accessor = _shared_externals(cs, self._cache_dir, self._max_loads)
         self._prr = self._make_preparer()
-        ext = sel.TilesetExternals(self._accessor, self._prr, self._asys)
+        # terrain loaders add a credit: without a system they crash on the main thread
+        self._credits = cs.utility.CreditSystem()
+        ext = sel.TilesetExternals(self._accessor, self._prr, self._asys, self._credits)
 
         opts = sel.TilesetOptions()
         opts.maximum_screen_space_error = float(self._max_sse)

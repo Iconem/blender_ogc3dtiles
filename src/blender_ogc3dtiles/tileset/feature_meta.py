@@ -108,11 +108,15 @@ class Registry:
                 out[i] = code
             return out
 
-    def note_range(self, name, values):
+    def note_range(self, name, values, robust=False):
+        """``robust``: 1st to 99th percentile, as LiDAR intensity has rare huge values."""
         finite = values[np.isfinite(values)]
         if not len(finite):
             return
-        lo, hi = float(finite.min()), float(finite.max())
+        if robust and len(finite) >= 1000:
+            lo, hi = (float(v) for v in np.percentile(finite, (1.0, 99.0)))
+        else:
+            lo, hi = float(finite.min()), float(finite.max())
         with self._lock:
             col = self._column(name, "number")
             if col is None:
@@ -291,13 +295,32 @@ def _plain_table_columns(model, ext, table):
     return out
 
 
+_NOT_COLUMNS = ("_CESIUMOVERLAY_", "_FEATURE_ID_", "_BATCHID", "_ROTATION", "_SCALE")
+
+
+def _plain_attributes(model, prim, n_verts, read_accessor):
+    """Scalar application attributes (glTF's leading underscore), metadata extension or not:
+    ``_INTENSITY`` as written by point cloud tilers is the column ``intensity``. Mesh tiles
+    are left out: their extra attributes are mostly feature ids."""
+    if prim.mode != 0:
+        return {}
+    out = {}
+    for name, index in prim.attributes.items():
+        if not name.startswith("_") or name.startswith(_NOT_COLUMNS):
+            continue
+        arr = read_accessor(model, index, keep_integers=True)
+        if arr is not None and len(arr) == n_verts and arr.shape[1] == 1:
+            out[name[1:].lower()] = (arr[:, 0], {})
+    return out
+
+
 def point_columns(model, prim, n_verts, read_accessor):
     """{column: (per-vertex values, enum names)} of a primitive, from its property
     attributes and from tables with one implicit row per vertex."""
+    out = _plain_attributes(model, prim, n_verts, read_accessor)
     ext = _structural(model)
     if ext is None:
-        return {}
-    out = {}
+        return out
     prim_ext = prim.ext_structural_metadata
     prim_ext = prim_ext() if callable(prim_ext) else prim_ext
     for i in (prim_ext.property_attributes if prim_ext is not None else ()):
@@ -346,7 +369,7 @@ def vertex_columns(parts, n_total, registry=REGISTRY):
         uniq = np.unique(values[has])
         as_class = known.kind == "class" if known is not None else bool(enum) or (integers and len(uniq) <= _MAX_POINT_CLASSES)
         if not as_class:
-            registry.note_range(name, values[has])
+            registry.note_range(name, values[has], robust=True)
             known = registry.get(name)
             if known is not None and known.kind == "number":
                 out[attribute_name(name)] = values.astype(np.float32)

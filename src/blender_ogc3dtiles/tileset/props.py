@@ -61,6 +61,7 @@ def _on_voxel_opacity(self, context):
 
 
 def _on_meta_column(self, context):
+    self["meta_range_custom"] = False
     try:
         from .. import materials, voxel_lookup
         from ..io import refresh_feature_attributes
@@ -69,6 +70,20 @@ def _on_meta_column(self, context):
         voxel_lookup.rebuild(context.scene)
     except Exception as e:                        # noqa: BLE001
         print(f"[3DTiles] metadata column: {e}")
+
+
+def _on_meta_range(self, context):
+    from .. import materials
+    materials.update_metadata_group(context.scene)
+
+
+def _on_meta_range_custom(self, context):
+    from .. import materials
+    from ..tileset.feature_meta import REGISTRY
+    col = REGISTRY.get(self.meta_column)
+    if self.meta_range_custom and col is not None and col.hi >= col.lo:
+        self["meta_range_min"], self["meta_range_max"] = col.lo, col.hi     # no update per value
+    materials.update_metadata_group(context.scene)
 
 
 def _on_meta_strength(self, context):
@@ -228,6 +243,8 @@ TILESET_KINDS = [
     ("ION", "Cesium ion", "Cesium ion asset (asset id + access token; needs the cesium-native backend)"),
     ("GLOBE", "WGS84 globe", "cesium-native's procedural ellipsoid: a bare globe to drape raster "
      "overlays on (needs the cesium-native backend)"),
+    ("TERRAIN", "Quantized-mesh terrain", "layer.json URL of a quantized-mesh server, streamed like a "
+     "tileset (needs the cesium-native backend). For Cesium World Terrain, use a Cesium ion entry"),
 ]
 
 
@@ -274,8 +291,8 @@ CLIP_MODES = [
 
 
 def _on_item_kind(self, context):
-    # a bare globe is only useful with imagery on it
-    if self.kind == "GLOBE":
+    # bare ground is only useful with imagery on it
+    if self.kind in ("GLOBE", "TERRAIN"):
         self.use_overlays = True
 
 
@@ -583,6 +600,16 @@ class TilesSceneProps(PropertyGroup):
         name="Strength", description="0 = the tile's own colors, 1 = metadata colors only",
         default=1.0, min=0.0, max=1.0, subtype="FACTOR", update=_on_meta_strength,
     )
+    meta_range_custom: BoolProperty(
+        name="Custom range",
+        description="Set which values the Color Ramp spans, for a number column such as LiDAR "
+                    "intensity. Live",
+        default=False, update=_on_meta_range_custom,
+    )
+    meta_range_min: FloatProperty(name="Min", description="Value at the start of the ramp. Live",
+                                  default=0.0, update=_on_meta_range)
+    meta_range_max: FloatProperty(name="Max", description="Value at the end of the ramp. Live",
+                                  default=1.0, update=_on_meta_range)
     meta_all_columns: BoolProperty(
         name="All columns as attributes",
         description="Keep every column as a vertex attribute, for Geometry Nodes or your own "

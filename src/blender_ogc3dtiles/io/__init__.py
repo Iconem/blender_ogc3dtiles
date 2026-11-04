@@ -891,6 +891,9 @@ def build_tile_from_payload(payload: dict, key: str, scene: bpy.types.Scene,
         kind = "INT" if values.dtype.kind == "i" else "FLOAT"
         me.attributes.new(name, kind, "POINT").data.foreach_set("value", np.ascontiguousarray(values))
 
+    # colorless points still take imagery or a metadata ramp
+    point_source = bool(overlay_points or payload.get("vertex_columns"))
+
     # materials (one slot per payload material, textures packed from bytes)
     image_cache = image_cache if image_cache is not None else {}
     images = payload.get("images") or {}
@@ -905,11 +908,11 @@ def build_tile_from_payload(payload: dict, key: str, scene: bpy.types.Scene,
                 image_cache[ck] = img
                 data_names.append(img.name)
         mat = _material_from_payload(mp, img, key)
-        if (payload.get("points") or payload.get("voxel")) and (cols is not None or overlay_points):
+        if (payload.get("points") or payload.get("voxel")) and (cols is not None or point_source):
             _wire_point_colors(mat)
         me.materials.append(mat)
         data_names.append(mat.name)
-    if payload.get("points") and not me.materials and (cols is not None or overlay_points):
+    if payload.get("points") and not me.materials and (cols is not None or point_source):
         mat = _material_from_payload({"name": "points", "double_sided": True}, None, key)
         _wire_point_colors(mat)
         me.materials.append(mat)

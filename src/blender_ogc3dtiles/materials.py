@@ -661,8 +661,9 @@ def update_metadata_group(scene):
     is_number = col is not None and col.kind == "number"
     nodes["Is Number"].outputs[0].default_value = 1.0 if is_number else 0.0
     if is_number and col.hi >= col.lo:
-        nodes["Min"].outputs[0].default_value = col.lo
-        nodes["Max"].outputs[0].default_value = max(col.hi, col.lo + 1e-6)
+        lo, hi = (props.meta_range_min, props.meta_range_max) if props.meta_range_custom else (col.lo, col.hi)
+        nodes["Min"].outputs[0].default_value = lo
+        nodes["Max"].outputs[0].default_value = max(hi, lo + 1e-6)
     write_palette(scene)
 
 
@@ -925,6 +926,11 @@ def draw_metadata_panel(layout, props):
         return
     if col.kind == "number":
         layout.label(text=f"{col.lo:g} to {col.hi:g}", icon="IPO_LINEAR")
+        layout.prop(props, "meta_range_custom")
+        if props.meta_range_custom:
+            row = layout.row(align=True)
+            row.prop(props, "meta_range_min")
+            row.prop(props, "meta_range_max")
         return
     box = layout.column(align=True)
     rows = [c for c in props.meta_classes if c.column == props.meta_column]

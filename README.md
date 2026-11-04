@@ -186,10 +186,13 @@ keeps its drape.
 cesium-native's procedural ellipsoid instead of a tileset.json: a bare
 globe, subdivided as the camera approaches, to drape imagery on when there
 is no 3D Tiles content (the scene origin is yours to set: use *Custom*).
-Terrain: cesium-native streams quantized-mesh terrain (Cesium World Terrain
-on ion, or any `layer.json` server) as a tileset, so real terrain can be
-draped the same way; Terrarium / Terrain-RGB raster DEMs are not terrain
-providers in cesium-native and are out of scope here.
+
+**Quantized-mesh terrain.** A tileset entry of type *Quantized-mesh terrain* takes the
+`layer.json` URL of a server, such as
+[swisstopo's](https://3d.geo.admin.ch/ch.swisstopo.terrain.3d/v1/layer.json), and streams it like a
+tileset, draped the same way. Its root covers the world, so set a *Custom* scene origin.
+Cesium World Terrain is an ion asset: use a *Cesium ion* entry. Terrarium / Terrain-RGB raster
+DEMs are not terrain providers in cesium-native and are out of scope here.
 
 See [cesium-native: versions and upgrade notes](#cesium-native-versions-and-upgrade-notes)
 for what newer cesium-native releases would add (vector overlays,
@@ -443,6 +446,12 @@ attributes and `pnts` batch tables without `BATCH_ID` always become `meta_<colum
 attributes (a table of millions of rows wouldn't fit a Python list). Whole numbers with
 few values and enums are classes, named when the schema has an enum; other values go
 through the ramp. Batched `pnts` use the table path above.
+
+**Intensity and other point values.** Scalar attributes of point tiles become number columns, with
+or without `EXT_structural_metadata`: `_INTENSITY` is the column `intensity`. Their ramp spans the 1st
+to 99th percentile, since LiDAR intensity has rare huge values. **Custom range** sets both ends, live.
+Tested on real IGN LiDAR HD values written to a local tile: 3dtiled's live COPC tiles don't send
+intensity yet.
 
 **Tileset, group, tile and content metadata** are read from `tileset.json`. The tileset's
 own values show in the Metadata panel; the others, merged per tile, are in the
@@ -1007,7 +1016,9 @@ the converters compiled into cesium-native.
 - [ ] Beta: try [OpenVDB's `meshToVolume`](https://openvdb.org/documentation/doxygen/MeshToVolume_8h.html) and [trimesh](https://github.com/mikedh/trimesh) as voxelizers
 - [ ] Beta: burn classes into point clouds with PDAL ([draft](scripts/pdal_burn_classes.py))
 - [x] Raster overlays on point clouds
-- [ ] Point cloud intensity mode, with sliders for its range
+- [x] Intensity and other number columns on point clouds, with *Custom range* for the ramp
+- [ ] Send intensity and classification through 3dtiled, whose live COPC tiles only hold positions and colors
+- [x] Quantized-mesh terrain entries
 
 ## License
 

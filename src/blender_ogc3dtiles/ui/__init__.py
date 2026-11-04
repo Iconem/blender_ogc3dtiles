@@ -824,6 +824,7 @@ def _start_item(scene, props, item) -> dict:
     st = _new_stream(_item_key(item), item.name or default_name,
                      url, item_token(item, props), effective_sse(props, item))
     st["overlays"] = _overlay_specs(item)
+    st["terrain"] = item.kind == "TERRAIN"
     if item.use_clipping:
         st["clip_dirty_t"] = 0.0          # masks once the scene origin is known
     try:
@@ -871,6 +872,8 @@ def _start_stream(scene, props, st, choice, cache) -> None:
             raise RuntimeError("The WGS84 globe needs the cesium-native backend")
         if _is_ion_url(st["url"]):
             raise RuntimeError("Cesium ion assets need the cesium-native backend")
+        if st.get("terrain"):
+            raise RuntimeError("Quantized-mesh terrain needs the cesium-native backend")
         headers = {}
         if st["token"]:
             headers["Authorization"] = f"Bearer {st['token']}"
@@ -1909,6 +1912,8 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
                 row.operator("ogc3dtiles.tileset_browse", text="", icon="FILEBROWSER")
                 if _is_ion_url(it.url.strip()):          # entries from older versions
                     b.prop(it, "ion_token", text="Ion Token")
+                if it.kind == "TERRAIN":
+                    b.label(text="layer.json URL. Worldwide: set a Custom origin", icon="WORLD")
             from .extras import draw_entry_tools
             draw_entry_tools(b, it)
             row = b.row(align=True)

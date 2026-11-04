@@ -126,8 +126,16 @@ def _tile_key(tile: Tile) -> str:
     return tile.content_uri or f"tile@{id(tile)}"
 
 
-def _enu_from_ecef(props):
-    return build_ecef_to_enu_matrix(props.origin_lat, props.origin_lon, props.origin_height)
+def _frame(props, st=None):
+    """(lat, lon, h) the stream's tiles and camera are expressed in: the scene
+    origin, or the stream's own frame (a non-georeferenced tileset streamed
+    once the origin was fixed sits at the Blender origin in its own axes)."""
+    own = st.get("frame") if st else None
+    return own or (props.origin_lat, props.origin_lon, props.origin_height)
+
+
+def _enu_from_ecef(props, st=None):
+    return build_ecef_to_enu_matrix(*_frame(props, st))
 
 
 def _enabled_items(props):
@@ -460,7 +468,7 @@ def _clip_box_units(props, item, st) -> list:
         return []
     root = bpy.data.objects.get(st.get("root_obj") or "")
     to_tileset = root.matrix_world.inverted() if root is not None else mathutils.Matrix.Identity(4)
-    enu = build_enu_to_ecef_matrix(props.origin_lat, props.origin_lon, props.origin_height)
+    enu = build_enu_to_ecef_matrix(*_frame(props, st))
     dg = bpy.context.evaluated_depsgraph_get()
     out = []
     for cp in item.clip_polygons:
@@ -555,14 +563,14 @@ def _refresh_clip(scene, props, st, item) -> None:
     try:
         loops, boxes = _clip_volumes(scene, props, item, st)
         small, dense = clipping.split_polygons(loops)
-        local = is_local_origin(props)
+        frame = _frame(props, st)
+        local = _frame_is_local(frame)
         # a keyframed volume can uncover any tile later on, and a render doesn't stream
         animated = [cp.obj for cp in item.clip_polygons if item.use_clipping and cp.enabled
                     and cp.obj and _is_animated(cp.obj)]
         clip_nodes.set_animated_deps(scene, item.uid, animated)
         st["clip_no_excluders"] = bool(animated) or (local and bool(loops))
-        lonlat = [] if local else clipping.loops_to_lonlat(
-            loops, (props.origin_lat, props.origin_lon, props.origin_height))
+        lonlat = [] if local else clipping.loops_to_lonlat(loops, frame)
         specs = clipping.clip_specs(item, [lonlat[i] for i in dense] if lonlat else [])
         excluders = [] if animated else clipping.clip_excluders(item, lonlat, n_boxes=len(boxes))
     except Exception as e:                           # noqa: BLE001
@@ -883,7 +891,8 @@ def _start_stream(scene, props, st, choice, cache) -> None:
         backend.set_root(root_tile)
         st["root_tile"] = root_tile
         cx, cy, cz, root_r = root_tile.sphere_ecef()
-        _decide_origin(props, (cx, cy, cz), root_r)
+        st["frame"] = _decide_origin(props, (cx, cy, cz), root_r)
+        st["frame_set"] = True
         if not bpy.app.background:
             fit_clip_range(root_r)
         st["download_mgr"] = TileDownloadManager(
@@ -921,15 +930,22 @@ def _forget_tiles_data(scene) -> None:
         del scene["ogc3d_voxel_colors"]
 
 
-def _decide_origin(props, center_ecef, radius_m=None) -> None:
+def _decide_origin(props, center_ecef, radius_m=None):
     """Scene-origin policy, evaluated when a tileset's centre becomes known.
     Only the first tileset of a session can move the origin; afterwards every
-    stream shares it."""
-    if _state["origin_set"]:
-        return
+    stream shares it. Returns the stream's own (lat, lon, h) frame when it
+    can't: a tileset that isn't georeferenced (its centre sits deep inside the
+    Earth) arriving once the origin is fixed lands at the Blender origin in its
+    own axes instead of 6000 km underground. None: the scene origin."""
     cx, cy, cz = center_ecef
     near_centre = math.dist((cx, cy, cz), (0.0, 0.0, 0.0)) < LOCAL_TILESET_RADIUS_M
-    if near_centre and (radius_m is None or radius_m >= LOCAL_TILESET_RADIUS_M):
+    is_global = near_centre and (radius_m is None or radius_m >= LOCAL_TILESET_RADIUS_M)
+    if _state["origin_set"]:
+        if near_centre and not is_global and not is_local_origin(props):
+            print("[3DTiles] Tileset is not georeferenced: placed at the scene origin in its own axes")
+            return _local_frame(cz)
+        return None
+    if is_global:
         # a global tileset (Google, a terrain layer): its centre is the Earth's
         # centre, which is no origin. Keep whatever origin is set, else the
         # lat/lon/h in the panel (use Custom to pick the place of interest)
@@ -939,7 +955,7 @@ def _decide_origin(props, center_ecef, radius_m=None) -> None:
         _state["origin_set"] = True
         for other in _state["streams"].values():
             other["last_sig"] = None
-        return
+        return None
     if props.origin_mode == "AUTO" and props.origin_valid:
         ox, oy, oz = geodetic_to_ecef(props.origin_lat, props.origin_lon, props.origin_height)
         d_km = math.dist((cx, cy, cz), (ox, oy, oz)) / 1000.0
@@ -948,7 +964,7 @@ def _decide_origin(props, center_ecef, radius_m=None) -> None:
             _state["origin_set"] = True
             for other in _state["streams"].values():
                 other["last_sig"] = None
-            return
+            return None
         print(f"[3DTiles] Scene origin re-centred: tileset centre {d_km:.1f} km "
               f"> {props.origin_reuse_km:g} km")
     if near_centre:
@@ -959,6 +975,7 @@ def _decide_origin(props, center_ecef, radius_m=None) -> None:
     _state["origin_set"] = True
     for other in _state["streams"].values():
         other["last_sig"] = None
+    return None
 
 
 # ── Place search (Photon) ─────────────────────────────────────────────────────
@@ -1409,7 +1426,7 @@ def _build_budget_ms(props, navigating: bool) -> float:
 
 def _view_for(st):
     cam = _state["camera_adapter"]
-    return cam.get_view_state(bpy.data.objects.get(st["root_obj"] or ""))
+    return cam.get_view_state(bpy.data.objects.get(st["root_obj"] or ""), frame=st.get("frame"))
 
 
 def _apply_visibility(st, render_keys, keep_ids, now) -> bool:
@@ -1489,7 +1506,7 @@ def _tick_python(scene, props, st, now) -> bool:
 
     # 2. budgeted imports
     imported = 0
-    enu = _enu_from_ecef(props)
+    enu = _enu_from_ecef(props, st)
     root_obj, coll = _root_and_coll(scene, st)
     per_tick = 1 if (getattr(props, "nav_build_ms", 0.0) > 0 and _navigating(st, now))         else max(1, props.imports_per_tick)
     while st["ready"] and imported < per_tick:
@@ -1565,8 +1582,7 @@ def _build_native_tile(scene, props, st, rt) -> bool:
     from ..tileset.native_backend import blender_matrix_for_tile
 
     root_obj, coll = _root_and_coll(scene, st)
-    m = blender_matrix_for_tile(rt.transform_ecef, props.origin_lat, props.origin_lon,
-                                props.origin_height, rt.rtc, rt.up_axis)
+    m = blender_matrix_for_tile(rt.transform_ecef, *_frame(props, st), rt.rtc, rt.up_axis)
     t_imp = time.perf_counter()
     if rt.mesh_payload is not None:
         # build_tile_from_payload folds payload["offset"] into the matrix (float64)
@@ -1602,7 +1618,7 @@ def _make_native_builder(scene, props, st):
     """Callback for CesiumNativeBackend.on_main_thread_ready: build immediately
     when the scene origin is known, otherwise let the backend queue it."""
     def cb(rt):
-        if not _state["origin_set"]:
+        if not _state["origin_set"] or not st.get("frame_set"):
             return False
         return _build_native_tile(scene, props, st, rt)
     return cb
@@ -1616,12 +1632,13 @@ def _tick_native(scene, props, st, now) -> bool:
         backend.set_main_thread_budget(_build_budget_ms(props, _navigating(st, now)))
     backend.tick()      # dispatches cesium-native main-thread work → builds tiles via callback
 
-    if not _state["origin_set"]:
+    if not st.get("frame_set"):
         c = backend.root_center_ecef()
         if c is None:
             st["pending"] = 0
             return False
-        _decide_origin(props, c, backend.root_radius_m())
+        st["frame"] = _decide_origin(props, c, backend.root_radius_m())
+        st["frame_set"] = True
     if not st.get("clip_fit"):
         r = backend.root_radius_m()
         if r is not None:
@@ -1705,8 +1722,7 @@ def _add_root_bbox(scene, st):
         from ..tileset.traversal import ecef_to_enu
         props = scene.ogc3dtiles
         cx, cy, cz, radius = root_tile.sphere_ecef()
-        ex, ey, ez = ecef_to_enu((cx, cy, cz), props.origin_lat, props.origin_lon,
-                                 props.origin_height)
+        ex, ey, ez = ecef_to_enu((cx, cy, cz), *_frame(props, st))
         root = bpy.data.objects.get(st.get("root_obj") or "")
         name = f"bbox · {st['name']}"[:60]
         old = bpy.data.objects.get(name)
@@ -1800,19 +1816,25 @@ LOCAL_TILESET_RADIUS_M = 1.0e6
 _WGS84_B = 6356752.314245
 
 
-def _set_origin_local(props, cz):
+def _local_frame(cz):
     """Origin at the north pole, longitude -90, height -b: the ENU frame is
     then the identity (E=X, N=Y, U=Z, origin at ECEF 0), so a non-georeferenced
     tileset keeps its own Z-up axes and metres in Blender; the height takes
     the tileset's vertical centre to z=0."""
-    props.origin_lat = 90.0
-    props.origin_lon = -90.0
-    props.origin_height = -_WGS84_B + cz
+    return (90.0, -90.0, -_WGS84_B + cz)
+
+
+def _set_origin_local(props, cz):
+    props.origin_lat, props.origin_lon, props.origin_height = _local_frame(cz)
     print("[3DTiles] Scene origin: local (tileset is not georeferenced), identity frame")
 
 
+def _frame_is_local(frame) -> bool:
+    return frame[0] >= 89.999 and frame[2] < -6.0e6
+
+
 def is_local_origin(props) -> bool:
-    return props.origin_lat >= 89.999 and props.origin_height < -6.0e6
+    return _frame_is_local((props.origin_lat, props.origin_lon, props.origin_height))
 
 
 def _set_origin_from_ecef(props, ex, ey, ez):

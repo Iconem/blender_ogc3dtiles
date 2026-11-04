@@ -156,14 +156,28 @@ entries and point intensity. Section 4 lists what to do next.
   Requested upstream: cesium-native#1486.
 - **`is_job_running("SHADER_COMPILATION")`** stayed true for minutes on large
   scenes while the viewport was already correct. Don't use it to wait.
-- **Local splats loaded no tiles on 2026-11-02**, with clipping off too (Vestibule
-  7.5M and Interior mesh2splat 200M, view pivot at the origin, 60 m): see below, so
-  clipping them is unchecked. A local mesh tileset loads and clips.
-- **Non-georeferenced tilesets** (3dtiled splat output, root near ECEF 0)
-  only land at the scene origin when the origin is Auto. Seen on 2026-11-01
-  with the San Pietro splats: with the view pivot at (5, -10, 0) and a 95 m
-  view distance, cesium selected 0 tiles; at (0, 0, 0) and 60 m, 26. The
-  local-placement camera conversion is the likely culprit; not investigated.
+- **Content-less tiles** (fixed 2026-11-04): cesium-native renders a tile without
+  content as a hole when its geometric error is below its parent's
+  (`TilesetContentManager::updateContentLoadedState`), where CesiumJS always
+  refines it. 3dtiled output has nine such levels above its content, so the
+  Vestibule and Interior splats showed nothing from most viewpoints (the "0 tiles
+  away from the origin" symptom). `asset_fixes.refine_through_empty_tiles` gives
+  those tiles their parent's error in the tileset JSON. A content-less *root*
+  still renders as a hole once it meets the SSE (cesium compares it with twice
+  its own error), i.e. from about 2 km on a 130 m tileset at 8 px. Worth a
+  cesium-native issue (CesiumJS parity), and 3dtiled could write empty tiles with
+  their parent's error itself. Clipping those splats is still unchecked.
+- **Non-georeferenced tilesets** (fixed 2026-11-04): a stream now carries its own
+  frame (`st["frame"]`, `_decide_origin` returns it) when the origin is already
+  fixed and the tileset sits at ECEF 0, so it lands at the Blender origin in its
+  own axes with Custom / Keep / Search origins and as a second stream next to a
+  georeferenced one. Checked on 5.3 with a Custom origin in Rome and with the CDN
+  splats first. The Vestibule splats render as a tall column, about twice as
+  high as wide: likely the converter's axes, not the add-on; not investigated.
+- **Preparer errors at stop**: stopping a stream with loads in flight logs a
+  burst of "Tried to call pure virtual function
+  IPrepareRendererResources.prepare_in_load_thread" from cesium-native (the
+  Python preparer is gone before the worker continuations run). Harmless so far.
 - **Orthographic viewports** use a far, narrow perspective emulation, exact
   only on the pivot plane, until the v0.65 bump.
 - **Panoramic cameras**: not supported; a six-view cube-map union would work.
@@ -219,9 +233,8 @@ Read on 2026-11-02, nothing merged. v0.66 only reads and writes the glTF 2.1 and
 
 **Can start on the add-on**
 
-3. **Bugs in section 2:** local splats that load no tiles, and non-georeferenced
-   tilesets that select 0 tiles away from the origin. These are the two most
-   likely to hit real use.
+3. ~~Bugs in section 2~~ (fixed 2026-11-04, see Known limitations): content-less
+   tiles rendered as holes, and non-georeferenced tilesets with a fixed origin.
 4. **Reopening a saved .blend** with metadata is untested.
 5. **Beta items from the README roadmap:** Grease Pencil phases, an octree pyramid
    for the class grid (most common class per 2×2×2 block, never an average),

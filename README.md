@@ -229,6 +229,18 @@ A tileset that is not georeferenced (its root sits at the ECEF origin, as
 3dtiled and other local converters write it) is detected at start and gets an
 identity frame: the tileset's own Z-up axes and metres become the Blender
 scene, centred vertically.  The Scene Origin panel then reads "Local tileset".
+When the origin is already fixed (Custom, Keep, a place, or an earlier
+georeferenced tileset), such a tileset still lands at the Blender origin in
+its own axes: the stream keeps its own frame for its tiles and camera, and
+its root Empty can be moved to place it.
+
+Converter output often keeps its content under many levels of tiles without
+content, each with a smaller geometric error than its parent. cesium-native
+renders such a tile as a hole once it meets the screen-space error, where
+CesiumJS always refines it, so nothing showed from most viewpoints. The
+asset accessor gives those tiles their parent's error on the way in
+(`tileset/asset_fixes.py`), which cesium-native takes as "refine
+unconditionally".
 
 Tested with 3dtiled output and with the public sample of the
 [3D-Tiles-RendererJS 3DGS plugin](https://github.com/WilliamLiu-1997/3D-Tiles-RendererJS-3DGS-Plugin)
@@ -879,6 +891,10 @@ cache. Our `IPrepareRendererResources` subclass serialises each decoded
 `Model` back to a GLB (`GltfUtilities.collapse_to_single_buffer` +
 `GltfWriter.write_glb`, KTX2 textures re-encoded to PNG) which the same
 import step consumes. Placement: Empty = `ENU_from_ECEF · T_tile · Zup→Yup`.
+`tileset/asset_fixes.py` wraps the asset accessor: it answers `data:` URIs,
+completes subtree JSON, and raises the geometric error of content-less tiles
+to their parent's so cesium-native refines through them (see Gaussian splat
+tiles).
 
 #### Coordinate system
 

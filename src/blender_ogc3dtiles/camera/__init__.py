@@ -57,16 +57,18 @@ class CesiumCameraAdapter:
 
     # ── full view state ──────────────────────────────────────────────────────
 
-    def get_view_state(self, root_obj=None) -> ViewState | None:
+    def get_view_state(self, root_obj=None, frame=None) -> ViewState | None:
         """``root_obj`` is the per-tileset root Empty: tiles live in its local
         space (ENU), so the camera is expressed there too. Moving / rotating /
-        scaling the Empty is therefore honoured by culling and SSE."""
+        scaling the Empty is therefore honoured by culling and SSE. ``frame``
+        is the stream's own (lat, lon, h) anchor when it differs from the
+        scene origin (a tileset that isn't georeferenced)."""
         props = self.scene.ogc3dtiles
         src = self._source(props)
         if src is None:
             return None
         view, win, w, hpx, is_persp, pull_back, src_sig = src
-        lat, lon, h = props.origin_lat, props.origin_lon, props.origin_height
+        lat, lon, h = frame or (props.origin_lat, props.origin_lon, props.origin_height)
         root_sig = ()
         root_scale = 1.0
         if root_obj is not None:

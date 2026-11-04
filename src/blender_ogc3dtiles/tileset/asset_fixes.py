@@ -5,6 +5,14 @@ hands to curl. Writers also leave out ``byteLength``, or write ``contentAvailabi
 as one object where the spec has an array, which it then reads as "nothing available":
 no tile of such a tileset ever loads. A wrapper around the asset accessor answers
 ``data:`` requests itself and completes the subtree JSON.
+
+Tileset JSON: cesium-native renders a tile without content as a hole when its
+geometric error is below its parent's (``TilesetContentManager::
+updateContentLoadedState``), where CesiumJS always refines it. Converter output
+such as 3dtiled's keeps its content under many levels of empty tiles with
+halving errors, so cesium-native showed nothing once an empty level met the
+screen-space error. The wrapper gives those tiles their parent's error, which
+cesium-native takes as "refine unconditionally".
 """
 from __future__ import annotations
 
@@ -56,6 +64,38 @@ def complete_subtree_json(data: bytes) -> bytes:
     return json.dumps(doc).encode("utf-8") if changed else data
 
 
+_TILESET_KEYS = (b'"root"', b'"geometricError"')
+
+
+def refine_through_empty_tiles(data: bytes) -> bytes:
+    """Tileset JSON where every tile without content refines to its children,
+    as CesiumJS does: such a tile takes its parent's geometric error when its
+    own is smaller. ``data`` itself when nothing changes or it isn't a tileset."""
+    if any(k not in data for k in _TILESET_KEYS):
+        return data
+    try:
+        doc = json.loads(data)
+    except ValueError:
+        return data
+    root = doc.get("root") if isinstance(doc, dict) else None
+    if not isinstance(root, dict):
+        return data
+    changed = False
+    stack = [(child, root.get("geometricError"))
+             for child in root.get("children") or [] if isinstance(child, dict)]
+    while stack:
+        tile, parent_ge = stack.pop()
+        ge = tile.get("geometricError")
+        children = tile.get("children") or []
+        empty = not any(k in tile for k in ("content", "contents", "implicitTiling"))
+        if (empty and children and isinstance(ge, (int, float))
+                and isinstance(parent_ge, (int, float)) and ge < parent_ge):
+            tile["geometricError"] = ge = parent_ge
+            changed = True
+        stack.extend((child, ge) for child in children if isinstance(child, dict))
+    return json.dumps(doc, separators=(",", ":")).encode("utf-8") if changed else data
+
+
 def _is_json_url(url: str) -> bool:
     return url.split("?", 1)[0].lower().endswith(".json")
 
@@ -66,7 +106,7 @@ def _finish_json(aio, future, promise):
         response = request.response
         data = bytes(response.data) if response is not None else b""
         note_tileset_json(request.url, data)
-        fixed = complete_subtree_json(data)
+        fixed = refine_through_empty_tiles(complete_subtree_json(data))
         if fixed is not data:
             request = aio.AssetRequest(request.method, request.url, request.headers,
                                        aio.AssetResponse(response.status_code, response.content_type,

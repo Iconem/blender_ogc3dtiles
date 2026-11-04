@@ -10,6 +10,7 @@ from bpy.props import BoolProperty, CollectionProperty, EnumProperty, FloatPrope
 from bpy.types import Operator, PropertyGroup, UIList
 
 from .. import cachectl, library, paths
+from ..addon_prefs import _get_prefs
 from ..io import addon_pref, default_cache_dir
 
 
@@ -187,10 +188,6 @@ class OGC3D_OT_LibraryAdd(Operator):
     bl_label = "Add from Library"
 
     query: StringProperty(name="Search", options={"TEXTEDIT_UPDATE", "SKIP_SAVE"})
-    show_mesh: BoolProperty(name="Mesh", options={"SKIP_SAVE"})
-    show_points: BoolProperty(name="Point cloud", options={"SKIP_SAVE"})
-    show_splats: BoolProperty(name="Splats", options={"SKIP_SAVE"})
-    show_voxels: BoolProperty(name="Voxels", options={"SKIP_SAVE"})
 
     def invoke(self, context, event):
         if not _library_paths():
@@ -209,13 +206,13 @@ class OGC3D_OT_LibraryAdd(Operator):
         row = layout.row()
         row.activate_init = True
         row.prop(self, "query", text="", icon="VIEWZOOM", placeholder="Search tilesets")
+        # the preferences remember these from one search to the next
+        prefs = _get_prefs(context)
         row = layout.row()
-        row.prop(self, "show_mesh")
-        row.prop(self, "show_points")
-        row.prop(self, "show_splats")
-        row.prop(self, "show_voxels")
-        kinds = [k for k, on in (("MESH", self.show_mesh), ("POINTS", self.show_points),
-                                 ("SPLATS", self.show_splats), ("VOXELS", self.show_voxels)) if on]
+        for name in ("library_show_mesh", "library_show_points", "library_show_splats", "library_show_voxels"):
+            row.prop(prefs, name)
+        kinds = [k for k, on in (("MESH", prefs.library_show_mesh), ("POINTS", prefs.library_show_points),
+                                 ("SPLATS", prefs.library_show_splats), ("VOXELS", prefs.library_show_voxels)) if on]
         global _lib_filter
         _lib_filter = (self.query, kinds)
         found = len(_matching_entries(self.query, kinds))

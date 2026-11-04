@@ -56,14 +56,14 @@ own packager:
 
 ```text
 blender --command extension build --source-dir src/blender_ogc3dtiles --output-dir dist
-blender --command extension validate dist/ogc_3dtiles_streaming-0.3.0.zip
+blender --command extension validate dist/ogc_3dtiles_streaming-0.4.0.zip
 ```
 
 Then either Preferences, Get Extensions, the drop-down arrow, *Install from
 Disk*, or from a terminal:
 
 ```text
-blender --command extension install-file -r user_default -e dist/ogc_3dtiles_streaming-0.3.0.zip
+blender --command extension install-file -r user_default -e dist/ogc_3dtiles_streaming-0.4.0.zip
 ```
 
 The sidebar tab "3D Tiles" appears in the 3D viewport (N).  The pure Python
@@ -460,6 +460,22 @@ panel as columns, so classes, legend and ramp work the same, and they turn on by
 themselves at the first voxel tile. Tested on [GeoTOP](https://bedrock.engineer/geotop-voxels/),
 the Dutch geological model, with 73 tiles over Amsterdam.
 
+![The voxel tilesets below in Blender: Blocks on top, Volume underneath. Volume blends classes through the layers, so it is faint on GeoTOP, and VoxelBox doesn't show in it at this framing. Bedrock's region tiles can't be Volumes and stay blocks](docs/img/voxel_tilesets.jpg)
+
+| Tileset | Volume | Levels | Grid of the root tile | Values |
+|---|---|---|---|---|
+| [GeoTOP Amsterdam](https://bedrock.engineer/geotop-voxels/geotop_amsterdam/tileset.json) | box | 3 (73 tiles) | 126 × 105 × 47 | `lithok` classes |
+| [GeoTOP Utrecht](https://bedrock.engineer/geotop-voxels/geotop_utrecht_province/tileset.json) | box | 3 (73 tiles) | 104 × 126 × 79 | `lithok` classes |
+| [GeoTOP Delft](https://bedrock.engineer/geotop-voxels/geotop_delft_10x/tileset.json) | box | 1 | 101 × 101 × 89 | `lithok` classes |
+| [Bedrock Amsterdam](https://bedrock.engineer/nl-amsterdam-noord/amsterdam_ellipsoid/tileset.json) | region | 3 (73 tiles) | 83 × 69 × 32 | `lithology`, `stratigraphy` |
+| [Cesium VoxelBox](https://raw.githubusercontent.com/CesiumGS/cesium/main/Apps/SampleData/Cesium3DTiles/Voxel/VoxelBox3DTiles/tileset.json) | box | 1 | 2 × 4 × 3 | RGBA, to check axes |
+| [bertt voxeldam](https://raw.githubusercontent.com/bertt/3dtiles_voxels/main/demos/voxeldam/tileset.json) | box | 1 | 10 × 10 × 10 | RGBA |
+| [bertt voxelgorinchem](https://raw.githubusercontent.com/bertt/3dtiles_voxels/main/demos/voxelgorinchem/tileset.json) | box | 1 | 4 × 4 × 4 | RGBA |
+
+All seven are implicit octrees. Those with several levels stream as pyramids, finer tiles
+replacing coarser ones as you get closer. VoxelBox is Earth-sized and the bertt demos
+sit at the Earth's centre, so **Auto** origin can't place them on a site.
+
 The **Voxels** setting (Metadata panel, before Start) picks how they show:
 
 - **Blocks**: a mesh of the cell faces next to empty space. Crisp and opaque. Best for
@@ -479,6 +495,24 @@ The **Voxels** setting (Metadata panel, before Start) picks how they show:
 33 km); stretched tiles no longer line up with other data. Both settings apply at the
 next Start. Box and region tiles work; cylinder tiles are skipped. See
 [docs/voxels.md](docs/voxels.md) for the measurements.
+
+### Beta features
+
+Off by default, under *Preferences > Add-ons > OGC 3D Tiles > Beta features*:
+
+![Phases timeline on Google Photorealistic 3D Tiles over the Colosseum, north at the bottom: the year slider on top, with Clip to phases underneath. The volumes and dates are invented. One class per cell, so the 1990 blob overwrites the wall where they overlap, and the wall has a hole in it at year 250](docs/img/phases_colosseum.jpg)
+
+- **Phases timeline.** A sidebar panel for closed meshes in a `Phases` collection, each with
+  the custom properties `code` (1 to 255) and `year`, optionally `color`. *Build class grid*
+  voxelizes them around the scene origin into a one-tile voxel tileset, later years winning
+  where they overlap, and adds it to the list. After a Start, every other tileset is colored
+  by it, and the year slider shows the phases built by then. *Clip to phases* hides the
+  surface outside them too. `scripts/phase_volumes.py` builds a demo on invented volumes. The
+  grid is one tile, with no coarser levels. See [docs/voxels.md](docs/voxels.md) for classes
+  per cell and how the tileset is made.
+- **Material controls.** The Relight sliders, gold transfer included, in the Materials
+  panel. Off, the buttons remain and the shared `OGC3D Relight` node group is where to edit
+  these values.
 
 ### Editing tile geometry
 
@@ -952,6 +986,9 @@ the converters compiled into cesium-native.
 - [x] Metadata stored in textures (feature ids and property textures)
 - [x] Voxel tilesets: box and region tiles as blocks, box tiles as OpenVDB Volumes ([notes](docs/voxels.md))
 - [x] Voxel classes colored onto another tileset, with a boolean intersect
+- [x] Beta: phases on a year slider, from closed meshes
+- [ ] Beta: paint phases with Grease Pencil strokes on the surface
+- [ ] Beta: write the class grid as an octree pyramid
 
 ## License
 

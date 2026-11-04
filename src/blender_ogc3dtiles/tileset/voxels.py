@@ -17,6 +17,7 @@ and across the borders of neighbouring tiles.
 from __future__ import annotations
 
 import json
+import os
 import struct
 
 import numpy as np
@@ -366,6 +367,56 @@ def atlas_layout(shape, max_size=MAX_ATLAS, strict=True):
             raise ValueError(f"{shape} does not fit an atlas of {max_size}")
         return None
     return cols, rows
+
+
+def write_class_tileset(folder, grid, ecef_from_enu, center, cell, column="phase"):
+    """A one-tile voxel tileset from a grid of class codes, 0 for no voxel.
+
+    ``grid`` is indexed [east, north, up] in cells of ``cell`` metres around ``center``,
+    in the frame of ``ecef_from_enu``."""
+    nx, ny, nz = grid.shape
+    for sub in ("tiles/0/0/0", "subtrees/0/0/0"):
+        os.makedirs(os.path.join(folder, sub), exist_ok=True)
+    # glTF voxels run [z, y, x] with y up and z = -tile y
+    values = np.moveaxis(grid, (0, 1, 2), (2, 0, 1))[::-1].astype(np.float32)
+    values.tofile(os.path.join(folder, "tiles/0/0/0/0.bin"))
+    frame = np.asarray(ecef_from_enu, np.float64)
+    c = frame[:3, :3] @ np.asarray(center, np.float64) + frame[:3, 3]
+    half = np.array(grid.shape) * cell / 2.0
+    box = [float(v) for v in (*c, *(frame[:3, 0] * half[0]), *(frame[:3, 1] * half[1]), *(frame[:3, 2] * half[2]))]
+    schema = {"id": "classes", "classes": {"voxel": {"properties": {
+        column: {"type": "SCALAR", "componentType": "FLOAT32", "required": False}}}}}
+    error = float(max(half) * 2.0)
+    size = int(values.size * 4)
+    documents = {
+        "tileset.json": {
+            "asset": {"version": "1.1"}, "schema": schema, "geometricError": error,
+            "root": {
+                "boundingVolume": {"box": box}, "geometricError": error, "refine": "REPLACE",
+                "content": {"uri": "tiles/{level}/{x}/{y}/{z}.gltf", "extensions": {
+                    "3DTILES_content_voxels": {"dimensions": [nx, ny, nz], "class": "voxel"}}},
+                "implicitTiling": {"subdivisionScheme": "OCTREE", "subtreeLevels": 1, "availableLevels": 1,
+                                   "subtrees": {"uri": "subtrees/{level}/{x}/{y}/{z}.json"}}},
+            "extensionsUsed": ["3DTILES_content_voxels"], "extensionsRequired": ["3DTILES_content_voxels"]},
+        "subtrees/0/0/0/0.json": {"tileAvailability": {"constant": 1}, "contentAvailability": [{"constant": 1}],
+                                  "childSubtreeAvailability": {"constant": 0}},
+        "tiles/0/0/0/0.gltf": {
+            "asset": {"version": "2.0"}, "scene": 0, "scenes": [{"nodes": [0]}], "nodes": [{"mesh": 0}],
+            "meshes": [{"primitives": [{"mode": 2147483647, "attributes": {"_CLASS": 0}, "extensions": {
+                "EXT_primitive_voxels": {"shape": 0, "dimensions": [nx, nz, ny], "noData": {"_CLASS": [0.0]}},
+                "EXT_structural_metadata": {"propertyAttributes": [0]}}}]}],
+            "accessors": [{"bufferView": 0, "componentType": 5126, "count": int(values.size), "type": "SCALAR"}],
+            "bufferViews": [{"buffer": 0, "byteOffset": 0, "byteLength": size}],
+            "buffers": [{"uri": "0.bin", "byteLength": size}],
+            "extensions": {
+                "KHR_implicit_shapes": {"shapes": [{"type": "box", "box": {"size": [float(h * 2.0) for h in half]}}]},
+                "EXT_structural_metadata": {"schema": schema, "propertyAttributes": [
+                    {"class": "voxel", "properties": {column: {"attribute": "_CLASS"}}}]}}},
+    }
+    for name, doc in documents.items():
+        with open(os.path.join(folder, name), "w", encoding="utf-8") as fh:
+            json.dump(doc, fh)
+    return os.path.join(folder, "tileset.json")
 
 
 def lookup_codes(values, span=None):

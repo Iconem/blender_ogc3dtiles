@@ -21,6 +21,7 @@ ATLAS = "OGC3D Voxel Atlas"
 COLOR_NODE = "OGC3D Voxel Color"
 CUT_MIX = "OGC3D Voxel Cut"
 CUT_TRANSPARENT = "OGC3D Voxel Cut Transparent"
+CLASS_ALPHA = "Class Alpha"
 _REBUILD_DELAY = 1.5        # seconds without a new tile before the atlas is rewritten
 
 _state = {"tiles": {}, "root": None, "shape": None, "scene": None, "scheduled": False}
@@ -140,10 +141,14 @@ def _value(ng, name, default=0.0):
 
 def ensure_group():
     ng = bpy.data.node_groups.get(GROUP)
-    if ng is not None:
+    if ng is not None and CLASS_ALPHA in ng.nodes:
         return ng
     from .materials import _palette_image
-    ng = bpy.data.node_groups.new(GROUP, "ShaderNodeTree")
+    if ng is None:
+        ng = bpy.data.node_groups.new(GROUP, "ShaderNodeTree")
+    else:                       # from a version whose palette alpha did nothing
+        ng.nodes.clear()
+        ng.interface.clear()
     ng.interface.new_socket("Color", in_out="INPUT", socket_type="NodeSocketColor")
     ng.interface.new_socket("Color", in_out="OUTPUT", socket_type="NodeSocketColor")
     ng.interface.new_socket("Keep", in_out="OUTPUT", socket_type="NodeSocketFloat")
@@ -196,9 +201,13 @@ def ensure_group():
     links.new(_math(ng, "DIVIDE", _math(ng, "SUBTRACT", byte, 1.0), 254.0), ramp.inputs["Fac"])
     pick = nodes.new("ShaderNodeMix")
     pick.data_type = "RGBA"
-    links.new(_value(ng, "Is Number"), pick.inputs[0])
+    is_number = _value(ng, "Is Number")
+    links.new(is_number, pick.inputs[0])
     links.new(palette.outputs["Color"], pick.inputs[6])
     links.new(ramp.outputs["Color"], pick.inputs[7])
+    # a class whose palette alpha is 0 counts as no voxel: unknown, or hidden for now
+    has = _math(ng, "MULTIPLY", has, _math(ng, "MAXIMUM", palette.outputs["Alpha"], is_number))
+    has.node.name = CLASS_ALPHA
 
     out = nodes.new("ShaderNodeMix")
     out.data_type = "RGBA"

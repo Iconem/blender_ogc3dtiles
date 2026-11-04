@@ -556,6 +556,8 @@ def write_palette(scene):
     img.pixels.foreach_set(px)
     img.update()
     img.pack()
+    from . import phases
+    phases.apply_year(scene)
 
 
 def ensure_metadata_group():
@@ -874,8 +876,9 @@ def draw_panel(layout, props):
         on = bool(r3d is not None and r3d.use_clip_planes)
         layout.label(text="Region active (Alt+B clears it)" if on
                      else "No region: drag one with Alt+B", icon="MOD_BOOLEAN" if on else "INFO")
+    from .io import addon_pref
     ng = bpy.data.node_groups.get(GROUP_NAME)
-    if ng is not None:
+    if ng is not None and addon_pref("beta_material_controls", False):
         col = layout.column(align=True)
         for name, *_rest in TUNABLES:
             if name == "Gold Hue":

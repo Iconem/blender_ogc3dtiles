@@ -185,6 +185,19 @@ class TestSubtreeRequests:
         out = json.loads(asset_fixes.complete_subtree_json(json.dumps(doc).encode()))
         assert out["buffers"][0]["byteLength"] == 12
 
+    def test_class_tileset_places_cells_along_the_tile_axes(self, tmp_path):
+        grid = np.zeros((4, 3, 2), np.uint8)
+        grid[3, 0, 1] = 7                       # far east, south, top
+        frame = np.eye(4)
+        frame[:3, 3] = (100.0, 200.0, 300.0)
+        path = voxels.write_class_tileset(str(tmp_path), grid, frame, (1.0, 2.0, 3.0), 2.0)
+        doc = json.load(open(path))
+        assert doc["root"]["boundingVolume"]["box"] == [101.0, 202.0, 303.0, 4.0, 0, 0, 0, 3.0, 0, 0, 0, 2.0]
+        gltf = json.load(open(tmp_path / "tiles/0/0/0/0.gltf"))
+        assert gltf["meshes"][0]["primitives"][0]["extensions"]["EXT_primitive_voxels"]["dimensions"] == [4, 2, 3]
+        values = np.fromfile(tmp_path / "tiles/0/0/0/0.bin", np.float32).reshape(3, 2, 4)
+        assert values[2, 1, 3] == 7.0 and np.count_nonzero(values) == 1   # [tile -y, tile z, tile x]
+
     def test_content_availability_becomes_an_array(self):
         doc = {"tileAvailability": {"constant": 1}, "contentAvailability": {"constant": 1}}
         out = json.loads(asset_fixes.complete_subtree_json(json.dumps(doc).encode()))

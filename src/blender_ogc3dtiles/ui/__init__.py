@@ -24,6 +24,7 @@ import uuid
 import bpy
 from bpy.types import Operator, Panel, UIList
 
+from .. import phases
 from ..camera import CesiumCameraAdapter
 from ..io import (
     addon_pref,
@@ -746,6 +747,7 @@ class OGC3D_OT_TilesetRemove(Operator):
                 _teardown_stream(st, remove_objects=True)
             props.tilesets.remove(i)
             props.active_tileset = max(0, min(i, len(props.tilesets) - 1))
+            _forget_tiles_data(context.scene)
         return {"FINISHED"}
 
 
@@ -897,6 +899,23 @@ def _start_stream(scene, props, st, choice, cache) -> None:
                                       "overlays": st.get("overlays") or []})
         st["mode"] = "native"
     st["backend"] = backend
+
+
+def _forget_tiles_data(scene) -> None:
+    """No stream left: the next tileset's columns and voxels start afresh. A column
+    kept from the last one would drive the colors of tiles that don't have it."""
+    if _state["streams"]:
+        return
+    from .. import voxel_lookup
+    from ..tileset.feature_meta import REGISTRY
+    voxel_lookup.clear()
+    REGISTRY.clear()
+    props = scene.ogc3dtiles
+    props.meta_columns.clear()
+    props.meta_classes.clear()
+    props["meta_column"] = ""
+    if "ogc3d_voxel_colors" in scene:
+        del scene["ogc3d_voxel_colors"]
 
 
 def _decide_origin(props, center_ecef, radius_m=None) -> None:
@@ -1186,6 +1205,7 @@ class OGC3D_OT_ClearTiles(Operator):
                                  if nd.type == "TEX_IMAGE" and nd.image is not None]
         n += remove_tiles([(o.name, []) for o in left] + [("", data)])
         context.scene.ogc3dtiles.tiles_loaded = 0
+        _forget_tiles_data(context.scene)
         self.report({"INFO"}, f"Removed {n} tile objects")
         return {"FINISHED"}
 
@@ -2147,6 +2167,23 @@ class OGC3D_PT_MetadataPanel(_OGC3DSidebar, Panel):
         _materials.draw_metadata_panel(self.layout, context.scene.ogc3dtiles)
 
 
+class OGC3D_PT_PhasesPanel(_OGC3DSidebar, Panel):
+    bl_label = "Phases (beta)"
+    bl_idname = "OGC3D_PT_phases"
+    bl_order = 5
+    bl_options = {"DEFAULT_CLOSED"}
+
+    @classmethod
+    def poll(cls, context):
+        return addon_pref("beta_phases", False)
+
+    def draw_header(self, context):
+        self.layout.label(text="", icon="TIME")
+
+    def draw(self, context):
+        phases.draw_panel(self.layout, context)
+
+
 class OGC3D_PT_CompositorPanel(_OGC3DSidebar, Panel):
     bl_label = "Compositor"
     bl_idname = "OGC3D_PT_compositor"
@@ -2474,6 +2511,8 @@ _classes = [
     OGC3D_PT_DisplayPanel,
     OGC3D_PT_MaterialsPanel,
     OGC3D_PT_MetadataPanel,
+    OGC3D_PT_PhasesPanel,
+    phases.OGC3D_OT_PhasesBuild,
     OGC3D_PT_CompositorPanel,
     OGC3D_PT_RenderPanel,
     OGC3D_PT_BackendPanel,

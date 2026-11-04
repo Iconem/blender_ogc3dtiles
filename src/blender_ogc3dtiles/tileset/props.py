@@ -35,6 +35,14 @@ def _on_meta_color(self, context):
         print(f"[3DTiles] metadata colors: {e}")
 
 
+def _on_phase_year(self, context):
+    try:
+        from .. import phases
+        phases.apply_year(context.scene)
+    except Exception as e:                        # noqa: BLE001
+        print(f"[3DTiles] phases: {e}")
+
+
 def _on_voxel_project(self, context):
     try:
         from .. import voxel_lookup
@@ -588,6 +596,10 @@ class TilesSceneProps(PropertyGroup):
                                                    "tile's material reads the voxel under each pixel. "
                                                    "Box tiles only")),
         default="FACES", update=_on_voxel_project,
+    )
+    phase_year: IntProperty(
+        name="Year", description="Show the phases built by this year",
+        default=2030, min=-5000, max=3000, update=_on_phase_year,
     )
     voxel_mix: FloatProperty(
         name="Voxel color",

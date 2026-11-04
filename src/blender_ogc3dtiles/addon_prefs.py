@@ -33,6 +33,10 @@ def _get_prefs(context):
     return None
 
 
+def _save_prefs(_self, context):
+    context.preferences.is_dirty = True
+
+
 class OGC3DTilesPreferences(AddonPreferences):
     bl_idname = __package__
 
@@ -145,6 +149,21 @@ class OGC3DTilesPreferences(AddonPreferences):
                     "the NAS...). Entries keep their URLs and keys there, out of the add-on and "
                     "the repository",
         default="")
+    library_show_mesh: BoolProperty(name="Mesh", default=False, update=_save_prefs)
+    library_show_points: BoolProperty(name="Point cloud", default=False, update=_save_prefs)
+    library_show_splats: BoolProperty(name="Splats", default=False, update=_save_prefs)
+    library_show_voxels: BoolProperty(name="Voxels", default=False, update=_save_prefs)
+    # ── Beta features ──────────────────────────────────────────────────────────
+    beta_phases: BoolProperty(
+        name="Phases timeline",
+        description="Sidebar panel: closed meshes of a 'Phases' collection become a class grid, "
+                    "with a year slider over tilesets colored by it",
+        default=False)
+    beta_material_controls: BoolProperty(
+        name="Material controls",
+        description="Relight sliders in the Materials panel, gold transfer included. Off, the "
+                    "shared 'OGC3D Relight' node group is the place to edit them",
+        default=False)
     cesium_install_path: StringProperty(
         name="cesium-native-python source dir",
         description=(
@@ -229,6 +248,13 @@ class OGC3DTilesPreferences(AddonPreferences):
         boxp.prop(self, "photon_url", text="Geocoder")
         boxp.prop(self, "terrain_tiles_url", text="Terrain tiles")
         boxp.prop(self, "geoid_url", text="Geoid grid")
+
+        # ── Beta features ──────────────────────────────────────────────────────
+        layout.separator()
+        boxb = layout.box()
+        boxb.label(text="Beta features", icon="EXPERIMENTAL")
+        boxb.prop(self, "beta_phases")
+        boxb.prop(self, "beta_material_controls")
 
         # ── 3. Developer ──────────────────────────────────────────────────────
         layout.separator()

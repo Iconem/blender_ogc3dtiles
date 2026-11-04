@@ -99,3 +99,56 @@ Limits: the root box is the only region, so the cell size is the model's size ov
 230, and tiles that go out of view stay in the grid. World position means a moved tileset
 root needs a rebuild. A scan on top of the model mostly falls outside it: on GeoTOP only
 low ground and canals are inside.
+
+## One or several classes per cell
+
+3D Tiles gives containers for values and leaves their meaning to the schema. It has no
+bitmask concept, so several classes in one value is our own convention, and other viewers
+only see a plain integer. Checked against
+[`EXT_mesh_features`](https://github.com/CesiumGS/glTF/tree/3d-tiles-next/extensions/2.0/Vendor/EXT_mesh_features)
+and [`EXT_structural_metadata`](https://github.com/CesiumGS/glTF/tree/3d-tiles-next/extensions/2.0/Vendor/EXT_structural_metadata):
+
+| Where | One class | Several classes |
+|---|---|---|
+| Vertex or voxel attribute | a number | an integer bitmask, or one attribute per class |
+| Texture | an enum, or a feature ID per texel | a fixed-length array, within the 4 channels, or a bitmask |
+| Feature ID and property table | one row per feature | several feature ID sets on a primitive, or a richer type in the row |
+
+Feature IDs are per vertex, per texel or implicit (the vertex index). The spec has nothing
+per face.
+
+**Our convention, when we need several classes:** an unsigned integer property (`UINT8` to
+`UINT32`) whose bit `n - 1` means class code `n`, and 0 means no class, with the meaning
+written in the property's `description` in the schema. `FLOAT32` isn't safe for this, because
+it loses exact values above 24 bits.
+
+Not built yet. The add-on stores one class per cell: `phases.py` writes `FLOAT32` values,
+later years winning, and `voxel_lookup` reads one byte per cell.
+
+## Making a voxel tileset
+
+We found no standard tiler for this format: a search for one from grids such as NetCDF or
+OpenVDB came back empty, which isn't proof that none exists. The tilesets above each come
+from their own pipeline. [vox3dt](https://github.com/felipecarrillo100/vox3dt) builds a
+pyramid from LAS or LAZ, but its tiles are `.glb` cubes, not voxel content.
+
+**Voxelizing.** `phases.py` casts one vertical ray per column with Blender's BVH and pairs the
+crossings into inside spans, which needs closed meshes. A column where a ray grazes an edge
+and gets an odd count is left out. Off-the-shelf alternatives, not tried here:
+[OpenVDB's `meshToVolume`](https://openvdb.org/documentation/doxygen/MeshToVolume_8h.html)
+and [trimesh](https://github.com/mikedh/trimesh).
+
+**Storing the input.** Nothing is standard for 3D Tiles input. A dense array is enough for a
+class grid. OpenVDB suits sparse grids, and comes with Blender.
+
+**Tiling.** `tileset/voxels.py` `write_class_tileset` writes one tile, as an implicit octree of
+one level. A real pyramid still needs coarser levels from the fine grid: for classes, the most
+common class of each 2 × 2 × 2 block rather than an average, since a mean of class codes means
+nothing. GeoTOP and Bedrock show the add-on already streams such pyramids of 3 levels.
+Explicit trees of voxel tiles were not tried.
+
+**Burning classes into point clouds.** Not built. PDAL's filter list has no stage for a lookup
+in an external voxel grid: `filters.crop` takes boxes and polygons, `filters.overlay` takes
+OGR data. `filters.python` can do it with a numpy lookup, writing `Classification`, and the LAS
+then goes to Potree or any other viewer. numpy did 9 to 15 million lookups per second here,
+without the file reading and writing.

@@ -56,14 +56,14 @@ own packager:
 
 ```text
 blender --command extension build --source-dir src/blender_ogc3dtiles --output-dir dist
-blender --command extension validate dist/ogc_3dtiles_streaming-0.5.0.zip
+blender --command extension validate dist/ogc_3dtiles_streaming-0.5.1.zip
 ```
 
 Then either Preferences, Get Extensions, the drop-down arrow, *Install from
 Disk*, or from a terminal:
 
 ```text
-blender --command extension install-file -r user_default -e dist/ogc_3dtiles_streaming-0.5.0.zip
+blender --command extension install-file -r user_default -e dist/ogc_3dtiles_streaming-0.5.1.zip
 ```
 
 The sidebar tab "3D Tiles" appears in the 3D viewport (N).  The pure Python

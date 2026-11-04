@@ -158,6 +158,11 @@ def _on_overlay_edit(self, context):
     """Type / URL / key / layer / levels edited: re-create the overlay on a
     running tileset (cesium-native drops its rasters and loads the new ones)."""
     from ..ui import overlay_live_refresh
+    from .native_backend import decode_braces
+    url = decode_braces(self.url)
+    if url != self.url:
+        self.url = url      # shows the braces, and comes back here once
+        return
     overlay_live_refresh(context.scene, self)
 
 
@@ -314,7 +319,7 @@ class TilesetItem(PropertyGroup):
         default=False, update=_on_item_sse)
     max_sse: FloatProperty(name="Max SSE", description="Screen-space error threshold (px) for "
                            "this tileset when 'Own SSE' is ticked; lower = finer tiles. Live",
-                           default=4.0, min=1.0, max=512.0, update=_on_item_sse)
+                           default=8.0, min=1.0, max=512.0, update=_on_item_sse)
     uid: StringProperty(default="", options={'HIDDEN'})
     overlays: CollectionProperty(type=OverlayItem)
     active_overlay: IntProperty(default=0)
@@ -403,7 +408,7 @@ class TilesSceneProps(PropertyGroup):
         name="Max SSE",
         description="Screen-space error threshold in pixels for every tileset without "
                     "'Own SSE'; lower = finer tiles. Live while streaming",
-        default=4.0, min=1.0, max=512.0,
+        default=8.0, min=1.0, max=512.0,
         update=_on_global_sse,
     )
     max_concurrent_requests: IntProperty(

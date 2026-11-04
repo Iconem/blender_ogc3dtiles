@@ -54,6 +54,26 @@ def _as_array(view, dtype=None):
     return arr.astype(dtype, copy=False) if dtype is not None else arr
 
 
+def _overlay_coords(cs, model, prim, n, missing=None):
+    """(id, per-vertex uv) of the raster overlay coordinates cesium-native added to a
+    primitive, computed from each vertex in the overlay's own projection. ``missing``
+    collects the ids it couldn't read."""
+    out = []
+    for name, ai in prim.attributes.items():
+        if not name.startswith(OVERLAY_UV_PREFIX):
+            continue
+        try:
+            tid = int(name[len(OVERLAY_UV_PREFIX):])
+        except ValueError:
+            continue
+        ouv = _as_array(cs.gltf.AccessorViewVec2(model, ai), np.float32)
+        if ouv is not None and len(ouv) == n:
+            out.append((tid, ouv))
+        elif missing is not None:
+            missing.add(tid)
+    return out
+
+
 def _strip_to_triangles(idx: np.ndarray) -> np.ndarray:
     if len(idx) < 3:
         return np.zeros((0, 3), np.int64)
@@ -346,6 +366,8 @@ def extract_mesh_payload(cs, model, read_metadata=False):
     overlay_uvs = {}          # texture coordinate id -> [per-primitive loop uv]
     overlay_missing = set()   # ids some primitive lacks: dropped at the end
     n_tri_prims = 0
+    point_overlays = {}       # texture coordinate id -> [per-primitive point uv]
+    n_point_prims = 0
     have_normals = True
     have_uvs = True
     have_colors = True
@@ -399,6 +421,9 @@ def extract_mesh_payload(cs, model, read_metadata=False):
                 splat_sh.append(sp[2])
             else:
                 all_splats = False
+            n_point_prims += 1
+            for tid, ouv in _overlay_coords(cs, model, prim, n):
+                point_overlays.setdefault(tid, []).append(ouv)
             base += n
             continue
         all_points = False
@@ -434,17 +459,7 @@ def extract_mesh_payload(cs, model, read_metadata=False):
         # raster overlay texture coordinates cesium-native added for this tile
         n_tri_prims += 1
         seen = set()
-        for name, ai in prim.attributes.items():
-            if not name.startswith(OVERLAY_UV_PREFIX):
-                continue
-            try:
-                tid = int(name[len(OVERLAY_UV_PREFIX):])
-            except ValueError:
-                continue
-            ouv = _as_array(cs.gltf.AccessorViewVec2(model, ai), np.float32)
-            if ouv is None or len(ouv) != n:
-                overlay_missing.add(tid)
-                continue
+        for tid, ouv in _overlay_coords(cs, model, prim, n, overlay_missing):
             overlay_uvs.setdefault(tid, []).append(ouv[tris.reshape(-1)])
             seen.add(tid)
         for tid in overlay_uvs:
@@ -506,8 +521,10 @@ def extract_mesh_payload(cs, model, read_metadata=False):
         "normals": np.concatenate(normals) if (have_normals and normals) else None,
         "faces": F,
         "uvs": np.concatenate(uvs) if (have_uvs and uvs and not all_points) else None,
-        "overlay_uvs": {tid: np.concatenate(parts) for tid, parts in overlay_uvs.items()
-                        if tid not in overlay_missing and len(parts) == n_tri_prims} or None,
+        "overlay_uvs": ({tid: np.concatenate(parts) for tid, parts in point_overlays.items()
+                         if len(parts) == n_point_prims} or None) if all_points else
+                       ({tid: np.concatenate(parts) for tid, parts in overlay_uvs.items()
+                         if tid not in overlay_missing and len(parts) == n_tri_prims} or None),
         "colors": np.concatenate(colors) if (have_colors and colors) else None,
         "face_mat": np.concatenate(face_mat) if face_mat else np.zeros(0, np.int32),
         "points": all_points,

@@ -353,11 +353,18 @@ class _GlbPreparer:
                 self._owner._overlay_events.append(("free", main_result["image"]))
 
 
+def decode_braces(url: str) -> str:
+    """Templates copied from a browser's address bar have their braces percent-encoded."""
+    for coded, brace in (("%7B", "{"), ("%7b", "{"), ("%7D", "}"), ("%7d", "}")):
+        url = url.replace(coded, brace)
+    return url
+
+
 def xyz_template(url: str) -> str:
     """XYZ convention ({y} = 0 at the north, as OSM / Esri / MapLibre templates
     use it) to cesium-native's placeholders, whose {y} is TMS order (0 at the
     south); the user writes {-y} for a TMS-ordered server."""
-    return url.replace("{y}", "{reverseY}").replace("{-y}", "{y}")
+    return decode_braces(url).replace("{y}", "{reverseY}").replace("{-y}", "{y}")
 
 
 def _volume_excluder(base, boxes, mode, joined):

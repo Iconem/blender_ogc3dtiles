@@ -801,6 +801,9 @@ def build_voxel_volume(payload: dict, key: str, scene: bpy.types.Scene,
     path = os.path.join(folder, f"ogc3d_voxel_{abs(hash(key)):x}.vdb")
     openvdb.write(path, grids=grids)
 
+    if bpy.app.version < (5, 1, 0):
+        # 4.5's EEVEE draws nothing past its volumetric range, 100 m by default (5.0 not tested)
+        scene.eevee.volumetric_end = max(scene.eevee.volumetric_end, 100000.0)
     vol = bpy.data.volumes.new(_short_name(key))
     vol.filepath = path
     vol.materials.append(voxel_volume_material(scene))
@@ -866,6 +869,12 @@ def build_tile_from_payload(payload: dict, key: str, scene: bpy.types.Scene,
             na.data.foreach_set("vector", np.ascontiguousarray(nrm, dtype=np.float32).ravel())
         except Exception:
             pass
+    overlay_points = {}
+    if not n_f and payload.get("points") and not payload.get("splats"):
+        overlay_points = payload.get("overlay_uvs") or {}
+    for tid, ouv in sorted(overlay_points.items()):     # a mesh without faces has no UV maps
+        layer = me.attributes.new(f"{OVERLAY_UV_PREFIX}{tid}", "FLOAT2", "POINT")
+        layer.data.foreach_set("vector", np.ascontiguousarray(ouv, dtype=np.float32).ravel())
     if payload.get("splats"):
         _store_splat_attributes(me, payload)
     cols = payload.get("colors")
@@ -896,11 +905,11 @@ def build_tile_from_payload(payload: dict, key: str, scene: bpy.types.Scene,
                 image_cache[ck] = img
                 data_names.append(img.name)
         mat = _material_from_payload(mp, img, key)
-        if (payload.get("points") or payload.get("voxel")) and cols is not None:
+        if (payload.get("points") or payload.get("voxel")) and (cols is not None or overlay_points):
             _wire_point_colors(mat)
         me.materials.append(mat)
         data_names.append(mat.name)
-    if payload.get("points") and not me.materials and cols is not None:
+    if payload.get("points") and not me.materials and (cols is not None or overlay_points):
         mat = _material_from_payload({"name": "points", "double_sided": True}, None, key)
         _wire_point_colors(mat)
         me.materials.append(mat)

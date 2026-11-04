@@ -115,7 +115,9 @@ and [`EXT_structural_metadata`](https://github.com/CesiumGS/glTF/tree/3d-tiles-n
 | Feature ID and property table | one row per feature | several feature ID sets on a primitive, or a richer type in the row |
 
 Feature IDs are per vertex, per texel or implicit (the vertex index). The spec has nothing
-per face.
+per face: to class a face, give its three vertices their own copies with the same ID, or use a
+texture. Above the geometry, 3D Tiles also has metadata per tileset, content group, tile and
+content, which suits one class for a whole tile.
 
 **Our convention, when we need several classes:** an unsigned integer property (`UINT8` to
 `UINT32`) whose bit `n - 1` means class code `n`, and 0 means no class, with the meaning
@@ -147,7 +149,8 @@ common class of each 2 × 2 × 2 block rather than an average, since a mean of c
 nothing. GeoTOP and Bedrock show the add-on already streams such pyramids of 3 levels.
 Explicit trees of voxel tiles were not tried.
 
-**Burning classes into point clouds.** Not built. PDAL's filter list has no stage for a lookup
+**Burning classes into point clouds.** Drafted in `scripts/pdal_burn_classes.py`, never run in PDAL.
+PDAL's filter list has no stage for a lookup
 in an external voxel grid: `filters.crop` takes boxes and polygons, `filters.overlay` takes
 OGR data. `filters.python` can do it with a numpy lookup, writing `Classification`, and the LAS
 then goes to Potree or any other viewer. numpy did 9 to 15 million lookups per second here,

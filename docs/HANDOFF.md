@@ -37,7 +37,7 @@ or keys; the files that do are named below and stay out of git.
   - Extension id: `bl_ext.user_default.ogc_3dtiles_streaming`.
   - Build: `blender -b --command extension build --source-dir src/blender_ogc3dtiles --output-dir dist`
     (create `dist/` first).
-  - Install: `blender -b --command extension install-file -r user_default -e dist/ogc_3dtiles_streaming-0.4.0.zip`.
+  - Install: `blender -b --command extension install-file -r user_default -e dist/ogc_3dtiles_streaming-0.5.0.zip`.
   - Driving a GUI session from a shell: start Blender with a small script that
     polls a `cmd.py` file on a timer, `exec`s it and writes the output next to
     it; screenshots via `bpy.ops.screen.screenshot_area` under

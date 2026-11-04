@@ -56,14 +56,14 @@ own packager:
 
 ```text
 blender --command extension build --source-dir src/blender_ogc3dtiles --output-dir dist
-blender --command extension validate dist/ogc_3dtiles_streaming-0.4.0.zip
+blender --command extension validate dist/ogc_3dtiles_streaming-0.5.0.zip
 ```
 
 Then either Preferences, Get Extensions, the drop-down arrow, *Install from
 Disk*, or from a terminal:
 
 ```text
-blender --command extension install-file -r user_default -e dist/ogc_3dtiles_streaming-0.4.0.zip
+blender --command extension install-file -r user_default -e dist/ogc_3dtiles_streaming-0.5.0.zip
 ```
 
 The sidebar tab "3D Tiles" appears in the 3D viewport (N).  The pure Python
@@ -114,7 +114,7 @@ foveation, detail falloff, max distance, direct mesh, disk cache, per-stream
 backend stats), **Display** (point display and radius, relation lines),
 **Materials** (relight: Apply / Remove, sliders), **Compositor** (edges and
 sliders, stable viewport, Build / Remove), **Render** (collapsed), then the
-collapsed **Backend** and **Coordinate Info** panels.  Defaults: Max SSE 4 px, 16 parallel downloads, 4 imports per
+collapsed **Backend** and **Coordinate Info** panels.  Defaults: Max SSE 8 px, 16 parallel downloads, 4 imports per
 tick (lower it if the UI stutters while tiles pour in).  The node-tree
 button next to Apply Relight, Build and the point display opens the
 corresponding tree ('OGC3D Relight' shader group, 'OGC3D Beauty' compositor
@@ -172,9 +172,12 @@ Texture → Mix* chain over the material's colour (also under the Relight
 group).  *Opacity* is live.  Ticking / unticking an overlay while streaming
 is live too: cesium-native reloads the loaded tiles with the new texture
 coordinates (to apply an edited URL, untick then tick).
-Several overlays stack in list order.  Overlays only make sense on surface
-tiles (meshes); point clouds and Gaussian splat tiles have no texture
-coordinates.  The raster images are packed into the .blend, so a saved scene
+Several overlays stack in list order.  Point clouds take them too: cesium-native
+computes the coordinates per point in the overlay's own projection, so the point
+cloud's CRS doesn't matter, and they cost one more attribute of 8 bytes per point.
+Each point shows the raster at its position, seen from above, on walls as well as
+on roofs.  Gaussian splat tiles don't take overlays.  A template pasted from a
+browser, with `%7Bz%7D` for `{z}`, is shown and used with its braces.  The raster images are packed into the .blend, so a saved scene
 keeps its drape.
 
 ![WGS84 globe entry with the OpenStreetMap overlay ticked live, over Rome](docs/img/globe_osm.jpg)
@@ -295,7 +298,11 @@ Per row: the checkbox **pauses** the stream (nothing is loaded or evicted,
 loaded tiles stay as they are), the eye hides its sub-collection (same as the
 outliner).  Entries added, ticked or removed while streaming are picked up on
 the next tick.  **Max SSE** (LOD / Streaming sub-panel) is the live renderer setting for
-every stream; tick *Own SSE* on an entry to override it for that tileset.
+every stream; tick *Own SSE* on an entry to override it for that tileset.  It compares
+the error a tile declares, in pixels, so what a value looks like depends on the data and
+its tiler.  At 8 px on Google tiles the median triangle edge was 3.3 px.  On a COPC point
+cloud declaring more error than its point spacing, 1.2 px between points at 3.2 px of error,
+16 to 32 px may be enough.
 Both re-select immediately on both backends.  *Start* discards the tiles a
 previous *Stop* left on screen (they belong to a dead selection).  Two
 entries with the same label get separate collections (`… - 2`; the list
@@ -879,6 +886,12 @@ WGS84 (lat/lon/height)
     Blender XYZ  (X=East, Y=North, Z=Up)
 ```
 
+### Releasing
+
+Bump `version` in `blender_manifest.toml`, then `git tag vX.Y.Z` and
+`git push origin HEAD:main vX.Y.Z`. `origin` pushes to both `jo-chemla` and `Iconem`, and the
+tag runs `release.yml` on each, which builds, validates and attaches the zip.
+
 ### Building the cesium-native wheel
 
 The add-on installs pre-built wheels (see
@@ -989,6 +1002,10 @@ the converters compiled into cesium-native.
 - [x] Beta: phases on a year slider, from closed meshes
 - [ ] Beta: paint phases with Grease Pencil strokes on the surface
 - [ ] Beta: write the class grid as an octree pyramid
+- [ ] Beta: try [OpenVDB's `meshToVolume`](https://openvdb.org/documentation/doxygen/MeshToVolume_8h.html) and [trimesh](https://github.com/mikedh/trimesh) as voxelizers
+- [ ] Beta: burn classes into point clouds with PDAL ([draft](scripts/pdal_burn_classes.py))
+- [x] Raster overlays on point clouds
+- [ ] Point cloud intensity mode, with sliders for its range
 
 ## License
 

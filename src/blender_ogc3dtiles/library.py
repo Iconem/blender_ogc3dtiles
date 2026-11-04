@@ -8,7 +8,7 @@ add-on or its repository. Several files can be listed in the preferences
     {"version": 1,
      "tilesets": [
        {"name": "San Pietro", "kind": "TILESET", "url": "https://...",
-        "ion_asset_id": 0, "ion_token": "", "use_own_sse": false, "max_sse": 4.0,
+        "ion_asset_id": 0, "ion_token": "", "use_own_sse": false, "max_sse": 8.0,
         "use_overlays": false, "group": "Rome", "notes": "", "content": "MESH",
         "overlays": [{"name": "OSM", "kind": "URL", "url": "...", ...}]}
      ]}

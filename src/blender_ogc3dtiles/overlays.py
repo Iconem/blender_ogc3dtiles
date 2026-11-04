@@ -10,6 +10,9 @@ with the ``translation`` / ``scale`` that map the tile's
           current colour → every consumer of that colour (Principled Base
           Color / Emission, the Relight group's Albedo, ...)
 
+Point tiles have no UV maps: the same coordinates are a point attribute, read like
+their colours, from the geometry or from the instances of disc splats.
+
 Overlays chain: a second overlay mixes over the first mix's result. Detach
 restores the previous links, so the material is left as it was built.
 """
@@ -34,9 +37,39 @@ def _overlay_mixes(nt):
             if n.name.startswith(NODE_TAG) and n.name.endswith(" Mix") and n.type == "MIX"]
 
 
-def _color_source(nt):
+def _point_coords(nt, name, attr_name, y):
+    """Output carrying a point tile's overlay coordinates: both lookups are added,
+    whichever domain exists carries them, as in ``io._wire_point_colors``."""
+    geo = nt.nodes.new("ShaderNodeAttribute")
+    geo.name = geo.label = name
+    geo.attribute_type = "GEOMETRY"
+    geo.attribute_name = attr_name
+    geo.location = (-1200, y)
+    inst = nt.nodes.new("ShaderNodeAttribute")
+    inst.name = inst.label = name + " Instance"
+    inst.attribute_type = "INSTANCER"
+    inst.attribute_name = attr_name
+    inst.location = (-1200, y - 200)
+    add = nt.nodes.new("ShaderNodeVectorMath")
+    add.name = add.label = name + " Add"
+    add.operation = "ADD"
+    add.location = (-1000, y)
+    nt.links.new(geo.outputs["Vector"], add.inputs[0])
+    nt.links.new(inst.outputs["Vector"], add.inputs[1])
+    return add.outputs[0]
+
+
+def _color_source(nt, points=False):
     """Socket carrying the material's own colour (the image texture, else a
-    RGB node of the base colour)."""
+    RGB node of the base colour). Point colours are unlit: what feeds the emission,
+    under the metadata colors when they are on."""
+    if points:
+        from .materials import META_NODE
+        bsdf = next((n for n in nt.nodes if n.type == "BSDF_PRINCIPLED"), None)
+        meta = nt.nodes.get(META_NODE)
+        sink = meta.inputs[0] if meta is not None and meta.inputs[0].links else bsdf.inputs["Emission Color"]
+        if sink.links:
+            return sink.links[0].from_socket
     for n in nt.nodes:
         if n.type == "TEX_IMAGE" and n.image is not None and not n.name.startswith(NODE_TAG):
             return n.outputs["Color"]
@@ -49,7 +82,7 @@ def _color_source(nt):
     return rgb.outputs[0]
 
 
-def _insert_mix(nt, mix) -> None:
+def _insert_mix(nt, mix, points=False) -> None:
     """Put a new overlay mix in the chain by layer order, bottom layer first:
     material colour → mix → mix → every consumer of the colour."""
     others = [m for m in _overlay_mixes(nt) if m != mix]    # bpy wrappers: not "is"
@@ -58,7 +91,7 @@ def _insert_mix(nt, mix) -> None:
         src = ordered[0].inputs[6].links[0].from_socket
         dst = [lk.to_socket for lk in ordered[-1].outputs[2].links]
     else:
-        src = _color_source(nt)
+        src = _color_source(nt, points)
         dst = [lk.to_socket for lk in src.links]
         if not dst:
             # untextured material: the base colour was a plain value, feed the
@@ -75,10 +108,10 @@ def _insert_mix(nt, mix) -> None:
         nt.links.new(acc, sock)
 
 
-def attach(mat, tex_id, uid, image_name, translation, scale, alpha=1.0, order=0) -> bool:
+def attach(mat, tex_id, uid, image_name, translation, scale, alpha=1.0, order=0, points=False) -> bool:
     """Overlays sharing a projection share a texture coordinate set, so the
     nodes are keyed by overlay uid. ``order``: position in the overlay list,
-    later layers mix over earlier ones."""
+    later layers mix over earlier ones. ``points``: a tile without faces."""
     if mat is None or not mat.use_nodes or mat.node_tree is None:
         return False
     img = bpy.data.images.get(image_name)
@@ -93,14 +126,21 @@ def attach(mat, tex_id, uid, image_name, translation, scale, alpha=1.0, order=0)
         mp.inputs["Location"].default_value = (translation[0], translation[1], 0.0)
         mp.inputs["Scale"].default_value = (scale[0], scale[1], 1.0)
         uv = nt.nodes.get(nm["uv"])
-        if uv is not None and uv.uv_map != f"{OVERLAY_UV_PREFIX}{tex_id}":
+        if uv is not None and uv.type == "UVMAP" and uv.uv_map != f"{OVERLAY_UV_PREFIX}{tex_id}":
             uv.uv_map = f"{OVERLAY_UV_PREFIX}{tex_id}"
+        elif uv is not None and uv.type == "ATTRIBUTE":
+            for n in (uv, nt.nodes.get(nm["uv"] + " Instance")):
+                n.attribute_name = f"{OVERLAY_UV_PREFIX}{tex_id}"
         return True
     y = 700 + 260 * order
-    uv = nt.nodes.new("ShaderNodeUVMap")
-    uv.name = uv.label = nm["uv"]
-    uv.uv_map = f"{OVERLAY_UV_PREFIX}{tex_id}"
-    uv.location = (-800, y)
+    if points:
+        coords = _point_coords(nt, nm["uv"], f"{OVERLAY_UV_PREFIX}{tex_id}", y)
+    else:
+        uv = nt.nodes.new("ShaderNodeUVMap")
+        uv.name = uv.label = nm["uv"]
+        uv.uv_map = f"{OVERLAY_UV_PREFIX}{tex_id}"
+        uv.location = (-800, y)
+        coords = uv.outputs["UV"]
     mp = nt.nodes.new("ShaderNodeMapping")
     mp.name = mp.label = nm["map"]
     mp.vector_type = "POINT"
@@ -124,12 +164,12 @@ def attach(mat, tex_id, uid, image_name, translation, scale, alpha=1.0, order=0)
     mix.blend_type = "MIX"
     mix.location = (-50, y - 100)
     mix[ORDER_PROP] = int(order)
-    nt.links.new(uv.outputs["UV"], mp.inputs["Vector"])
+    nt.links.new(coords, mp.inputs["Vector"])
     nt.links.new(mp.outputs["Vector"], tex.inputs["Vector"])
     nt.links.new(tex.outputs["Alpha"], fac.inputs[1])
     nt.links.new(fac.outputs[0], mix.inputs[0])
     nt.links.new(tex.outputs["Color"], mix.inputs[7])
-    _insert_mix(nt, mix)
+    _insert_mix(nt, mix, points)
     return True
 
 
@@ -424,7 +464,7 @@ def _mask_in_use(obj, uid) -> bool:
 
 def _shader_clipped(obj) -> bool:
     """Mesh tiles with faces; point / splat tiles are clipped by Geometry
-    Nodes (their vertex-only mesh has no overlay UVs)."""
+    Nodes."""
     return obj.type == "MESH" and len(obj.data.polygons) > 0
 
 
@@ -441,8 +481,9 @@ def apply_event(obj, ev, alpha_for_uid, order_for_uid=None) -> None:
                     attach_clip(m, tid, uid, image, tr, sc)
             return
         order = order_for_uid(uid) if order_for_uid is not None else 0
+        points = obj.type == "MESH" and not obj.data.polygons
         for m in obj.data.materials:
-            attach(m, tid, uid, image, tr, sc, alpha_for_uid(uid), order)
+            attach(m, tid, uid, image, tr, sc, alpha_for_uid(uid), order, points)
     elif ev[0] == "detach":
         uid = ev[3] if len(ev) > 3 else ""
         if is_clip_uid(uid):

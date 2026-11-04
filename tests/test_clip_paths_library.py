@@ -268,6 +268,7 @@ def test_library_content_filter():
     # the entry's own field wins over its words, and splats over a mesh2splat's "mesh"
     assert library.content_type({"name": "mesh tiles", "content": "SPLATS"}) == "SPLATS"
     assert library.content_type({"name": "Interior mesh2splat"}) == "SPLATS"
+    assert library.content_type({"name": "Voxel mesh test"}) == "VOXELS"
     assert library.matches(splat, "SPLAT pietro") and not library.matches(splat, "splat rome")
     assert library.matches(unknown, "") and not library.matches(unknown, "", ("MESH",))
     assert library.matches(pts, "", ("MESH", "POINTS")) and not library.matches(pts, "", ("SPLATS",))

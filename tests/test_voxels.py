@@ -185,6 +185,11 @@ class TestSubtreeRequests:
         out = json.loads(asset_fixes.complete_subtree_json(json.dumps(doc).encode()))
         assert out["buffers"][0]["byteLength"] == 12
 
+    def test_content_availability_becomes_an_array(self):
+        doc = {"tileAvailability": {"constant": 1}, "contentAvailability": {"constant": 1}}
+        out = json.loads(asset_fixes.complete_subtree_json(json.dumps(doc).encode()))
+        assert out["contentAvailability"] == [{"constant": 1}]
+
     def test_complete_subtrees_and_other_json_stay_the_same_object(self):
         whole = json.dumps({"buffers": [{"byteLength": 3}], "tileAvailability": {}}).encode()
         assert asset_fixes.complete_subtree_json(whole) is whole

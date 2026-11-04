@@ -190,6 +190,7 @@ class OGC3D_OT_LibraryAdd(Operator):
     show_mesh: BoolProperty(name="Mesh", options={"SKIP_SAVE"})
     show_points: BoolProperty(name="Point cloud", options={"SKIP_SAVE"})
     show_splats: BoolProperty(name="Splats", options={"SKIP_SAVE"})
+    show_voxels: BoolProperty(name="Voxels", options={"SKIP_SAVE"})
 
     def invoke(self, context, event):
         if not _library_paths():
@@ -212,8 +213,9 @@ class OGC3D_OT_LibraryAdd(Operator):
         row.prop(self, "show_mesh")
         row.prop(self, "show_points")
         row.prop(self, "show_splats")
+        row.prop(self, "show_voxels")
         kinds = [k for k, on in (("MESH", self.show_mesh), ("POINTS", self.show_points),
-                                 ("SPLATS", self.show_splats)) if on]
+                                 ("SPLATS", self.show_splats), ("VOXELS", self.show_voxels)) if on]
         global _lib_filter
         _lib_filter = (self.query, kinds)
         found = len(_matching_entries(self.query, kinds))

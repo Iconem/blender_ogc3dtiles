@@ -13,7 +13,7 @@ add-on or its repository. Several files can be listed in the preferences
         "overlays": [{"name": "OSM", "kind": "URL", "url": "...", ...}]}
      ]}
 
-``content`` (MESH, POINTS or SPLATS) is optional; without it the type is guessed
+``content`` (MESH, POINTS, SPLATS or VOXELS) is optional; without it the type is guessed
 from the entry's words. No bpy here: entries convert from / to anything with the TilesetItem /
 OverlayItem attribute names.
 """
@@ -30,13 +30,14 @@ OVERLAY_FIELDS = ("name", "kind", "url", "key", "layer", "style", "matrix_set",
                   "image_format", "min_level", "max_level", "detail_px", "enabled", "alpha")
 
 
-CONTENT_WORDS = (("SPLATS", ("splat", "3dgs", "spz")),
+CONTENT_WORDS = (("VOXELS", ("voxel",)),
+                 ("SPLATS", ("splat", "3dgs", "spz")),
                  ("POINTS", ("point cloud", "pointcloud", "lidar", "copc", "pnts")),
                  ("MESH", ("mesh", "b3dm", "photorealistic")))
 
 
 def content_type(entry: dict) -> str:
-    """MESH, POINTS or SPLATS, "" when the entry doesn't tell."""
+    """MESH, POINTS, SPLATS or VOXELS, "" when the entry doesn't tell."""
     if entry.get("content"):
         return entry["content"]
     text = f"{entry.get('group', '')} {entry.get('name', '')} {entry.get('notes', '')}".lower()

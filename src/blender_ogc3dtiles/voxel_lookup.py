@@ -86,6 +86,11 @@ def rebuild(scene):
     shape = _state["shape"]
     if attribute is None or shape is None:
         return False
+    if column and column != scene.ogc3dtiles.meta_column:
+        # one palette for all: it has to be the column the atlas shows
+        from .materials import update_metadata_group
+        scene.ogc3dtiles["meta_column"] = column
+        update_metadata_group(scene)
     info = feature_meta.REGISTRY.get(column) if column else None
     number = info is not None and info.kind == "number"
     span = (info.lo, max(info.hi, info.lo + 1e-6)) if number else None

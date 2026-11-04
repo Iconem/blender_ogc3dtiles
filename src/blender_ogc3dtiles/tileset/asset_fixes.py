@@ -1,9 +1,10 @@
 """asset_fixes.py — requests cesium-native v0.59 cannot do by itself  (no bpy).
 
 Subtree JSON can hold its availability in a ``data:`` URI, which cesium-native
-hands to curl, and writers also leave out ``byteLength``, which it then reads as
-"nothing available": no tile of such a tileset ever loads. A wrapper around the
-asset accessor answers ``data:`` requests itself and completes the subtree JSON.
+hands to curl. Writers also leave out ``byteLength``, or write ``contentAvailability``
+as one object where the spec has an array, which it then reads as "nothing available":
+no tile of such a tileset ever loads. A wrapper around the asset accessor answers
+``data:`` requests itself and completes the subtree JSON.
 """
 from __future__ import annotations
 
@@ -33,8 +34,8 @@ def decode_data_uri(url: str):
 
 
 def complete_subtree_json(data: bytes) -> bytes:
-    """Subtree JSON with every buffer's ``byteLength`` set, ``data`` itself when
-    nothing is missing or it isn't a subtree."""
+    """Subtree JSON as the spec has it, ``data`` itself when it already is or it
+    isn't a subtree."""
     if _SUBTREE_KEY not in data:
         return data
     try:
@@ -43,6 +44,9 @@ def complete_subtree_json(data: bytes) -> bytes:
         return data
     buffers, views = doc.get("buffers") or [], doc.get("bufferViews") or []
     changed = False
+    if isinstance(doc.get("contentAvailability"), dict):
+        doc["contentAvailability"] = [doc["contentAvailability"]]
+        changed = True
     for i, buf in enumerate(buffers):
         if "byteLength" in buf:
             continue

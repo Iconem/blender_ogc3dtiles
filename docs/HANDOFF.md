@@ -1,7 +1,12 @@
 # Handoff: blender_ogc3dtiles + cesium-native-python
 
-State on 2026-11-01. For the next agent picking this up. It holds no tokens
-or keys; the files that do are named below and stay out of git.
+State on 2026-11-04, at `bc872f7` plus this note. For the next agent picking
+this up. It holds no tokens or keys; the files that do are named below and stay
+out of git.
+
+**Where things stand:** nothing is in progress. Everything is on `main` on both
+remotes. `main` is ahead of the last release, v0.5.0, by quantized-mesh terrain
+entries and point intensity. Section 4 lists what to do next.
 
 ## 0. Ground rules (from Jonathan, still in force)
 
@@ -31,6 +36,10 @@ or keys; the files that do are named below and stay out of git.
 - **Testing.**
   - Test in GUI Blender sessions that stay open, not headless. Jonathan likes
     to fly around in them afterwards.
+  - Test on Blender 5.3 only, unless he asks or the change is version-specific.
+  - Open Blender windows may be closed and reopened with the latest add-on, but
+    one may be his live session: check before closing it, and test in a separate
+    window when he is working in one.
   - Show screenshots in the thread before committing them, as one assembled
     image.
   - Blender 5.3 beta: `C:\tools\BlenderLauncherWinget\custom\blender-5.3.0-beta+v53.3db45062d058-windows.amd64-release\blender.exe`.
@@ -42,7 +51,14 @@ or keys; the files that do are named below and stay out of git.
     polls a `cmd.py` file on a timer, `exec`s it and writes the output next to
     it; screenshots via `bpy.ops.screen.screenshot_area` under
     `context.temp_override`.
-- **Anything posted publicly needs his OK.** Draft, show, then post.
+- **Anything posted publicly needs his OK.** Draft, show, then post. Posting
+  means the `jo-chemla` account through `gh`. PRs to other projects stay in his
+  name, with no Claude mention unless he asks for one. `gh` can't upload images
+  to an issue, so he pastes those himself. Don't host them elsewhere (a gist was
+  declined).
+- **Releases** go on both `jo-chemla` and `Iconem`. Iconem's workflows now run on
+  push: `bc872f7` started one. A tag trigger is untested there since he enabled
+  them, so check that the first tag releases on both.
 
 ## 1. Upstream: calebbuffa/cesium-native-python
 
@@ -61,10 +77,12 @@ or keys; the files that do are named below and stay out of git.
 - The fork's release `v0.1.0-wheels.1` holds wheels from #3 + #4 only. The
   add-on keeps its own workarounds so it runs on either build. The add-on's
   preferences have an "Install wheel from GitHub Release" button.
-- Local cnp worktrees, venvs and wheels were in a scratch folder that has
-  since been deleted; the branches are safe on the fork. The vcpkg tree is in
-  `C:\Users\jonathan\.ezvcpkg` (a cold build takes ~75 min; needs VS 2022
-  Build Tools and pybind11 < 3).
+- On 2026-11-04, #4, #5 and #7 have only a bot's review and no answer from Caleb.
+  Check again before starting binding work.
+- A local binding checkout with its build is in `C:\tmp\cnp` (1.4 GB, on
+  `fix/gltf-modifier-subclass`), with a venv in `C:\tmp\cnpvenv` and a cp313 wheel
+  in `C:\tmp\cnpwheel`. The vcpkg tree is in `C:\Users\jonathan\.ezvcpkg` (a cold
+  build takes ~75 min; needs VS 2022 Build Tools and pybind11 < 3).
 
 ### Next upstream PRs, in order of effort
 
@@ -179,3 +197,70 @@ Read on 2026-11-02, nothing merged. v0.66 only reads and writes the glTF 2.1 and
   Tiles): reply posted by Jonathan on 2026-11-02, [post 5](https://community.cesium.com/t/integrating-blender-architectural-models-with-google-photorealistic-3d-tiles-in-unreal-engine/47479/5).
 - calebbuffa/cesium-native-python#2: heads-up about the public add-on posted by
   Jonathan on 2026-11-02. Wait for Caleb before opening more binding PRs.
+- [cesium-unreal#1914](https://github.com/CesiumGS/cesium-unreal/issues/1914),
+  adaptive point size: posted on 2026-11-04. Its image is a Blender render using
+  Unreal's formula, not an Unreal capture.
+- [3DTilesRendererJS#1783](https://github.com/NASA-AMMOS/3DTilesRendererJS/issues/1783):
+  adaptive point size for implicit `ADD` octrees. Open, his issue.
+- [cesium-native#1488](https://github.com/CesiumGS/cesium-native/pull/1488) and
+  [awesome-3d-tiles#8](https://github.com/pka/awesome-3d-tiles/pull/8): PRs listing
+  the add-on. Open, in his name.
+
+## 4. What's next
+
+**Needs his answer first**
+
+1. **Tag v0.5.1** for terrain and intensity, once he has tried them. Bump the
+   version in `blender_manifest.toml`. It also tests Iconem's tag trigger.
+2. **Adaptive point size in the add-on?** Not on the roadmap and not asked for,
+   but the formula and the deepest-node lookup already exist in the test script
+   `gen_r9.py` (see below). It would need a per-point attribute refreshed when the
+   selection changes.
+
+**Can start on the add-on**
+
+3. **Bugs in section 2:** local splats that load no tiles, and non-georeferenced
+   tilesets that select 0 tiles away from the origin. These are the two most
+   likely to hit real use.
+4. **Reopening a saved .blend** with metadata is untested.
+5. **Beta items from the README roadmap:** Grease Pencil phases, an octree pyramid
+   for the class grid (most common class per 2×2×2 block, never an average),
+   `meshToVolume` or trimesh as voxelizers, and the PDAL draft.
+6. **`pnts` / `i3dm` on the pure Python path:** the last open non-beta roadmap
+   item. Low value, since the native path handles them.
+
+**Waiting on others**
+
+- **Caleb:** everything in section 1. Items 1 and 2 of the upstream list are small
+  and ready, but he hasn't answered since 2026-10-22, and Jonathan's rule is to
+  wait before opening more.
+- **3dtiled:** sending intensity and classification. Another agent has this; don't
+  touch that repo. 3dtiled's level 1 tiles also seem to overstate their geometric
+  error (about 3.4 m declared against 1.3 m point spacing), so 16 to 32 px suits
+  them for now.
+- **Cesium:** #1486, #1914, #1488.
+
+**His sample repo:** `lion_takanawa/implicit-octree/tileset-x100.json` in
+`3dtiles-samples` scales its errors and also has a root transform of scale 100, so
+cesium-native reports 750 m of error on a 464 m model and over-refines it. Mention
+it to him rather than fixing it unasked.
+
+## 5. Local test data
+
+Copied to `.local/test_data/` in the worktree this note was handed to. `.local/` is
+ignored by git, so copy it again for another worktree. The originals are in
+`%TEMP%\ogc_tests`, which Windows may clean. Scripts there were searched for share
+links and Google keys, and none were found. Keep it that way.
+
+| Folder | What it is |
+|---|---|
+| `harness/` | Drives a GUI Blender from a shell: `gui_repl.py`, `run.sh`, `h.py`, `h_shot.py`. Paths inside point to `%TEMP%\ogc_tests\r9`. |
+| `adaptive_point_size/` | The #1914 comparison image, its panels, `gen_r9.py` and the generated scripts. |
+| `intensity/` | Hand-written tile with real IGN LiDAR HD `_INTENSITY` values. 3dtiled doesn't send these yet. |
+| `spz/` | Splat tiles, compressed and raw. |
+| `nas_sample/`, `localmesh/` | Local and NAS-style tilesets. |
+| `phases/`, `strokes/` | Voxel phases written from closed meshes and from strokes. |
+| `swissgeol/`, `voxel/` | Voxel tilesets, including a GeoTOP mirror. |
+
+Elsewhere on this machine: the private library in section 0, and the binding
+checkout in section 1.

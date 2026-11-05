@@ -2197,8 +2197,8 @@ class OGC3D_PT_MetadataPanel(_OGC3DSidebar, Panel):
 class OGC3D_PT_PhasesPanel(_OGC3DSidebar, Panel):
     bl_label = "Phases (beta)"
     bl_idname = "OGC3D_PT_phases"
-    bl_order = 5
-    bl_options = {"DEFAULT_CLOSED"}
+    bl_category = "Phases"      # its own tab: drawing phases is not 3D Tiles streaming
+    bl_order = 0
 
     @classmethod
     def poll(cls, context):

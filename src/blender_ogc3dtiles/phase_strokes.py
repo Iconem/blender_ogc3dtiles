@@ -1,6 +1,10 @@
-"""phase_strokes.py — beta: phases outlined with Grease Pencil strokes on the surface.
+"""phase_strokes.py — beta: phases painted or outlined with Grease Pencil strokes.
 
-A stroke drawn around a part of the monument (Annotate or a Grease Pencil object,
+Painted: the strokes are a brush path over the surface, and every cell within the
+brush radius of a stroke takes the class (``brush_cells``). It follows any curved
+surface, and scribbling over an area fills it.
+
+Outlined: a stroke drawn around a part of the monument (Annotate or a Grease Pencil object,
 stroke placement *Surface*) is read as a closed outline. It becomes a prism: the
 outline in its best-fit plane, pushed behind the surface and a little in front of
 it. The prism is a closed mesh in the "Phases" collection with ``code``, ``year``
@@ -109,6 +113,36 @@ def prism(points, toward_viewer=None, front=0.25, back=1.0, min_step=0.0):
         a, b = (i, j) if ccw else (j, i)
         faces += [(a, a + count, b + count), (a, b + count, b)]
     return verts, faces
+
+
+def brush_cells(points, edges, radius, lo, cell, shape):
+    """Cells whose centre lies within ``radius`` of the polylines: (M, 3) indices
+    into a grid of ``shape`` starting at ``lo`` with ``cell`` metre cells. A cell
+    the brush crosses still counts when the brush is thinner than it."""
+    pts = np.asarray(points, np.float64).reshape(-1, 3)
+    edges = np.asarray(edges, np.int64).reshape(-1, 2)
+    if not len(pts):
+        return np.zeros((0, 3), np.int64)
+    samples = [pts]
+    for a, b in edges:              # points every half cell along each segment
+        n = int(np.linalg.norm(pts[b] - pts[a]) / (cell * 0.5))
+        if n > 0:
+            t = np.linspace(0.0, 1.0, n + 2)[1:-1, None]
+            samples.append(pts[a] * (1.0 - t) + pts[b] * t)
+    at = np.unique(np.floor((np.concatenate(samples) - lo) / cell).astype(np.int64), axis=0)
+    reach = max(int(np.ceil(radius / cell)), 0)
+    span = np.arange(-reach, reach + 1)
+    offsets = np.stack(np.meshgrid(span, span, span, indexing="ij"), -1).reshape(-1, 3)
+    offsets = offsets[(offsets ** 2).sum(1) * cell * cell <= radius ** 2]
+    if not len(offsets):
+        offsets = np.zeros((1, 3), np.int64)
+    top = np.asarray(shape, np.int64)
+    mask = np.zeros(tuple(shape), bool)
+    for start in range(0, len(at), 2048):
+        cells = (at[start:start + 2048, None, :] + offsets[None]).reshape(-1, 3)
+        cells = cells[((cells >= 0) & (cells < top)).all(1)]
+        mask[cells[:, 0], cells[:, 1], cells[:, 2]] = True
+    return np.argwhere(mask)
 
 
 # ── Blender side ──────────────────────────────────────────────────────────────

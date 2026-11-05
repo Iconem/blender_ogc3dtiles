@@ -241,7 +241,8 @@ Read on 2026-11-02, nothing merged. v0.66 only reads and writes the glTF 2.1 and
 4. **Reopening a saved .blend** with metadata is untested.
 5. **Beta items from the README roadmap:** Grease Pencil phases (first version done
    2026-11-05: `phase_strokes.py` for the geometry, `phases.OGC3D_OT_PhaseFromStrokes`,
-   pref `beta_phase_strokes`; tested with generated strokes on the IGN COPC tile, never
+   pref `beta_phase_strokes`; painted areas (brush radius around the strokes) and outlines (prisms); the panel is in
+   its own *Phases* sidebar tab; tested with generated strokes on the IGN COPC tile, never
    with a hand-drawn one, and Jonathan hasn't tried it), an octree pyramid
    for the class grid (most common class per 2×2×2 block, never an average),
    `meshToVolume` or trimesh as voxelizers, and the PDAL draft.

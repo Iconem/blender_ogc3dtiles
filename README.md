@@ -534,7 +534,7 @@ Off by default, under *Preferences > Add-ons > OGC 3D Tiles > Beta features*:
 
 ![Phases timeline on Google Photorealistic 3D Tiles over the Colosseum, north at the bottom: the year slider on top, with Clip to phases underneath. The volumes and dates are invented. One class per cell, so the 1990 blob overwrites the wall where they overlap, and the wall has a hole in it at year 250](docs/img/phases_colosseum.jpg)
 
-- **Phases timeline.** A sidebar panel for closed meshes in a `Phases` collection, each with
+- **Phases timeline.** A sidebar tab of its own, *Phases*, for closed meshes in a `Phases` collection, each with
   the custom properties `code` (1 to 255) and `year`, optionally `color`. *Build class grid*
   voxelizes them around the scene origin into a one-tile voxel tileset, later years winning
   where they overlap, and adds it to the list. After a Start, every other tileset is colored
@@ -542,14 +542,16 @@ Off by default, under *Preferences > Add-ons > OGC 3D Tiles > Beta features*:
   surface outside them too. `scripts/phase_volumes.py` builds a demo on invented volumes. The
   grid is one tile, with no coarser levels. See [docs/voxels.md](docs/voxels.md) for classes
   per cell and how the tileset is made.
-- **Phases from strokes.** Needs Phases timeline. Draw around a part of the monument with
-  Annotate (stroke placement *Surface*) or a Grease Pencil object, then *Phase from strokes*
-  in the Phases panel asks for a code, a year, a color and two depths. Each stroke becomes a
-  prism in the `Phases` collection: the outline in its best-fit plane, from *In front* metres
-  toward the viewer to *Behind* metres away. *Build class grid* then treats it like any
-  other volume. One plane per stroke, so an outline that wraps around a corner needs a
-  stroke per face, and an outline that crosses itself gives a wrong volume. Checked with
-  generated strokes, not yet with hand-drawn ones.
+- **Phases from strokes.** Needs Phases timeline. Draw on the monument with Annotate
+  (stroke placement *Surface*) or a Grease Pencil object, then *Phase from strokes* in the
+  Phases panel asks for a code, a year, a color and how to read the strokes.
+  *Painted areas* (default): everything within the *Brush radius* of a stroke is in the
+  phase, in depth too, so scribbling over an area fills it and it follows curved surfaces.
+  The strokes are kept as a wire mesh with a `brush` property in the `Phases` collection.
+  *Outlines*: each stroke is the outline of a flat area and becomes a prism, from *In front*
+  metres toward the viewer to *Behind* metres away; an outline that wraps around a corner
+  needs a stroke per face. *Build class grid* then treats both like any other volume.
+  Checked with generated strokes, not yet with hand-drawn ones.
 - **Material controls.** The Relight sliders, gold transfer included, in the Materials
   panel. Off, the buttons remain and the shared `OGC3D Relight` node group is where to edit
   these values.
@@ -1039,8 +1041,7 @@ the converters compiled into cesium-native.
 - [x] Voxel tilesets: box and region tiles as blocks, box tiles as OpenVDB Volumes ([notes](docs/voxels.md))
 - [x] Voxel classes colored onto another tileset, with a boolean intersect
 - [x] Beta: phases on a year slider, from closed meshes
-- [x] Beta: outline phases with Grease Pencil or Annotate strokes on the surface, one prism per stroke
-- [ ] Beta: phases from strokes that follow a curved surface, and painted areas instead of outlines
+- [x] Beta: paint or outline phases with Grease Pencil or Annotate strokes on the surface
 - [ ] Beta: write the class grid as an octree pyramid
 - [ ] Beta: try [OpenVDB's `meshToVolume`](https://openvdb.org/documentation/doxygen/MeshToVolume_8h.html) and [trimesh](https://github.com/mikedh/trimesh) as voxelizers
 - [ ] Beta: burn classes into point clouds with PDAL ([draft](scripts/pdal_burn_classes.py))

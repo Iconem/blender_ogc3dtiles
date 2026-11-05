@@ -938,6 +938,10 @@ def draw_metadata_panel(layout, props):
         return
     if col.kind == "number":
         layout.label(text=f"{col.lo:g} to {col.hi:g}", icon="IPO_LINEAR")
+        ng = bpy.data.node_groups.get(META_GROUP)
+        ramp = ng.nodes.get("Ramp") if ng is not None else None
+        if ramp is not None:        # the group's own Color Ramp: edits are kept
+            layout.template_color_ramp(ramp, "color_ramp", expand=True)
         layout.prop(props, "meta_range_custom")
         if props.meta_range_custom:
             row = layout.row(align=True)

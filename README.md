@@ -85,8 +85,8 @@ instead of crashing.
 The cesium-native backend is an optional wheel, `cesium-python`, built from
 [cesium-native-python](https://github.com/calebbuffa/cesium-native-python).
 No compiler is needed: Preferences, Add-ons, OGC 3D Tiles, **Install wheel
-from GitHub Release** (also offered at the bottom of the sidebar's main panel
-while the binding is missing) downloads the wheel matching Blender's CPython and
+from GitHub Release** (also offered in red at the top of the sidebar's main
+panel while the binding is missing) downloads the wheel matching Blender's CPython and
 platform from the latest Release of the configured repository and
 pip-installs it into Blender's Python.  The default repository is the
 [jo-chemla fork](https://github.com/jo-chemla/cesium-native-python/releases)
@@ -455,7 +455,8 @@ object as JSON, in the `ogc3d_features` custom property, for lookups by feature 
 
 **Color tiles by** mixes colors into every tile material through the shared
 'OGC3D Metadata' group: one editable color per class for text, a Color Ramp between the
-column's min and max for numbers. Measured on swissBUILDINGS3D over Bern, 608 tiles:
+column's min and max for numbers (the group's own 'Ramp' node, shown in the Metadata
+panel: add, move and recolor its stops there; edits are kept). Measured on swissBUILDINGS3D over Bern, 608 tiles:
 about 10 ms per tile on the worker threads, 2.7 MB of JSON for 468 tiles on screen, and
 0.5 s to switch to another column. Columns that differ on every row, like UUIDs, stay in
 the table only.

@@ -1965,6 +1965,14 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
             return
         props = scene.ogc3dtiles
 
+        ok, status = _cesium_status
+        if not ok:              # the backend choice itself is in the add-on preferences
+            col = layout.column(align=True)
+            col.alert = True    # Blender's red error tint
+            col.label(text=f"cesium-native-python: {status}", icon="ERROR")
+            col.operator("ogc3dtiles.install_cesium_wheel", icon="IMPORT",
+                         text="Install cesium-native (release wheel)")
+
         box = layout.box()
         icon = "RADIOBUT_ON" if props.is_streaming else "RADIOBUT_OFF"
         box.label(text=(_state.get("status") if props.is_streaming and _state.get("status")
@@ -2030,11 +2038,6 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
             layout.prop(props, "tileset_url", text="URL")
             layout.prop(props, "cesium_ion_token", text="Ion Token")
 
-        ok, status = _cesium_status
-        if not ok:              # the backend choice itself is in the add-on preferences
-            layout.label(text=f"cesium-native-python: {status}", icon="INFO")
-            layout.operator("ogc3dtiles.install_cesium_wheel", icon="IMPORT",
-                            text="Install cesium-native (release wheel)")
 
 
 def _draw_overlays(b, it, st) -> None:

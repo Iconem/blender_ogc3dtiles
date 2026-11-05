@@ -3,20 +3,18 @@
   "defaultOpen": true,
   "pages": [
     "scene-origin",
-    "place-search",
     "raster-overlays",
-    "gaussian-splats",
     "clipping",
     "several-tilesets",
     "libraries-and-local-files",
     "point-clouds",
-    "feature-metadata",
+    "gaussian-splats",
     "voxels",
-    "beta",
-    "editing-geometry",
-    "compositor",
-    "rendering-animations",
-    "cycles-viewport",
-    "orthographic-views"
+    "nodes-material",
+    "nodes-geometry",
+    "nodes-metadata",
+    "nodes-compositor",
+    "rendering",
+    "beta"
   ]
 }

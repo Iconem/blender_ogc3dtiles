@@ -14,7 +14,6 @@ const GH = 'https://github.com/jo-chemla/blender_ogc3dtiles/blob/main';
 const NOTES = [
   ['clipping.md', 'clipping'],
   ['voxels.md', 'voxels'],
-  ['cesium-native-python-windows-build.md', 'cesium-native-windows-build'],
 ];
 
 rmSync(join(site, 'public', 'img'), { recursive: true, force: true });

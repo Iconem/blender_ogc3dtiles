@@ -79,16 +79,16 @@ The [Quick start](https://jo-chemla.github.io/blender_ogc3dtiles/guide/quick-sta
 
 Each one has its page in the [documentation](https://jo-chemla.github.io/blender_ogc3dtiles/):
 
-- [Scene origin](https://jo-chemla.github.io/blender_ogc3dtiles/features/scene-origin/) and [place search](https://jo-chemla.github.io/blender_ogc3dtiles/features/place-search/)
+- [Scene origin](https://jo-chemla.github.io/blender_ogc3dtiles/features/scene-origin/), set automatically, typed in, or found by searching a place
 - [Raster overlays](https://jo-chemla.github.io/blender_ogc3dtiles/features/raster-overlays/): OpenStreetMap, Esri and IGN presets, your own WMTS / WMS, Google, Bing
 - [Clipping](https://jo-chemla.github.io/blender_ogc3dtiles/features/clipping/) with polygons, boxes and the viewport region
 - [Several tilesets](https://jo-chemla.github.io/blender_ogc3dtiles/features/several-tilesets/), ion, globe and terrain entries
 - [Libraries and local files](https://jo-chemla.github.io/blender_ogc3dtiles/features/libraries-and-local-files/): tileset libraries, the cache, copying a tileset into the project
-- [Point clouds](https://jo-chemla.github.io/blender_ogc3dtiles/features/point-clouds/) and [feature metadata](https://jo-chemla.github.io/blender_ogc3dtiles/features/feature-metadata/): colour by class or number, class opacity
-- [Gaussian splats](https://jo-chemla.github.io/blender_ogc3dtiles/features/gaussian-splats/) and [voxels](https://jo-chemla.github.io/blender_ogc3dtiles/features/voxels/)
-- [Editing tile geometry](https://jo-chemla.github.io/blender_ogc3dtiles/features/editing-geometry/) with shared geometry nodes
-- [Compositor](https://jo-chemla.github.io/blender_ogc3dtiles/features/compositor/), [rendering animations](https://jo-chemla.github.io/blender_ogc3dtiles/features/rendering-animations/), [Cycles](https://jo-chemla.github.io/blender_ogc3dtiles/features/cycles-viewport/) and [orthographic views](https://jo-chemla.github.io/blender_ogc3dtiles/features/orthographic-views/)
-- [Beta features](https://jo-chemla.github.io/blender_ogc3dtiles/features/beta/): the phases timeline, material controls
+- [Point clouds](https://jo-chemla.github.io/blender_ogc3dtiles/features/point-clouds/), [Gaussian splats](https://jo-chemla.github.io/blender_ogc3dtiles/features/gaussian-splats/) and [voxels](https://jo-chemla.github.io/blender_ogc3dtiles/features/voxels/)
+- Shared node groups: [material shader](https://jo-chemla.github.io/blender_ogc3dtiles/features/nodes-material/), [geometry](https://jo-chemla.github.io/blender_ogc3dtiles/features/nodes-geometry/),
+  [metadata](https://jo-chemla.github.io/blender_ogc3dtiles/features/nodes-metadata/) (colour by class or number, class opacity) and [compositor](https://jo-chemla.github.io/blender_ogc3dtiles/features/nodes-compositor/)
+- [Rendering](https://jo-chemla.github.io/blender_ogc3dtiles/features/rendering/): animations that wait for their tiles, Cycles, orthographic views
+- [Beta features](https://jo-chemla.github.io/blender_ogc3dtiles/features/beta/): the phases timeline
 
 ## Development
 
@@ -98,9 +98,8 @@ ruff check --select E9,F src/blender_ogc3dtiles tests scripts
 blender --command extension build --source-dir src/blender_ogc3dtiles --output-dir dist
 ```
 
-[Setup and tests](https://jo-chemla.github.io/blender_ogc3dtiles/dev/setup-and-tests/), [architecture](https://jo-chemla.github.io/blender_ogc3dtiles/dev/architecture/),
-[releasing](https://jo-chemla.github.io/blender_ogc3dtiles/dev/releasing/), the [cesium-native wheel](https://jo-chemla.github.io/blender_ogc3dtiles/dev/cesium-native-wheel/)
-and its [versions](https://jo-chemla.github.io/blender_ogc3dtiles/dev/cesium-native-versions/), and the [roadmap](https://jo-chemla.github.io/blender_ogc3dtiles/dev/roadmap/)
+[Setup, tests and releasing](https://jo-chemla.github.io/blender_ogc3dtiles/dev/setup-and-tests/), the [architecture](https://jo-chemla.github.io/blender_ogc3dtiles/dev/architecture/),
+the [cesium-native wheel and versions](https://jo-chemla.github.io/blender_ogc3dtiles/dev/cesium-native/) and the [roadmap](https://jo-chemla.github.io/blender_ogc3dtiles/dev/roadmap/)
 are in the documentation. Its pages live in [`site/`](site), the slide deck in
 [`slides/`](slides); both are built and deployed by
 [`.github/workflows/docs.yml`](.github/workflows/docs.yml).

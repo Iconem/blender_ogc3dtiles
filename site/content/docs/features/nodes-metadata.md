@@ -1,5 +1,5 @@
 ---
-title: "Feature metadata"
+title: "Nodes: Metadata"
 description: "Colour tiles by class or by number, class opacity"
 ---
 
@@ -56,3 +56,11 @@ channels are read.
 
 Not read yet: vector columns (the binding can't convert them on v0.59), and tile metadata
 stored in implicit subtrees.
+
+## The node group
+
+*Color tiles by* is the `OGC3D Metadata` group, placed before the shared shader nodes in each tile's
+material: a palette lookup for classes, a Color Ramp for numbers, and the mix with the tile's own
+colour.
+
+![OGC3D Metadata](/img/nodes_metadata.jpg)

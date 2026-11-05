@@ -3,6 +3,7 @@
   "defaultOpen": true,
   "pages": [
     "installation",
-    "quick-start"
+    "quick-start",
+    "sidebar"
   ]
 }

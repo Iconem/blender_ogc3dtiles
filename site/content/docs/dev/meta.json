@@ -4,9 +4,7 @@
   "pages": [
     "setup-and-tests",
     "architecture",
-    "releasing",
-    "cesium-native-wheel",
-    "cesium-native-versions",
+    "cesium-native",
     "roadmap",
     "notes"
   ]

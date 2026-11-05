@@ -41,3 +41,16 @@ and splats always lose the cut points for real.
 Switching mode is close to instant: no material changes. See
 [docs/clipping.md](/dev/notes/clipping) for how it all works, what comes from
 cesium-native, and measurements.
+
+## Viewport region (Alt+B)
+
+Blender's clipping region (Alt+B) only cuts in Solid and Wireframe shading: EEVEE (Material Preview,
+Rendered) ignores it. **Clip to viewport region**
+(main panel, under Clipping) works around that: every tile material gets a Mix Shader
+to a Transparent BSDF driven by the shared 'OGC3D Clip' group, into which the
+add-on copies the viewport's clip planes each tick.  While it is on, Alt+B
+alone toggles the clipping (drag a region to clip, Alt+B again to clear);
+the planes come from the largest 3D viewport, and F12 renders use whatever
+region that viewport last had.  It is on by default; untick to remove the
+nodes again.
+

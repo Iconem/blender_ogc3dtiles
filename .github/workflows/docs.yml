@@ -23,6 +23,10 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      # the repository is on two accounts, each with its own Pages site: links to the deck and the source follow it
+      PAGES_OWNER: ${{ github.repository_owner }}
+      VITE_PAGES_OWNER: ${{ github.repository_owner }}
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4

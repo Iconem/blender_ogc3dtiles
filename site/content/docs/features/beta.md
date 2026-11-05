@@ -1,6 +1,6 @@
 ---
 title: "Beta features"
-description: "Phases timeline, material controls and other experiments"
+description: "The phases timeline and other experiments"
 ---
 
 Off by default, under *Preferences > Add-ons > OGC 3D Tiles > Beta features*:
@@ -25,7 +25,5 @@ Off by default, under *Preferences > Add-ons > OGC 3D Tiles > Beta features*:
   metres toward the viewer to *Behind* metres away; an outline that wraps around a corner
   needs a stroke per face. *Build class grid* then treats both like any other volume.
   Checked with generated strokes, not yet with hand-drawn ones.
-- **Material controls.** The Relight sliders, gold transfer and X-ray (faces turned to the
-  viewer fade out) included, in the Materials panel. Albedo strength and saturation run
-  from -1 to 2. Off, the buttons remain and the shared `OGC3D Relight` node group is where to edit
-  these values.
+- **Material controls.** The sliders of the shared shader nodes, in the Nodes: Material panel. See
+  [Nodes: Material Shader](/features/nodes-material).

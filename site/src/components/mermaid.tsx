@@ -38,10 +38,15 @@ export function Mermaid({ chart }: { chart: string }) {
       </pre>
     );
   }
+  // Fitted to the text column by default; a click (a checkbox, so no script) shows it at full size, scrollable.
   return (
-    <div className="my-6 overflow-x-auto [&_svg]:mx-auto [&_svg]:h-auto [&_svg]:max-w-none" style={RESET}>
-      <div className="dark:hidden" dangerouslySetInnerHTML={{ __html: light }} />
-      <div className="hidden dark:block" dangerouslySetInnerHTML={{ __html: dark }} />
-    </div>
+    <label className="my-6 block cursor-zoom-in has-[:checked]:cursor-zoom-out" style={RESET} title="Click to zoom">
+      <input type="checkbox" className="peer sr-only" aria-label="Show the diagram at full size" />
+      <div className="overflow-x-auto [&_svg]:mx-auto [&_svg]:h-auto [&_svg]:max-w-full peer-checked:[&_svg]:max-w-none">
+        <div className="dark:hidden" dangerouslySetInnerHTML={{ __html: light }} />
+        <div className="hidden dark:block" dangerouslySetInnerHTML={{ __html: dark }} />
+      </div>
+      <span className="mt-1 block text-center text-xs text-fd-muted-foreground peer-checked:hidden">Click the diagram to zoom</span>
+    </label>
   );
 }

@@ -12,8 +12,6 @@ import compositor from '@assets/img/nodes_compositor.jpg';
 import classes from '@assets/img/metadata_classes.jpg';
 import ramp from '@assets/img/metadata_ramp.jpg';
 import splats from '@assets/img/splat_tiles.jpg';
-import voxels from '@assets/img/voxel_tilesets.jpg';
-import phases from '@assets/img/phases_colosseum.jpg';
 
 // --- Deck kit (the look of the open-geodata-catalog and terrain-viewer decks) ---
 // White, hairline rules, soft panels, one accent. Screenshots are the repository's docs/img, copied in by
@@ -29,7 +27,10 @@ export const design: DesignSystem = {
   radius: 12,
 };
 
-const FOOT = 'OGC 3D Tiles for Blender · jo-chemla.github.io/blender_ogc3dtiles';
+// The repository is on two accounts, each with its own Pages site: the deploy passes the owner it builds for.
+const OWNER = ((import.meta as { env?: Record<string, string | undefined> }).env?.VITE_PAGES_OWNER || 'jo-chemla').toLowerCase();
+const SITE = `${OWNER}.github.io/blender_ogc3dtiles`;
+const FOOT = `OGC 3D Tiles for Blender · ${SITE}`;
 
 const ink = {
   text: '#0a0a0a',
@@ -242,9 +243,9 @@ const Cover = ({ img, eyebrow, title, subtitle }: { img: string; eyebrow: string
         left: 1060,
         top: 200,
         width: 740,
-        height: 640,
+        height: 596,
         objectFit: 'cover',
-        objectPosition: '100% 50%',
+        objectPosition: '50% 50%',
         borderRadius: 12,
         boxShadow: shadow.window,
         display: 'block',
@@ -309,7 +310,7 @@ const P03How: Page = () => (
           <Li k="Georeference">a scene origin on the globe; ECEF becomes local east, north, up in metres.</Li>
         </Bullets>
       }
-      right={<Shot src={rome} width={820} height={560} position="0% 0%" caption="Google Photorealistic 3D Tiles over the Colosseum, streamed in the viewport" />}
+      right={<Shot src={rome} width={820} height={660} caption="Google Photorealistic 3D Tiles over the Colosseum, streamed in the viewport" />}
     />
   </Frame>
 );
@@ -364,7 +365,7 @@ const P06Overlays: Page = () => (
           <Li k="Point clouds too">each point takes the colour of the map under it.</Li>
         </Bullets>
       }
-      right={<Shot src={overlays} width={820} height={600} position="50% 0%" caption="OpenStreetMap on Google Photorealistic 3D Tiles, opacity 1 and 0.5" />}
+      right={<Shot src={overlays} width={820} height={461} position="50% 0%" caption="OpenStreetMap draped on Google Photorealistic 3D Tiles over the Colosseum" />}
     />
   </Frame>
 );
@@ -450,31 +451,45 @@ const P11Splats: Page = () => (
           <Li k="Before 5.3">splat tiles show as points.</Li>
         </Bullets>
       }
-      right={<Shot src={splats} width={820} height={600} position="50% 0%" caption="A splat tileset in Blender 5.3: Solid and Rendered viewport" />}
+      right={<Shot src={splats} width={820} height={461} position="50% 63.4%" caption="A splat tileset in Blender 5.3, Rendered viewport" />}
     />
   </Frame>
 );
 
-const P12Voxels: Page = () => (
-  <Frame eyebrow="Voxels and phases" title="Volumes under the city, and a year slider (beta)">
-    <Shot src={voxels} width={1500} height={285} caption="Voxel tilesets as blocks (top) and as volumes (bottom)" />
-    <div style={{ marginTop: 22 }}>
-      <Shot src={phases} width={1120} height={336} caption="Beta: phases on a timeline, here on Google Photorealistic 3D Tiles over the Colosseum" />
-    </div>
+const P12Converged: Page = () => (
+  <Frame eyebrow="Animations" title="Each frame waits for its tiles">
+    <TwoCol
+      leftWidth={860}
+      left={
+        <Bullets>
+          <Li k="The problem">Blender cannot pause inside a render: streaming stops while a frame renders.</Li>
+          <Li k="Stream for the camera">tiles are selected for the scene camera, at the render resolution.</Li>
+          <Li k="Render converged animation">steps through the frame range and renders each frame itself.</Li>
+          <Li k="Settle">a frame renders once the queue is empty and nothing has changed for a moment.</Li>
+          <Li k="Output">one file per frame in the scene's output path, as Render Animation does.</Li>
+        </Bullets>
+      }
+      right={
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+          <Card title="Warm-up">the first frame waits longer: empty scene, cold cache.</Card>
+          <Card title="Max wait">a ceiling per frame, so a slow tile never stalls the whole render.</Card>
+          <Card title="Finer than the viewport">lower Max SSE before rendering for more detail than you navigate with.</Card>
+        </div>
+      }
+    />
   </Frame>
 );
 
 const P13Render: Page = () => (
-  <Frame eyebrow="Rendering" title="EEVEE, Cycles, and animations that wait for their tiles">
+  <Frame eyebrow="Rendering" title="EEVEE and Cycles, with the look you choose">
     <TwoCol
       leftWidth={800}
       left={
         <Bullets>
-          <Li k="Stream for the camera">tiles are selected for the scene camera at the render resolution.</Li>
-          <Li k="Converged animation">each frame waits until its tiles have loaded, then renders.</Li>
           <Li k="Beauty compositor">eye-dome lighting, normal creases, ambient occlusion, haze, a grade.</Li>
           <Li k="Relight">photogrammetry carries its own light: mix it with real lamps, or go clay.</Li>
-          <Li k="Orthographic">plans and elevations, with the clip range kept sane.</Li>
+          <Li k="Orthographic">plans and elevations select the same tiles as a perspective view of that frame.</Li>
+          <Li k="X-ray and clay">fade the faces turned to the viewer, or drop the photo for a clay colour.</Li>
         </Bullets>
       }
       right={<Shot src={compositor} width={820} height={475} caption="OGC3D Beauty, the compositor tree built by the add-on" />}
@@ -506,8 +521,8 @@ const P15Close: Page = () => (
       <span style={{ color: 'var(--osd-accent)' }}>Press Start.</span>
     </h1>
     <div style={{ position: 'absolute', left: PAD_X, right: PAD_X, top: 580, borderBottom: `1px solid ${ink.rule}` }}>
-      <CloseLine n={1}>github.com/jo-chemla/blender_ogc3dtiles · the extension zip is on the Releases page</CloseLine>
-      <CloseLine n={2}>jo-chemla.github.io/blender_ogc3dtiles · the documentation</CloseLine>
+      <CloseLine n={1}>github.com/{OWNER}/blender_ogc3dtiles · the extension zip is on the Releases page</CloseLine>
+      <CloseLine n={2}>{SITE} · the documentation</CloseLine>
       <CloseLine n={3}>Blender 4.2 or newer · splats need 5.3</CloseLine>
       <CloseLine n={4}>MIT licence · issues and pull requests welcome</CloseLine>
     </div>
@@ -527,8 +542,8 @@ export const notes: (string | undefined)[] = [
   `Three shared graphs: shader, geometry, compositor. Edit one, every tile follows.`,
   `Metadata as colours: classes with a palette, numbers with a ramp. LiDAR classes get their usual names and an opacity each.`,
   `Splat tilesets as native Blender 5.3 splats, with their level of detail.`,
-  `Voxel tilesets as blocks or volumes, and a beta timeline of phases.`,
-  `Rendering: the converged animation waits for each frame's tiles. The compositor adds edges, AO and haze.`,
+  `Blender cannot pause a render to wait for tiles. The converged animation steps through the frames itself and renders each one once its tiles are in.`,
+  `Rendering: relight, the beauty compositor for edges, AO and haze, and orthographic views.`,
   `For those who know cesium-native: what the add-on implements on top of the Python bindings.`,
   `Install the zip, paste a URL, press Start. Docs and source at the addresses on screen.`,
 ];
@@ -550,7 +565,7 @@ export default [
   P09Graphs,
   P10Metadata,
   P11Splats,
-  P12Voxels,
+  P12Converged,
   P13Render,
   P14Cesium,
   P15Close,

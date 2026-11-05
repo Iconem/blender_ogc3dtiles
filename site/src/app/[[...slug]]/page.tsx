@@ -4,6 +4,7 @@ import { DocsBody, DocsDescription, DocsPage, DocsTitle } from 'fumadocs-ui/layo
 import { createRelativeLink } from 'fumadocs-ui/mdx';
 import { source } from '@/lib/source';
 import { getMDXComponents } from '@/components/mdx';
+import { ownHost } from '@/lib/shared';
 
 // An OPTIONAL catch-all: content/docs/index.md (the repo root README) is the site's landing page, so "/" is a docs page
 // like any other rather than a separate marketing route.
@@ -13,13 +14,14 @@ export default async function Page(props: { params: Promise<{ slug?: string[] }>
   if (!page) notFound();
 
   const MDX = page.data.body;
+  const RelativeLink = createRelativeLink(source, page);
 
   return (
     <DocsPage toc={page.data.toc} full={page.data.full}>
       <DocsTitle>{page.data.title}</DocsTitle>
       <DocsDescription>{page.data.description}</DocsDescription>
       <DocsBody>
-        <MDX components={getMDXComponents({ a: createRelativeLink(source, page) })} />
+        <MDX components={getMDXComponents({ a: (props) => <RelativeLink {...props} href={ownHost(props.href)} /> })} />
       </DocsBody>
     </DocsPage>
   );

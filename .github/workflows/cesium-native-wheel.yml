@@ -5,7 +5,7 @@
 #
 # The upstream repo (calebbuffa/cesium-native-python) does not compile on
 # MSVC as of 2026-04; third_party/cesium-native-python-windows.patch carries
-# the fixes (see docs/cesium-native-python-windows-build.md).
+# the fixes.
 name: cesium-native wheel
 
 on:

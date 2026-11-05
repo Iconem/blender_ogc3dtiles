@@ -8,7 +8,8 @@ no tile of such a tileset ever loads. A wrapper around the asset accessor answer
 
 Tileset JSON: cesium-native renders a tile without content as a hole when its
 geometric error is below its parent's (``TilesetContentManager::
-updateContentLoadedState``), where CesiumJS always refines it. Converter output
+updateContentLoadedState``): by design, "nothing to render at this level of
+detail", and CesiumJS stops at such a tile too. Converter output
 such as 3dtiled's keeps its content under many levels of empty tiles with
 halving errors, so cesium-native showed nothing once an empty level met the
 screen-space error. The wrapper gives those tiles their parent's error, which
@@ -68,9 +69,8 @@ _TILESET_KEYS = (b'"root"', b'"geometricError"')
 
 
 def refine_through_empty_tiles(data: bytes) -> bytes:
-    """Tileset JSON where every tile without content refines to its children,
-    as CesiumJS does: such a tile takes its parent's geometric error when its
-    own is smaller. ``data`` itself when nothing changes or it isn't a tileset."""
+    """Tileset JSON where every tile without content refines to its children:
+    such a tile takes its parent's geometric error when its own is smaller. ``data`` itself when nothing changes or it isn't a tileset."""
     if any(k not in data for k in _TILESET_KEYS):
         return data
     try:

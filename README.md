@@ -236,11 +236,11 @@ its root Empty can be moved to place it.
 
 Converter output often keeps its content under many levels of tiles without
 content, each with a smaller geometric error than its parent. cesium-native
-renders such a tile as a hole once it meets the screen-space error, where
-CesiumJS always refines it, so nothing showed from most viewpoints. The
-asset accessor gives those tiles their parent's error on the way in
-(`tileset/asset_fixes.py`), which cesium-native takes as "refine
-unconditionally".
+renders such a tile as a hole once it meets the screen-space error (a
+documented choice: "nothing to render at this level of detail"), so nothing
+showed from most viewpoints. The asset accessor gives those tiles their
+parent's error on the way in (`tileset/asset_fixes.py`), which cesium-native
+takes as "refine unconditionally".
 
 Tested with 3dtiled output and with the public sample of the
 [3D-Tiles-RendererJS 3DGS plugin](https://github.com/WilliamLiu-1997/3D-Tiles-RendererJS-3DGS-Plugin)

@@ -1,4 +1,4 @@
-"""Tileset JSON fix: tiles without content refine to their children (as CesiumJS)."""
+"""Tileset JSON fix: tiles without content refine to their children."""
 import json
 
 from blender_ogc3dtiles.tileset import asset_fixes

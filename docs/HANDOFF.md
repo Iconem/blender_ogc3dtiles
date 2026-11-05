@@ -158,15 +158,18 @@ entries and point intensity. Section 4 lists what to do next.
   scenes while the viewport was already correct. Don't use it to wait.
 - **Content-less tiles** (fixed 2026-11-04): cesium-native renders a tile without
   content as a hole when its geometric error is below its parent's
-  (`TilesetContentManager::updateContentLoadedState`), where CesiumJS always
-  refines it. 3dtiled output has nine such levels above its content, so the
+  (`TilesetContentManager::updateContentLoadedState`; deliberate, the code
+  comment calls it "nothing need be rendered at this level-of-detail"). CesiumJS
+  does much the same: `canTraverse` stops at an empty tile that meets the SSE
+  and selects nothing. So this is a writer problem, not a cesium-native bug.
+  3dtiled output has nine such levels above its content, so the
   Vestibule and Interior splats showed nothing from most viewpoints (the "0 tiles
   away from the origin" symptom). `asset_fixes.refine_through_empty_tiles` gives
   those tiles their parent's error in the tileset JSON. A content-less *root*
   still renders as a hole once it meets the SSE (cesium compares it with twice
-  its own error), i.e. from about 2 km on a 130 m tileset at 8 px. Worth a
-  cesium-native issue (CesiumJS parity), and 3dtiled could write empty tiles with
-  their parent's error itself. Clipping those splats is still unchecked.
+  its own error), i.e. from about 2 km on a 130 m tileset at 8 px. The real fix
+  is in 3dtiled: write empty tiles with their parent's error, or put coarse
+  content in them. Clipping those splats is still unchecked.
 - **Non-georeferenced tilesets** (fixed 2026-11-04): a stream now carries its own
   frame (`st["frame"]`, `_decide_origin` returns it) when the origin is already
   fixed and the tileset sits at ECEF 0, so it lands at the Blender origin in its

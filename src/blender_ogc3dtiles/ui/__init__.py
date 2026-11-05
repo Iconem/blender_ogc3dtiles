@@ -43,6 +43,7 @@ from ..io import (
     tile_world_matrix,
 )
 from ..tileset.backend import PythonBackend, make_backend, probe_cesium
+from ..tileset.budget import cap_factor
 from ..tileset.native_backend import GLOBE_URL
 from ..tileset.traversal import (
     Tile,
@@ -71,9 +72,10 @@ def _refresh_cesium_status():
 
 # ── Stream state ──────────────────────────────────────────────────────────────
 class _Rec:
-    __slots__ = ("holder", "data", "last_wanted", "visible", "tile")
+    __slots__ = ("holder", "data", "last_wanted", "visible", "tile", "count")
 
     def __init__(self, holder, data, tile=None):
+        self.count = -1         # points + vertices, counted when the cap first needs it
         self.holder = holder
         self.data = data
         self.last_wanted = time.monotonic()
@@ -176,7 +178,7 @@ def _push_sse(st, value):
         return
     st["max_sse"] = value
     try:
-        st["backend"].set_max_sse(float(value))
+        st["backend"].set_max_sse(float(value) * _state.get("cap_factor", 1.0))
     except Exception as e:                           # noqa: BLE001
         print(f"[3DTiles] set_max_sse failed: {e}")
     st["last_sig"] = None                 # force a re-selection on the next tick
@@ -850,7 +852,7 @@ def _start_item(scene, props, item) -> dict:
 
 
 def _start_stream(scene, props, st, choice, cache) -> None:
-    backend = make_backend(choice, max_sse=st["max_sse"],
+    backend = make_backend(choice, max_sse=st["max_sse"] * _state.get("cap_factor", 1.0),
                            max_tiles=props.max_loaded_tiles,
                            detail_falloff=props.detail_falloff,
                            max_dist=props.load_distance,
@@ -1321,6 +1323,7 @@ def stream_tick(context) -> bool:
         parts.append(f"{st['name'][:14]} {len(st['render_keys'])}/{len(st['tiles'])}")
     # kept in _state, not in scene properties: a scene property write tags the
     # scene for update and restarts the Cycles viewport render every tick
+    _tick_cap(props, now, pending)
     _state["status"] = f"Visible {visible}  Loaded {loaded}  Queue {pending}  |  " + "  ".join(parts)
     _state["counts"] = (loaded, pending)
     _state["pending_total"] = pending
@@ -1328,6 +1331,62 @@ def stream_tick(context) -> bool:
     if changed:
         _state["last_change_t"] = now
     return changed
+
+
+CAP_PERIOD_S = 0.5
+CAP_STUCK_STEPS = 4
+
+
+def _elements(holder_name) -> int:
+    holder = bpy.data.objects.get(holder_name)
+    total = 0
+    for obj in ((holder, *holder.children_recursive) if holder is not None else ()):
+        data = obj.data
+        if obj.type == "MESH":
+            total += len(data.vertices)
+        elif obj.type == "POINTCLOUD":
+            total += len(data.points)
+    return total
+
+
+def _tick_cap(props, now, pending) -> None:
+    """Max points / vertices: coarsen every stream while the visible tiles hold
+    more than the cap, give detail back once the view is loaded and under it."""
+    cap = float(getattr(props, "max_elements_m", 0.0)) * 1e6
+    factor = _state.get("cap_factor", 1.0)
+    if cap <= 0 and factor == 1.0:
+        return
+    if now - _state.get("cap_t", 0.0) < CAP_PERIOD_S:
+        return
+    _state["cap_t"] = now
+    total = 0
+    for st in _state["streams"].values():
+        for rec in st["tiles"].values():
+            if rec.visible:
+                if rec.count < 0:
+                    rec.count = _elements(rec.holder)
+                total += rec.count
+    _state["cap_total"] = total
+    new = cap_factor(factor, total, cap, settled=pending == 0)
+    if new > factor:            # several coarser steps changed nothing: the coarsest tiles are over the cap
+        stuck = _state.get("cap_stuck", 0) + 1 if total == _state.get("cap_raised_at") else 0
+        _state["cap_stuck"], _state["cap_raised_at"] = stuck, total
+        if stuck >= CAP_STUCK_STEPS:
+            new = factor
+    else:
+        _state.pop("cap_raised_at", None)
+    if new != factor:
+        _state["cap_factor"] = new
+        for st in _state["streams"].values():
+            _push_sse(st, st["max_sse"])
+
+
+def _python_backend_in_use(context) -> bool:
+    """The pure Python traversal is chosen, or is what runs (no cesium-native)."""
+    choice = getattr(_get_prefs(context), "traversal_backend", "AUTO") or "AUTO"
+    if choice == "PYTHON" or (choice == "AUTO" and not _cesium_status[0]):
+        return True
+    return any(st["backend"] is not None and st["mode"] != "native" for st in _state["streams"].values())
 
 
 def _sync_streams(scene, props, now) -> bool:
@@ -1950,11 +2009,13 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
                     b.label(text=f"Root: {root.name}", icon="EMPTY_AXIS")
                 if st.get("error"):
                     b.label(text=st["error"][:60], icon="ERROR")
-            # raster overlays draped on this tileset (cesium-native backend)
+            # per tileset, each in its own box so they read as things to switch on
+            b = layout.box()            # raster overlays draped on this tileset (cesium-native backend)
             b.prop(it, "use_overlays", text=(f"Raster overlays ({len(it.overlays)})"
                                              if it.overlays else "Raster overlays"))
             if it.use_overlays:
                 _draw_overlays(b, it, st)
+            b = layout.box()
             b.prop(it, "use_clipping", text=(f"Clipping ({len(it.clip_polygons)})"
                                              if it.clip_polygons else "Clipping"))
             if it.use_clipping:
@@ -1969,6 +2030,11 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
         else:
             row.operator("ogc3dtiles.stop_stream", icon="PAUSE", text="Stop")
         row.operator("ogc3dtiles.clear_tiles", icon="TRASH", text="Clear All Tiles")
+        ok, status = _cesium_status
+        if not ok:              # the backend choice itself is in the add-on preferences
+            layout.label(text=f"cesium-native-python: {status}", icon="INFO")
+            layout.operator("ogc3dtiles.install_cesium_wheel", icon="IMPORT",
+                            text="Install cesium-native (release wheel)")
 
 
 def _draw_overlays(b, it, st) -> None:
@@ -2081,16 +2147,21 @@ class OGC3D_PT_LodPanel(_OGC3DSidebar, Panel):
         col.prop(props, "max_screen_space_error", text="Max SSE (live)")
         col.prop(props, "max_concurrent_requests", text="Parallel DL")
         col.prop(props, "imports_per_tick", text="Imports / tick")
+        col.prop(props, "max_elements_m", text="Max points / vertices (M)")
+        if props.max_elements_m > 0 and props.is_streaming:
+            layout.label(text=f"Shown: {_state.get('cap_total', 0) / 1e6:.2f} M   "
+                              f"SSE x{_state.get('cap_factor', 1.0):.2f}", icon="INFO")
         sub_h, sub = layout.panel("ogc3d_lod_advanced", default_closed=True)
         sub_h.label(text="Advanced")
         if sub:
-            sub.prop(props, "max_loaded_tiles", text="Max Tiles / tileset")
             sub.prop(props, "nav_build_ms", text="Build ms while navigating")
-            row = sub.row(align=True)
-            row.prop(props, "foveated_cone", text="Foveation cone")
-            row.prop(props, "foveated_relaxation", text="Edge SSE relax")
-            sub.prop(props, "detail_falloff", text="Detail Falloff m")
-            sub.prop(props, "load_distance", text="Max Distance m")
+            if _python_backend_in_use(context):     # the pure Python traversal only
+                sub.prop(props, "max_loaded_tiles", text="Max Tiles / tileset")
+                row = sub.row(align=True)
+                row.prop(props, "foveated_cone", text="Foveation cone")
+                row.prop(props, "foveated_relaxation", text="Edge SSE relax")
+                sub.prop(props, "detail_falloff", text="Detail Falloff m")
+                sub.prop(props, "load_distance", text="Max Distance m")
             sub.prop(props, "native_direct_mesh", text="Direct mesh (numpy, both backends)")
             row = sub.row(align=True)
             row.prop(props, "use_disk_cache", text="Disk cache")
@@ -2114,7 +2185,7 @@ class OGC3D_PT_LodPanel(_OGC3DSidebar, Panel):
 
 
 class OGC3D_PT_DisplayPanel(_OGC3DSidebar, Panel):
-    bl_label = "Display"
+    bl_label = "Geometry"
     bl_idname = "OGC3D_PT_display"
     bl_order = 3
 
@@ -2124,6 +2195,10 @@ class OGC3D_PT_DisplayPanel(_OGC3DSidebar, Panel):
     def draw(self, context):
         layout = self.layout
         props = context.scene.ogc3dtiles
+        row = layout.row(align=True)
+        row.prop(props, "tile_geometry", text="Shared geometry nodes")
+        op = row.operator("ogc3dtiles.open_nodes", text="", icon="NODETREE")
+        op.kind = "GEOMETRY"
         row = layout.row(align=True)
         row.prop(props, "point_display", text="Points")
         op = row.operator("ogc3dtiles.open_nodes", text="", icon="NODETREE")
@@ -2154,10 +2229,6 @@ class OGC3D_PT_DisplayPanel(_OGC3DSidebar, Panel):
             layout.label(text="Discs follow glTF normals, else face the view", icon="INFO")
         else:
             layout.label(text="Colours in Material Preview / Rendered", icon="INFO")
-        row = layout.row(align=True)
-        row.prop(props, "tile_geometry", text="Shared geometry nodes")
-        op = row.operator("ogc3dtiles.open_nodes", text="", icon="NODETREE")
-        op.kind = "GEOMETRY"
         row = layout.row(align=True)
         row.prop(props, "hide_relation_lines", text="Hide relation lines")
         shown = _relationship_lines_shown(context)
@@ -2249,30 +2320,6 @@ class OGC3D_PT_RenderPanel(_OGC3DSidebar, Panel):
         if prog:
             layout.label(text=prog, icon="INFO")
         layout.label(text="Output: scene Output path, one file per frame", icon="FILE_FOLDER")
-
-
-class OGC3D_PT_BackendPanel(_OGC3DSidebar, Panel):
-    bl_label = "Backend"
-    bl_idname = "OGC3D_PT_backend"
-    bl_order = 7
-    bl_options = {"DEFAULT_CLOSED"}
-
-    def draw_header(self, context):
-        self.layout.label(text="", icon="MOD_DYNAMICPAINT")
-
-    def draw(self, context):
-        layout = self.layout
-        props = context.scene.ogc3dtiles
-        prefs = _get_prefs(context)
-        if hasattr(prefs, "bl_rna"):
-            row = layout.row()
-            row.enabled = not props.is_streaming
-            row.prop(prefs, "traversal_backend", text="")
-        ok, status = _cesium_status
-        layout.label(text=f"cesium-native-python: {status}", icon="CHECKMARK" if ok else "INFO")
-        if not ok:
-            layout.operator("ogc3dtiles.install_cesium_wheel", icon="IMPORT",
-                            text="Install cesium-native (release wheel)")
 
 
 class OGC3D_OT_RenderConverged(Operator):
@@ -2543,7 +2590,6 @@ _classes = [
     phases.OGC3D_OT_PhaseFromStrokes,
     OGC3D_PT_CompositorPanel,
     OGC3D_PT_RenderPanel,
-    OGC3D_PT_BackendPanel,
     OGC3D_PT_CoordPanel,
 ]
 

@@ -476,6 +476,13 @@ class TilesSceneProps(PropertyGroup):
                     "while loading, higher fills the view faster). Live",
         default=4, min=1, max=16,
     )
+    max_elements_m: FloatProperty(
+        name="Max points / vertices (millions)",
+        description="Cap on the points and mesh vertices shown, all tilesets together. "
+                    "Over it, every tileset is streamed coarser (its SSE is multiplied) until "
+                    "the view fits; detail returns when there is room. 0 = no cap. Live",
+        default=0.0, min=0.0, soft_max=100.0, step=50, precision=1,
+    )
     nav_build_ms: FloatProperty(
         name="Build budget while navigating (ms)",
         description="While the view moves (and 0.3 s after), tile building gets this many "

@@ -85,8 +85,8 @@ instead of crashing.
 The cesium-native backend is an optional wheel, `cesium-python`, built from
 [cesium-native-python](https://github.com/calebbuffa/cesium-native-python).
 No compiler is needed: Preferences, Add-ons, OGC 3D Tiles, **Install wheel
-from GitHub Release** (also offered in the sidebar's Backend section while
-the binding is missing) downloads the wheel matching Blender's CPython and
+from GitHub Release** (also offered at the bottom of the sidebar's main panel
+while the binding is missing) downloads the wheel matching Blender's CPython and
 platform from the latest Release of the configured repository and
 pip-installs it into Blender's Python.  The default repository is the
 [jo-chemla fork](https://github.com/jo-chemla/cesium-native-python/releases)
@@ -107,14 +107,24 @@ install cesium-python` in Blender's Python) once wheels are published there.
 Every section of the sidebar is its own panel (boxed, collapsible, and
 re-orderable with the drag handle in its header, like the Object
 Properties tabs; Blender remembers the order and the folded state).
-Default order, top to bottom: tileset list and Start / Stop / Clear,
+Default order, top to bottom: tileset list, the selected tileset's fields,
+its **Raster overlays** and **Clipping** each in a box of its own with the
+checkbox that switches it on, and Start / Stop / Clear;
 **Scene Origin** (collapsed), then **LOD / Streaming** (Max SSE, Parallel
-DL, Imports / tick, and a collapsed *Advanced* sub-panel: Max Tiles,
-foveation, detail falloff, max distance, direct mesh, disk cache, per-stream
-backend stats), **Display** (point display and radius, relation lines),
+DL, Imports / tick, Max points / vertices, and a collapsed *Advanced*
+sub-panel: build time while navigating, direct mesh, disk cache, per-stream
+backend stats, and with the pure Python backend its own settings: Max Tiles,
+foveation, detail falloff, max distance), **Geometry** (shared geometry
+nodes, point display and radius, relation lines),
 **Materials** (relight: Apply / Remove, sliders), **Compositor** (edges and
 sliders, stable viewport, Build / Remove), **Render** (collapsed), then the
-collapsed **Backend** and **Coordinate Info** panels.  Defaults: Max SSE 8 px, 16 parallel downloads, 4 imports per
+collapsed **Coordinate Info** panel.  The backend is chosen in the add-on
+preferences.  **Max points / vertices (M)** caps what is shown, all tilesets
+together: over the cap every tileset is streamed coarser (its SSE is
+multiplied, the panel shows by how much) until the view fits, and detail
+returns when there is room.  0, the default, means no cap; the coarsest tiles
+of a tileset are always shown, so a cap below their size cannot be met.
+Defaults: Max SSE 8 px, 16 parallel downloads, 4 imports per
 tick (lower it if the UI stutters while tiles pour in).  The node-tree
 button next to Apply Relight, Build and the point display opens the
 corresponding tree ('OGC3D Relight' shader group, 'OGC3D Beauty' compositor
@@ -333,7 +343,7 @@ ancestors before any deeper tile), then CesiumJS-style foveated: shallow tiles f
 then by screen-space error weighted towards the view centre (*Foveation
 cone* = fraction of the view half-angle); *Edge SSE relax* > 0 additionally
 lets the periphery stay coarser.  cesium-native orders its own queue the same
-way internally.  "Hide relation lines" (Display sub-panel) switches off the
+way internally.  "Hide relation lines" (Geometry sub-panel) switches off the
 dashed object→parent overlay in every 3D viewport on Start — it is a
 per-viewport overlay, Blender has no per-object switch.
 
@@ -419,7 +429,7 @@ one reads the eye from the 'OGC3D View' Empty, so every point tile
 re-evaluates whenever the eye moves.  The streaming tick (or, when nothing
 streams, a 0.15 s timer) feeds the viewport, a `render_pre` handler the
 scene camera.  Three display modes
-(`Display` sub-panel): **Point cloud** (Mesh → Points; cheapest; unlit
+(`Geometry` sub-panel): **Point cloud** (Mesh → Points; cheapest; unlit
 vertex colours in Material Preview / Rendered, material colour in Solid),
 **Tiny tetrahedra** (4 vertices per point, realised as a mesh whose active
 colour attribute is `Col`, so Solid mode with Color → Attribute shows the
@@ -558,7 +568,7 @@ Off by default, under *Preferences > Add-ons > OGC 3D Tiles > Beta features*:
 
 ### Editing tile geometry
 
-**Shared geometry nodes** (Display section) puts one Geometry Nodes
+**Shared geometry nodes** (Geometry section) puts one Geometry Nodes
 modifier, 'OGC3D Tile Geometry', first in the modifier stack of every tile
 mesh, loaded or streamed later, so a single graph edits the vertices, edges
 or attributes of all tiles (the point display modifier runs after it).  The

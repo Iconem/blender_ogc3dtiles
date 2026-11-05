@@ -3,59 +3,47 @@ title: "Nodes: Metadata"
 description: "Colour tiles by class or by number, class opacity"
 ---
 
-Tiles often carry a table with one row per feature: building type, year, height. With
-**Read feature metadata** on (Metadata panel, before Start), the add-on reads these
-`EXT_structural_metadata` tables, including b3dm batch tables, which cesium-native
-converts. It needs the cesium-native backend and Direct mesh.
-
-Each tile gets an `ogc3d_feature` vertex attribute (the row) and a `meta_<column>`
-attribute for the active column, which shaders and Geometry Nodes can read. *All columns
-as attributes* keeps the others too, at about 40 MB per column on 10 M vertices. Text
-columns become integer classes shared by all tiles. The full table stays on the tile
-object as JSON, in the `ogc3d_features` custom property, for lookups by feature id.
-
-**Color tiles by** mixes colors into every tile material through the shared
-'OGC3D Metadata' group: one editable color per class for text, a Color Ramp between the
-column's min and max for numbers (the group's own 'Ramp' node, shown in the Metadata
-panel: add, move and recolor its stops there; edits are kept). Each class also has an opacity
-slider next to its color: 0 hides the class, the ground of a LiDAR cloud for one. Measured on swissBUILDINGS3D over Bern, 608 tiles:
-about 10 ms per tile on the worker threads, 2.7 MB of JSON for 468 tiles on screen, and
-0.5 s to switch to another column. Columns that differ on every row, like UUIDs, stay in
-the table only.
+Tiles often carry data besides their geometry: a building's type and height, a LiDAR point's class
+and intensity. The **Nodes: Metadata** panel reads it and colours the tiles with it.
 
 ![swissBUILDINGS3D over Bern colored by building type, with the per-class legend in the Metadata panel](/img/metadata_classes.jpg)
 
 ![swissBUILDINGS3D over Bern colored by building height through the Color Ramp](/img/metadata_ramp.jpg)
 
-**Point clouds** work the same way, per point: `EXT_structural_metadata` property
-attributes and `pnts` batch tables without `BATCH_ID` always become `meta_<column>`
-attributes (a table of millions of rows wouldn't fit a Python list). Whole numbers with
-few values and enums are classes, named when the schema has an enum; other values go
-through the ramp. Batched `pnts` use the table path above.
+## Use it
 
-**Intensity and other point values.** Scalar attributes of point tiles become number columns, with
-or without `EXT_structural_metadata`: `_INTENSITY` is the column `intensity`. Their ramp spans the 1st
-to 99th percentile, since LiDAR intensity has rare huge values. **Custom range** sets both ends, live.
-A byte attribute with few values, such as `_CLASSIFICATION`, is a class column instead, with one
-palette color per code. `classification` gets the LAS 1.4 names and the usual viewer colors
-(2 Ground, 5 High vegetation, 6 Building...); 64 and above are user-defined and keep their number. Tested on an IGN LiDAR HD COPC tile streamed by 3dtiled, which sends both
-when the tileset URL ends with `&attributes=intensity,classification`. *Read feature metadata* must
-be on before Start.
+1. Tick **Read feature metadata** before pressing Start. It needs the cesium-native backend.
+2. Once tiles are in, tick **Color tiles by** and pick a **Column**.
+3. Text and class columns get a legend, numbers get a colour ramp.
 
-**Tileset, group, tile and content metadata** are read from `tileset.json`. The tileset's
-own values show in the Metadata panel; the others, merged per tile, are in the
-`ogc3d_tile_metadata` custom property as JSON.
+| Setting | What it does |
+|---|---|
+| **Strength** | How much of the metadata colour replaces the tile's own. Lower it to see a raster overlay through the colours. |
+| **Legend** (classes) | One colour and one opacity per class. Opacity 0 hides the class: the ground of a LiDAR cloud, for one. |
+| **Color Ramp** (numbers) | Add, move and recolour its stops. Edits are kept. |
+| **Custom range** (numbers) | Sets both ends of the ramp by hand, live. |
+| **All columns as attributes** | Keeps every column on the tiles, not only the active one, for your own shaders and Geometry Nodes. About 40 MB per column on 10 million vertices. |
 
-With raster overlays, the metadata colors stay on top: lower **Strength** to see the map
-through them.
+## Point clouds
 
-**Textures** can hold metadata per pixel: feature id textures point at table rows, and
-property textures hold the values directly. The column in use becomes one image per tile,
-sampled in its material with Closest interpolation, on the mesh's first UV set. Only 8-bit
-channels are read.
+Point values work the same way, per point.
 
-Not read yet: vector columns (the binding can't convert them on v0.59), and tile metadata
-stored in implicit subtrees.
+- **Intensity** and other numbers go through the ramp. The ramp spans the 1st to 99th percentile,
+  since LiDAR intensity has rare huge values.
+- **Classification** is a class column with the LAS 1.4 names and the colours LiDAR viewers use
+  (2 Ground, 5 High vegetation, 6 Building...). Classes 64 and above are user-defined and keep their
+  number.
+
+Tested on an IGN LiDAR HD COPC tile streamed by 3dtiled, which sends both when the tileset URL ends
+with `&attributes=intensity,classification`.
+
+## For your own nodes
+
+- Each tile has an `ogc3d_feature` vertex attribute (the row of the table) and a `meta_<column>`
+  attribute for the active column.
+- The full table stays on the tile object, as JSON in the `ogc3d_features` custom property.
+- Metadata of the tileset shows in the panel; that of groups, tiles and contents is in the
+  `ogc3d_tile_metadata` custom property of each tile.
 
 ## The node group
 
@@ -64,3 +52,17 @@ material: a palette lookup for classes, a Color Ramp for numbers, and the mix wi
 colour.
 
 ![OGC3D Metadata](/img/nodes_metadata.jpg)
+
+## What is read
+
+- `EXT_structural_metadata` tables, and b3dm batch tables, which cesium-native converts.
+- Per-point attributes: `EXT_structural_metadata` property attributes, `pnts` batch tables, and plain
+  scalar attributes such as `_INTENSITY` and `_CLASSIFICATION`.
+- Metadata in textures: feature id textures and property textures, 8-bit channels only. The column in
+  use becomes one image per tile.
+- Text columns become classes shared by all tiles. Columns that differ on every row, like UUIDs, stay
+  in the table only.
+- Not read yet: vector columns, and tile metadata stored in implicit subtrees.
+
+Measured on swissBUILDINGS3D over Bern, 608 tiles: about 10 ms per tile on the worker threads, 2.7 MB
+of JSON for 468 tiles on screen, and 0.5 s to switch to another column.

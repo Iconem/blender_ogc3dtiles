@@ -1,51 +1,53 @@
 ---
 title: "Several tilesets"
-description: "Lists of tilesets, entry types, ion, globe, terrain"
+description: "The tileset list: entry types, pausing, hiding, a level of detail per tileset"
 ---
 
-The sidebar opens on the **3D Tiles** tab when Blender starts or a file loads (a
-preference turns that off). It holds a list of tilesets (add / remove, per-entry type, source
-and SSE).  An entry is one of three types: **3D Tiles** (a `tileset.json`
-URL or local path), **Cesium ion** (asset id and access token; the token is
-only sent to Cesium ion) or **WGS84 globe** (cesium-native's procedural
-ellipsoid, a bare globe to drape imagery on).  Each entry has a *Raster
-overlays* checkbox, off for 3D Tiles and ion entries and switched on when
-the type becomes globe; the overlay list only shows when it is ticked, and
-ticking it while streaming adds or removes the overlays live.  Ion and globe
-entries need the cesium-native backend.
+The main panel holds a list of tilesets. They stream together, around the same scene origin and the
+same camera: a drone scan inside the city model around it, a point cloud over a globe with imagery.
+
+## Entry types
+
+| Type | Source |
+|---|---|
+| **3D Tiles** | A `tileset.json` URL, or a local path. |
+| **Cesium ion** | An asset id and your access token. The token is only sent to Cesium ion. |
+| **WGS84 globe** | A bare globe to drape imagery on. Its *Raster overlays* box is ticked for you. |
+| **Quantized-mesh terrain** | The `layer.json` URL of a terrain server. For Cesium World Terrain, use a Cesium ion entry. |
+
+Ion, globe and terrain entries need the cesium-native backend.
 
 ![Entry types: WGS84 globe with an OpenStreetMap overlay, 3D Tiles URL with overlays off, Cesium ion asset](/img/tileset_types.png)
 
-Every entry becomes its own stream with its own backend instance,
-download manager, root Empty (`3D Tiles · <name>`) and sub-collection
-(`Tiles · <name>`), all sharing the scene origin and the viewport camera.
-Moving, rotating or scaling a root Empty is honoured by culling and SSE for
-that tileset only.
+## Working with the list
 
-Per row: the checkbox **pauses** the stream (nothing is loaded or evicted,
-loaded tiles stay as they are), the eye hides its sub-collection (same as the
-outliner).  Entries added, ticked or removed while streaming are picked up on
-the next tick.  **Max SSE** (LOD / Streaming sub-panel) is the live renderer setting for
-every stream; tick *Own SSE* on an entry to override it for that tileset.  It compares
-the error a tile declares, in pixels, so what a value looks like depends on the data and
-its tiler.  At 8 px on Google tiles the median triangle edge was 3.3 px.  On a COPC point
-cloud declaring more error than its point spacing, 1.2 px between points at 3.2 px of error,
-16 to 32 px may be enough.
-Both re-select immediately on both backends.  *Start* discards the tiles a
-previous *Stop* left on screen (they belong to a dead selection).  Two
-entries with the same label get separate collections (`… - 2`; the list
-entry is renamed to match).  Editing the URL of a running entry restarts
-that stream with the new URL.  **+** adds an empty entry (or one prefilled
-from the URL field when that URL is not in the list yet); share links
-(`/s/<token>/<asset>.json`) are labelled by the asset, never by the token.
+- **+** adds an entry, **-** removes the selected one. Entries added, ticked or removed while
+  streaming are picked up at once.
+- The **checkbox** of a row pauses that tileset: nothing more is loaded or unloaded, and what is
+  loaded stays.
+- The **eye** hides it, as in the outliner.
+- Editing the URL of a running entry restarts it with the new URL.
+- Each tileset has a root Empty, `3D Tiles · <name>`, and a collection, `Tiles · <name>`. Move, rotate
+  or scale the Empty to place the tileset; streaming follows.
 
-Load order (Python backend): the tree is walked with a stack (depth-first)
-but every requested tile goes into one queue that is sorted before download,
-so the walk order does not matter.  The sort key is depth first (all missing
-ancestors before any deeper tile), then CesiumJS-style foveated: shallow tiles first,
-then by screen-space error weighted towards the view centre (*Foveation
-cone* = fraction of the view half-angle); *Edge SSE relax* > 0 additionally
-lets the periphery stay coarser.  cesium-native orders its own queue the same
-way internally.  "Hide relation lines" (Nodes: Geometry sub-panel) switches off the
-dashed object→parent overlay in every 3D viewport on Start — it is a
-per-viewport overlay, Blender has no per-object switch.
+## Level of detail
+
+**Max SSE** (LOD / Streaming panel) applies to every tileset, live. Lower is finer and heavier. Tick
+**Own SSE** on an entry to give that tileset its own value.
+
+The value is the error a tile declares, in screen pixels, so what a number looks like depends on the
+data and on the tool that tiled it:
+
+- on Google Photorealistic 3D Tiles at 8 px, the median triangle edge measured 3.3 px;
+- a COPC point cloud that declared more error than its point spacing (1.2 px between points at 3.2 px
+  of error) looked fine at 16 to 32 px.
+
+## Details
+
+- Two entries with the same name get separate collections (`... - 2`), and the entry is renamed to
+  match.
+- Share links (`/s/<token>/<asset>.json`) are labelled by the asset, never by the token.
+- *Start* discards the tiles a previous *Stop* left on screen.
+- Load order: missing ancestors first, then shallow tiles, then by screen-space error weighted toward
+  the centre of the view, as CesiumJS does. With the pure Python backend, *Foveation cone* and *Edge
+  SSE relax* (Advanced) tune that weighting.

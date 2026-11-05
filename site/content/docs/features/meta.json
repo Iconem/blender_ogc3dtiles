@@ -5,16 +5,20 @@
     "scene-origin",
     "raster-overlays",
     "clipping",
-    "several-tilesets",
-    "libraries-and-local-files",
+    "---Tileset types---",
+    "meshes",
     "point-clouds",
     "gaussian-splats",
     "voxels",
+    "several-tilesets",
+    "---Nodes---",
     "nodes-material",
     "nodes-geometry",
     "nodes-metadata",
     "nodes-compositor",
+    "---Output and files---",
     "rendering",
+    "libraries-and-local-files",
     "beta"
   ]
 }

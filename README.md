@@ -8,8 +8,9 @@ than the pure-Python [CesiumForBlender](https://github.com/CognitoBit/CesiumForB
 ([forum post](https://community.cesium.com/t/cesium-for-blender/46938))
 although I keep a python native fallback.
 
-**[Documentation](https://jo-chemla.github.io/blender_ogc3dtiles/)** · **[Slides](https://jo-chemla.github.io/blender_ogc3dtiles/slides/s/blender-3dtiles/)**
-([PDF](https://jo-chemla.github.io/blender_ogc3dtiles/slides/pdf/blender-3dtiles.pdf)) · **[Releases](../../releases)**
+**Documentation and slides**: [jo-chemla.github.io/blender_ogc3dtiles](https://jo-chemla.github.io/blender_ogc3dtiles/) ·
+[iconem.github.io/blender_ogc3dtiles](https://iconem.github.io/blender_ogc3dtiles/) (the same site, one per repository) ·
+**[Releases](../../releases)**
 
 What works today:
 
@@ -61,8 +62,8 @@ The add-on is a Blender extension, for Blender 4.2 or newer (Gaussian splats nee
    Release**, then restart Blender. No compiler is needed. Without it, the pure Python
    backend streams mesh tilesets.
 
-More in [Installation](https://jo-chemla.github.io/blender_ogc3dtiles/guide/installation/): building the zip from a checkout,
-the Windows runtime note, the wheel repositories.
+The documentation's *Installation* page has more: installing from a terminal, building the zip
+from a checkout, where the wheels come from.
 
 ## Quick start
 
@@ -73,22 +74,20 @@ the Windows runtime note, the wheel repositories.
 4. Leave the origin mode on *Auto*: the first tileset centres the scene.
 5. Press **Start** and navigate: tiles load as the camera moves.
 
-The [Quick start](https://jo-chemla.github.io/blender_ogc3dtiles/guide/quick-start/) page describes every panel and node group.
-
 ## Features
 
-Each one has its page in the [documentation](https://jo-chemla.github.io/blender_ogc3dtiles/):
+Each one has its page in the documentation, under *Features*:
 
-- [Scene origin](https://jo-chemla.github.io/blender_ogc3dtiles/features/scene-origin/), set automatically, typed in, or found by searching a place
-- [Raster overlays](https://jo-chemla.github.io/blender_ogc3dtiles/features/raster-overlays/): OpenStreetMap, Esri and IGN presets, your own WMTS / WMS, Google, Bing
-- [Clipping](https://jo-chemla.github.io/blender_ogc3dtiles/features/clipping/) with polygons, boxes and the viewport region
-- [Several tilesets](https://jo-chemla.github.io/blender_ogc3dtiles/features/several-tilesets/), ion, globe and terrain entries
-- [Libraries and local files](https://jo-chemla.github.io/blender_ogc3dtiles/features/libraries-and-local-files/): tileset libraries, the cache, copying a tileset into the project
-- [Point clouds](https://jo-chemla.github.io/blender_ogc3dtiles/features/point-clouds/), [Gaussian splats](https://jo-chemla.github.io/blender_ogc3dtiles/features/gaussian-splats/) and [voxels](https://jo-chemla.github.io/blender_ogc3dtiles/features/voxels/)
-- Shared node groups: [material shader](https://jo-chemla.github.io/blender_ogc3dtiles/features/nodes-material/), [geometry](https://jo-chemla.github.io/blender_ogc3dtiles/features/nodes-geometry/),
-  [metadata](https://jo-chemla.github.io/blender_ogc3dtiles/features/nodes-metadata/) (colour by class or number, class opacity) and [compositor](https://jo-chemla.github.io/blender_ogc3dtiles/features/nodes-compositor/)
-- [Rendering](https://jo-chemla.github.io/blender_ogc3dtiles/features/rendering/): animations that wait for their tiles, Cycles, orthographic views
-- [Beta features](https://jo-chemla.github.io/blender_ogc3dtiles/features/beta/): the phases timeline
+- **Scene origin**: set automatically, typed in, or found by searching a place
+- **Raster overlays**: OpenStreetMap, Esri and IGN presets, your own WMTS / WMS, Google, Bing
+- **Clipping** with polygons, boxes and the viewport region
+- **Tileset types**: meshes, point clouds, Gaussian splats, voxels, several tilesets at once, Cesium
+  ion, a globe, terrain
+- **Shared node groups**: material shader, geometry, metadata (colour by class or number, class
+  opacity) and compositor
+- **Rendering**: animations that wait for their tiles, Cycles, orthographic views
+- **Libraries and local files**: tileset libraries, the cache, copying a tileset into the project
+- **Beta features**: the phases timeline
 
 ## Development
 
@@ -98,9 +97,8 @@ ruff check --select E9,F src/blender_ogc3dtiles tests scripts
 blender --command extension build --source-dir src/blender_ogc3dtiles --output-dir dist
 ```
 
-[Setup, tests and releasing](https://jo-chemla.github.io/blender_ogc3dtiles/dev/setup-and-tests/), the [architecture](https://jo-chemla.github.io/blender_ogc3dtiles/dev/architecture/),
-the [cesium-native wheel and versions](https://jo-chemla.github.io/blender_ogc3dtiles/dev/cesium-native/) and the [roadmap](https://jo-chemla.github.io/blender_ogc3dtiles/dev/roadmap/)
-are in the documentation. Its pages live in [`site/`](site), the slide deck in
+Setup, tests and releasing, the architecture, the cesium-native wheel and versions, and the roadmap
+are in the documentation, under *Development*. Its pages live in [`site/`](site), the slide deck in
 [`slides/`](slides); both are built and deployed by
 [`.github/workflows/docs.yml`](.github/workflows/docs.yml).
 

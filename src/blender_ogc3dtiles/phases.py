@@ -14,8 +14,10 @@ import tempfile
 
 import bpy
 import numpy as np
-from bpy.props import StringProperty
+from bpy.props import FloatProperty, FloatVectorProperty, IntProperty, StringProperty
 from bpy.types import Operator
+
+from . import phase_strokes
 
 COLLECTION = "Phases"
 COLUMN = "phase"
@@ -150,9 +152,70 @@ class OGC3D_OT_PhasesBuild(Operator):
         return {"FINISHED"}
 
 
+class OGC3D_OT_PhaseFromStrokes(Operator):
+    """Outlines drawn with Annotate or the active Grease Pencil object become phase volumes, one prism per stroke"""
+    bl_idname = "ogc3dtiles.phase_from_strokes"
+    bl_label = "Phase from strokes"
+    bl_options = {"REGISTER", "UNDO"}
+
+    code: IntProperty(name="Code", description="Class of this phase in the grid",
+                      default=1, min=1, max=255)
+    year: IntProperty(name="Year", default=1500, min=-5000, max=3000)
+    color: FloatVectorProperty(name="Color", subtype="COLOR", size=3, min=0.0, max=1.0,
+                               default=(0.9, 0.5, 0.2))
+    back: FloatProperty(name="Behind (m)", description="How far the volume goes behind the outline",
+                        default=1.0, min=0.0, max=1000.0)
+    front: FloatProperty(name="In front (m)", description="How far the volume comes toward the viewer",
+                         default=0.25, min=0.0, max=1000.0)
+
+    def invoke(self, context, event):
+        used = {int(o["code"]) for o in volumes()}
+        self.code = next(c for c in range(1, 256) if c not in used)
+        return context.window_manager.invoke_props_dialog(self)
+
+    def execute(self, context):
+        from mathutils import Vector
+        loops = phase_strokes.stroke_loops(context)
+        if not loops:
+            self.report({"WARNING"}, "No strokes: draw outlines with Annotate or a Grease Pencil object")
+            return {"CANCELLED"}
+        rv3d = context.region_data
+        toward = np.array(rv3d.view_rotation @ Vector((0.0, 0.0, 1.0))) if rv3d is not None else None
+        coll = bpy.data.collections.get(COLLECTION) or bpy.data.collections.new(COLLECTION)
+        if coll.name not in context.scene.collection.children:
+            context.scene.collection.children.link(coll)
+        made = 0
+        for loop in loops:
+            solid = phase_strokes.prism(loop, toward, self.front, self.back, min_step=0.02)
+            if solid is None:
+                continue
+            verts, faces = solid
+            mesh = bpy.data.meshes.new(f"Phase {self.year}")
+            mesh.from_pydata(verts.tolist(), [], faces)
+            mesh.update()
+            obj = bpy.data.objects.new(mesh.name, mesh)
+            coll.objects.link(obj)
+            obj["code"], obj["year"], obj["color"] = self.code, self.year, list(self.color)
+            obj.display_type = "WIRE"
+            obj.hide_render = True
+            made += 1
+        if not made:
+            self.report({"WARNING"}, "The strokes outline no area")
+            return {"CANCELLED"}
+        self.report({"INFO"}, f"{made} volume(s) added to '{COLLECTION}': Build class grid next")
+        return {"FINISHED"}
+
+
+
 def draw_panel(layout, context) -> None:
+    from .io import addon_pref
     props = context.scene.ogc3dtiles
     objs = volumes()
+    if addon_pref("beta_phase_strokes", False):
+        box = layout.box()
+        box.label(text="Outline a phase on the surface", icon="GREASEPENCIL")
+        box.label(text="Annotate (placement: Surface), then:")
+        box.operator(OGC3D_OT_PhaseFromStrokes.bl_idname, icon="MOD_SOLIDIFY")
     if not objs:
         layout.label(text=f"Add closed meshes to a '{COLLECTION}' collection,", icon="INFO")
         layout.label(text="with custom properties code and year")

@@ -55,10 +55,12 @@ class Column:
 
 
 def _free_code(taken, text):
-    """A class code: from the value for whole numbers, so that a class keeps its
-    color from one session to the next whatever tile a worker finishes first."""
-    if text.isdecimal() and 0 <= int(text) < MAX_CLASSES and int(text) + 1 not in taken.values():
-        return int(text) + 1
+    """A class code: from the value for whole numbers ("6", or "6 Building"), so that
+    a class keeps its color from one session to the next whatever tile a worker
+    finishes first."""
+    number = text.split(" ", 1)[0]
+    if number.isdecimal() and 0 <= int(number) < MAX_CLASSES and int(number) + 1 not in taken.values():
+        return int(number) + 1
     used = set(taken.values())
     return next(c for c in range(1, MAX_CLASSES + 1) if c not in used)
 
@@ -297,6 +299,18 @@ def _plain_table_columns(model, ext, table):
 
 _NOT_COLUMNS = ("_CESIUMOVERLAY_", "_FEATURE_ID_", "_BATCHID", "_ROTATION", "_SCALE")
 
+# ASPRS LAS 1.4 standard point classes (point formats 6 to 10). 64 and above are
+# user-defined, so they keep their number.
+LAS_CLASSES = {
+    0: "Never classified", 1: "Unclassified", 2: "Ground", 3: "Low vegetation",
+    4: "Medium vegetation", 5: "High vegetation", 6: "Building", 7: "Low noise",
+    9: "Water", 10: "Rail", 11: "Road surface", 13: "Wire guard", 14: "Wire conductor",
+    15: "Transmission tower", 16: "Wire connector", 17: "Bridge deck", 18: "High noise",
+    19: "Overhead structure", 20: "Ignored ground", 21: "Snow", 22: "Temporal exclusion",
+}
+LAS_COLUMN = "classification"
+_LAS_NAMES = {code: f"{code} {text}" for code, text in LAS_CLASSES.items()}
+
 
 def _plain_attributes(model, prim, n_verts, read_accessor):
     """Scalar application attributes (glTF's leading underscore), metadata extension or not:
@@ -310,7 +324,8 @@ def _plain_attributes(model, prim, n_verts, read_accessor):
             continue
         arr = read_accessor(model, index, keep_integers=True)
         if arr is not None and len(arr) == n_verts and arr.shape[1] == 1:
-            out[name[1:].lower()] = (arr[:, 0], {})
+            column = name[1:].lower()
+            out[column] = (arr[:, 0], _LAS_NAMES if column == LAS_COLUMN else {})
     return out
 
 

@@ -402,15 +402,16 @@ and subtree metadata are not supported.
 Point clouds (`pnts`, glTF POINTS) become vertex-only meshes with
 a `Col` colour attribute (COLOR_0 decoded straight from the buffer, ubyte /
 ushort / float) and a shared Geometry Nodes modifier.  Four radius modes:
-**Adaptive** (default): 0.6 × the tile's mean point spacing (5th–95th
+**Attenuated** (default): 0.6 × the tile's mean point spacing (5th–95th
 percentile extent / point count, ignored below 64 points) × *Point scale*,
 clamped to a *Min / Max pixels* range measured at the **view pivot
 distance** (eye → orbit centre in the viewport, camera → point tiles when
 rendering).  One distance for the whole scene means every tile of one LOD
 level gets the same radius, and the two metre bounds are plain Value nodes
 rewritten only when the distance moves by more than 15 %, so the point
-tiles re-evaluate while zooming, never while orbiting (Potree's adaptive
-size); **Per tile** is the same without the pixel clamp; **Uniform** is one
+tiles re-evaluate while zooming, never while orbiting (one size per tile, as
+CesiumJS' point cloud attenuation; Potree's adaptive size goes per point and
+isn't done here); **Per tile** is the same without the pixel clamp; **Uniform** is one
 radius for every tile; **Screen pixels** is the exact per-point version,
 radius = pixels × distance to the eye, clamped to a metre range (constant
 on-screen size like 3DTilesRendererJS' point size with attenuation) — this
@@ -463,7 +464,8 @@ through the ramp. Batched `pnts` use the table path above.
 or without `EXT_structural_metadata`: `_INTENSITY` is the column `intensity`. Their ramp spans the 1st
 to 99th percentile, since LiDAR intensity has rare huge values. **Custom range** sets both ends, live.
 A byte attribute with few values, such as `_CLASSIFICATION`, is a class column instead, with one
-palette color per code. Tested on an IGN LiDAR HD COPC tile streamed by 3dtiled, which sends both
+palette color per code. `classification` gets the LAS 1.4 names and the usual viewer colors
+(2 Ground, 5 High vegetation, 6 Building...); 64 and above are user-defined and keep their number. Tested on an IGN LiDAR HD COPC tile streamed by 3dtiled, which sends both
 when the tileset URL ends with `&attributes=intensity,classification`. *Read feature metadata* must
 be on before Start.
 
@@ -540,6 +542,14 @@ Off by default, under *Preferences > Add-ons > OGC 3D Tiles > Beta features*:
   surface outside them too. `scripts/phase_volumes.py` builds a demo on invented volumes. The
   grid is one tile, with no coarser levels. See [docs/voxels.md](docs/voxels.md) for classes
   per cell and how the tileset is made.
+- **Phases from strokes.** Needs Phases timeline. Draw around a part of the monument with
+  Annotate (stroke placement *Surface*) or a Grease Pencil object, then *Phase from strokes*
+  in the Phases panel asks for a code, a year, a color and two depths. Each stroke becomes a
+  prism in the `Phases` collection: the outline in its best-fit plane, from *In front* metres
+  toward the viewer to *Behind* metres away. *Build class grid* then treats it like any
+  other volume. One plane per stroke, so an outline that wraps around a corner needs a
+  stroke per face, and an outline that crosses itself gives a wrong volume. Checked with
+  generated strokes, not yet with hand-drawn ones.
 - **Material controls.** The Relight sliders, gold transfer included, in the Materials
   panel. Off, the buttons remain and the shared `OGC3D Relight` node group is where to edit
   these values.
@@ -1029,7 +1039,8 @@ the converters compiled into cesium-native.
 - [x] Voxel tilesets: box and region tiles as blocks, box tiles as OpenVDB Volumes ([notes](docs/voxels.md))
 - [x] Voxel classes colored onto another tileset, with a boolean intersect
 - [x] Beta: phases on a year slider, from closed meshes
-- [ ] Beta: paint phases with Grease Pencil strokes on the surface
+- [x] Beta: outline phases with Grease Pencil or Annotate strokes on the surface, one prism per stroke
+- [ ] Beta: phases from strokes that follow a curved surface, and painted areas instead of outlines
 - [ ] Beta: write the class grid as an octree pyramid
 - [ ] Beta: try [OpenVDB's `meshToVolume`](https://openvdb.org/documentation/doxygen/MeshToVolume_8h.html) and [trimesh](https://github.com/mikedh/trimesh) as voxelizers
 - [ ] Beta: burn classes into point clouds with PDAL ([draft](scripts/pdal_burn_classes.py))

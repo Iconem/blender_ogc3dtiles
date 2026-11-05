@@ -159,6 +159,11 @@ class OGC3DTilesPreferences(AddonPreferences):
         description="Sidebar panel: closed meshes of a 'Phases' collection become a class grid, "
                     "with a year slider over tilesets colored by it",
         default=False)
+    beta_phase_strokes: BoolProperty(
+        name="Phases from strokes",
+        description="In the Phases panel: outlines drawn on the surface with Annotate or "
+                    "Grease Pencil become phase volumes. Needs Phases timeline",
+        default=False)
     beta_material_controls: BoolProperty(
         name="Material controls",
         description="Relight sliders in the Materials panel, gold transfer included. Off, the "
@@ -254,6 +259,9 @@ class OGC3DTilesPreferences(AddonPreferences):
         boxb = layout.box()
         boxb.label(text="Beta features", icon="EXPERIMENTAL")
         boxb.prop(self, "beta_phases")
+        sub = boxb.row()
+        sub.active = self.beta_phases
+        sub.prop(self, "beta_phase_strokes")
         boxb.prop(self, "beta_material_controls")
 
         # ── 3. Developer ──────────────────────────────────────────────────────

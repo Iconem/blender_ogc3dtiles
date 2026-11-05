@@ -48,3 +48,13 @@ def test_byte_attribute_with_few_values_is_a_class_column(monkeypatch):
     assert registry.get("classification").kind == "class"
     assert registry.get("intensity").kind == "number"
     assert out[feature_meta.attribute_name("classification")].tolist() == [3, 6, 7, 3]   # code = value + 1
+    assert dict(registry.classes("classification")) == {"2 Ground": 3, "5 High vegetation": 6, "6 Building": 7}
+
+
+def test_user_defined_las_classes_keep_their_number(monkeypatch):
+    monkeypatch.setattr(feature_meta, "_structural", lambda model: None)
+    registry = type(feature_meta.REGISTRY)()
+    prim = _prim(0, {"_CLASSIFICATION": 1})
+    columns = feature_meta.point_columns(object(), prim, 2, _read({1: np.array([[64], [9]], np.uint8)}))
+    feature_meta.vertex_columns([(2, columns)], 2, registry)
+    assert dict(registry.classes("classification")) == {"9 Water": 10, "64": 65}

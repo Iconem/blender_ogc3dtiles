@@ -511,10 +511,11 @@ class TilesSceneProps(PropertyGroup):
         name="Point radius",
         description="How the display radius of points is chosen",
         items=[
-            ("ADAPTIVE", "Adaptive (spacing, px clamp)",
+            ("ADAPTIVE", "Attenuated (spacing, px clamp)",
              "Per-tile spacing x Point scale, then clamped between Min / Max pixels on "
              "screen: coarse tiles get bigger points, far points never vanish, near points "
-             "never bloat (Potree-style adaptive size)"),
+             "never bloat. One size per tile, as CesiumJS' point cloud attenuation; "
+             "Potree's adaptive size goes per point"),
             ("AUTO", "Per tile (spacing)",
              "0.6 x the tile's mean point spacing x Point scale: coarse ADD-refined "
              "tiles get bigger points than fine ones"),
@@ -528,11 +529,11 @@ class TilesSceneProps(PropertyGroup):
         update=_on_point_radius,
     )
     point_adapt_min_px: FloatProperty(
-        name="Min size (px)", description="Adaptive mode: points never smaller than this on screen",
+        name="Min size (px)", description="Attenuated mode: points never smaller than this on screen",
         default=2.0, min=0.0, max=64.0, update=_on_point_radius,
     )
     point_adapt_max_px: FloatProperty(
-        name="Max size (px)", description="Adaptive mode: points never larger than this on screen",
+        name="Max size (px)", description="Attenuated mode: points never larger than this on screen",
         default=12.0, min=0.5, max=256.0, update=_on_point_radius,
     )
     point_px: FloatProperty(

@@ -531,8 +531,20 @@ _PALETTE_SIZE = MAX_CLASSES + 1          # pixel 0 is transparent: no class
 _meta_seen = [-1]
 
 
-def _class_color(code):
-    """Distinct default colors: the golden angle around the hue circle."""
+# usual LiDAR viewer colors of the LAS classes, by class number
+_LAS_COLORS = {
+    1: (0.6, 0.6, 0.6), 2: (0.55, 0.4, 0.25), 3: (0.6, 0.85, 0.4), 4: (0.3, 0.7, 0.3),
+    5: (0.1, 0.45, 0.15), 6: (0.85, 0.3, 0.25), 7: (0.9, 0.1, 0.9), 9: (0.2, 0.45, 0.9),
+    10: (0.35, 0.3, 0.45), 11: (0.3, 0.3, 0.3), 17: (0.9, 0.75, 0.3), 18: (0.9, 0.1, 0.9),
+}
+
+
+def _class_color(code, column=""):
+    """Distinct default colors: the golden angle around the hue circle. LAS point
+    classes get the colors LiDAR viewers use (``code`` is the class number + 1)."""
+    from .tileset.feature_meta import LAS_COLUMN
+    if column == LAS_COLUMN and code - 1 in _LAS_COLORS:
+        return _LAS_COLORS[code - 1]
     return tuple(colorsys.hsv_to_rgb((code * 0.61803398875) % 1.0, 0.75, 0.9))
 
 
@@ -690,7 +702,7 @@ def sync_metadata(scene, force=False):
             if (name, code) not in have:
                 item = props.meta_classes.add()
                 item.name, item.column, item.code = text, name, code
-                item["color"] = _class_color(code)
+                item["color"] = _class_color(code, name)
     if props.meta_column not in wanted and columns:
         props["meta_column"] = REGISTRY.best_column()
         from .io import refresh_feature_attributes

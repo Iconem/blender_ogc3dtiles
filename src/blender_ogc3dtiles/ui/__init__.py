@@ -2540,6 +2540,7 @@ _classes = [
     OGC3D_PT_MetadataPanel,
     OGC3D_PT_PhasesPanel,
     phases.OGC3D_OT_PhasesBuild,
+    phases.OGC3D_OT_PhaseFromStrokes,
     OGC3D_PT_CompositorPanel,
     OGC3D_PT_RenderPanel,
     OGC3D_PT_BackendPanel,

@@ -114,10 +114,10 @@ tileset list, the selected tileset's fields, then its **Raster overlays** and
 DL, Imports / tick, Max points / vertices, and a collapsed *Advanced*
 sub-panel: build time while navigating, direct mesh, disk cache, per-stream
 backend stats, and with the pure Python backend its own settings: Max Tiles,
-foveation, detail falloff, max distance), **Geometry** (shared geometry
+foveation, detail falloff, max distance), **Nodes: Geometry** (shared geometry
 nodes, point display and radius, relation lines),
-**Materials** (relight shader nodes, viewport-region clip, faces),
-**Compositor** (beauty compositor nodes, edges and sliders, stable viewport),
+**Nodes: Material** (shared shader nodes, viewport-region clip, faces),
+**Nodes: Compositing** (beauty compositor nodes, edges and sliders, stable viewport),
 **Metadata** (collapsed), **Render** (collapsed), then the
 collapsed **Coordinate Info** panel.  The backend is chosen in the add-on
 preferences.  **Max points / vertices (M)** caps what is shown, all tilesets
@@ -129,7 +129,7 @@ Defaults: Max SSE 8 px, 16 parallel downloads, 4 imports per
 tick (lower it if the UI stutters while tiles pour in).
 
 The four shared node groups have the same row: *Shared geometry nodes*,
-*Relight shader nodes*, *Beauty compositor nodes* and *Color tiles by*.  The
+*Shared shader nodes*, *Beauty compositor nodes* and *Color tiles by*.  The
 checkbox creates the group when missing and puts it on every tile, loaded or
 streamed later (on the scene, for the compositor); unticking takes it off and
 keeps the group in the file, so hand edits survive.  Its options show below
@@ -140,6 +140,12 @@ corresponding tree ('OGC3D Relight' shader group, 'OGC3D Beauty' compositor
 tree, 'OGC3D Points…' geometry nodes) pinned in a node editor — an existing
 one, or the 3D viewport split in two — so the shader or the compositor can
 be adapted by hand; the sliders keep driving the same Value nodes.
+
+There is no single material for all tiles: every tile keeps its own, with its
+own texture.  The shared groups are nodes inside each of them, in this order:
+tile texture (or vertex color) → `OGC3D Metadata` (*Color tiles by*) →
+`OGC3D Relight` (*Shared shader nodes*) → Material Output.  To see it, select a
+tile and open the Shader Editor.
 
 The glTF importer (Python backend, or "Direct mesh" off) is silenced to
 WARNING while tiles import; the direct mesh path prints nothing per tile.
@@ -352,7 +358,7 @@ ancestors before any deeper tile), then CesiumJS-style foveated: shallow tiles f
 then by screen-space error weighted towards the view centre (*Foveation
 cone* = fraction of the view half-angle); *Edge SSE relax* > 0 additionally
 lets the periphery stay coarser.  cesium-native orders its own queue the same
-way internally.  "Hide relation lines" (Geometry sub-panel) switches off the
+way internally.  "Hide relation lines" (Nodes: Geometry sub-panel) switches off the
 dashed object→parent overlay in every 3D viewport on Start — it is a
 per-viewport overlay, Blender has no per-object switch.
 
@@ -438,7 +444,7 @@ one reads the eye from the 'OGC3D View' Empty, so every point tile
 re-evaluates whenever the eye moves.  The streaming tick (or, when nothing
 streams, a 0.15 s timer) feeds the viewport, a `render_pre` handler the
 scene camera.  Three display modes
-(`Geometry` sub-panel): **Point cloud** (Mesh → Points; cheapest; unlit
+(`Nodes: Geometry` sub-panel): **Point cloud** (Mesh → Points; cheapest; unlit
 vertex colours in Material Preview / Rendered, material colour in Solid),
 **Tiny tetrahedra** (4 vertices per point, realised as a mesh whose active
 colour attribute is `Col`, so Solid mode with Color → Attribute shows the
@@ -578,7 +584,7 @@ Off by default, under *Preferences > Add-ons > OGC 3D Tiles > Beta features*:
 
 ### Editing tile geometry
 
-**Shared geometry nodes** (Geometry section) puts one Geometry Nodes
+**Shared geometry nodes** (Nodes: Geometry section) puts one Geometry Nodes
 modifier, 'OGC3D Tile Geometry', first in the modifier stack of every tile
 mesh, loaded or streamed later, so a single graph edits the vertices, edges
 or attributes of all tiles (the point display modifier runs after it).  The
@@ -668,7 +674,7 @@ keep clip start above clip end / 1e7 if you use Alt+B.  The clipping region
 only affects drawing, not which tiles stream, and in Blender 5.1 only Solid
 and Wireframe shading honour it: EEVEE (Material Preview, Rendered) ignores
 the clipping region on any scene, add-on or not.  **Clip to viewport region**
-(Materials section) works around that: every tile material gets a Mix Shader
+(Nodes: Material section) works around that: every tile material gets a Mix Shader
 to a Transparent BSDF driven by the shared 'OGC3D Clip' group, into which the
 add-on copies the viewport's clip planes each tick.  While it is on, Alt+B
 alone toggles the clipping (drag a region to clip, Alt+B again to clear);

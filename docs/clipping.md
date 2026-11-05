@@ -28,7 +28,7 @@ which chain to read (`any`), and whether to invert the result (`invert`).
 | Clip-polygon test | Shader, edge by edge | Geometry Nodes, vertical raycast on a flat helper mesh |
 | Clip-polygon over 64 points | cesium-native mask, sampled in the shader | Same raycast |
 | Box test | Shader, in the box's object space | Geometry Nodes, in the box's object space |
-| Removing what's cut | Transparent BSDF; faces too with Cut Geometry | Delete Geometry on points |
+| Removing what's cut | Transparent BSDF; faces too with *Also cut in Solid view and exports* | Delete Geometry on points |
 | Skipping whole tiles, clip-polygons | cesium-native excluder | cesium-native excluder |
 | Skipping whole tiles, boxes | Python `ITileExcluder` | Python `ITileExcluder` |
 
@@ -176,10 +176,10 @@ first in the stack) deletes the cut points.
 Terms combine the same way as in materials. The cesium mask can't serve here:
 these tiles carry no overlay texture coordinates.
 
-## Cut Geometry (mesh tiles, optional)
+## Also cut in Solid view and exports (mesh tiles)
 
 The shader only hides pixels. Solid and Wireframe views, snapping and exports
-still see the full mesh. **Cut Geometry** adds the same test to mesh tiles as a
+still see the full mesh. **Also cut in Solid view and exports** adds the same test to mesh tiles as a
 second group (`OGC3D Clip Faces <uid>`), which deletes the faces whose points
 are **all** cut. No tile is fetched again.
 
@@ -193,12 +193,12 @@ Measured on Google 3D Tiles over the Vatican (about 1400 visible tiles, 3.2 M
 faces, one clip-polygon and one box, while tiles were still streaming, so the numbers
 are noisy):
 
-| | Cut Geometry off | Cut Geometry on |
+| | Off | On |
 |---|---|---|
 | Move a box, then redraw | 3–6 s | 7–10 s |
 
-It's off by default for that reason. Turn it on when you need the cut in Solid
-view or in an export.
+It's on by default, so the cut shows in every view and in exports. Untick it
+when dragging a clipping volume over a large scene feels slow.
 
 ## What updates when
 
@@ -235,7 +235,7 @@ What differs is skipping whole tiles, which needs a place on the globe: a local
 tileset with a clip-polygon skips none, so tiles under the cut still download.
 
 Checked in Material view, the Cycles viewport and Cycles renders on the interior 473M:
-a clip-polygon, a box, 64 and 65 points, a root moved and rotated, Cut Geometry, and a
+a clip-polygon, a box, 64 and 65 points, a root moved and rotated, the geometry cut, and a
 keyframed box in Cycles and EEVEE animation renders. Checked in Material view on a
 local mesh tileset.
 

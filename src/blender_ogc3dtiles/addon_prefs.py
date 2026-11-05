@@ -166,7 +166,7 @@ class OGC3DTilesPreferences(AddonPreferences):
         default=False)
     beta_material_controls: BoolProperty(
         name="Material controls",
-        description="Relight sliders in the Materials panel, gold transfer included. Off, the "
+        description="Relight sliders in the Nodes: Material panel, gold transfer included. Off, the "
                     "shared 'OGC3D Relight' node group is the place to edit them",
         default=False)
     cesium_install_path: StringProperty(

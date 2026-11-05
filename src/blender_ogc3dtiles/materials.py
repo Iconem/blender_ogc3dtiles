@@ -606,6 +606,30 @@ def write_palette(scene):
     phases.apply_year(scene)
 
 
+# node name -> place on the canvas, left to right: inputs, the class palette on
+# top, the number ramp below, then the mix with the tile's own color
+_META_LAYOUT = {
+    "Group Input": (-1400, 300), "Column": (-1400, 100), "Is Number": (-1400, -200),
+    "Min": (-1400, -320), "Max": (-1400, -440), "Strength": (-1400, -560),
+    "Column Value": (-1150, 200),
+    "Math.001": (-900, 420), "Math": (-700, 420), "Combine XYZ": (-500, 420),
+    "Palette": (-300, 480),
+    "Map Range": (-700, 100), "Ramp": (-450, 120),
+    "Math.003": (-900, -320), "Math.002": (-700, -320),
+    "Mix": (50, 300), "Mix.001": (50, -150), "Math.004": (250, -150),
+    "Mix.002": (450, 250), "Group Output": (650, 250),
+}
+
+
+def _layout_metadata_group(ng, only_if_stacked=False):
+    if only_if_stacked and any(n.location.x or n.location.y for n in ng.nodes):
+        return                               # laid out already, or by hand
+    for name, xy in _META_LAYOUT.items():
+        node = ng.nodes.get(name)
+        if node is not None:
+            node.location = xy
+
+
 def ensure_metadata_group():
     ng = bpy.data.node_groups.get(META_GROUP)
     if ng is not None and "Texel" in ng.interface.items_tree:
@@ -691,6 +715,7 @@ def ensure_metadata_group():
     links.new(gin.outputs[0], out.inputs[6])
     links.new(pick.outputs[2], out.inputs[7])
     links.new(out.outputs[2], gout.inputs[0])
+    _layout_metadata_group(ng)
     return ng
 
 
@@ -914,7 +939,7 @@ class OGC3D_OT_RelightRemove(Operator):
 def draw_panel(layout, props):
     """Body of the collapsible "Materials" sub-panel."""
     from . import node_rows
-    relit = node_rows.draw(layout, props, "auto_relight", "Relight shader nodes", "RELIGHT")
+    relit = node_rows.draw(layout, props, "auto_relight", "Shared shader nodes", "RELIGHT")
     row = layout.row(align=True)
     row.prop(props, "clip_materials", text="Clip to viewport region (Alt+B)")
     layout.prop(props, "backface_mode", text="Faces")
@@ -927,7 +952,6 @@ def draw_panel(layout, props):
     from .io import addon_pref
     ng = bpy.data.node_groups.get(GROUP_NAME)
     if ng is not None and relit and addon_pref("beta_material_controls", False):
-        layout.label(text="Custom shader controls (beta)")
         col = layout.column(align=True)
         for name, *_rest in TUNABLES:
             if name == "Gold Hue":
@@ -1011,6 +1035,9 @@ def _upgrade_group_on_load(_dummy=None):
     try:
         if bpy.data.node_groups.get(GROUP_NAME) is not None:
             ensure_relight_group()
+        meta = bpy.data.node_groups.get(META_GROUP)
+        if meta is not None:                 # files from when its nodes were all at 0, 0
+            _layout_metadata_group(meta, only_if_stacked=True)
         # scene toggles that are on (by default or saved) must hold for the
         # tiles already in the file; property defaults fire no update
         for scene in bpy.data.scenes:

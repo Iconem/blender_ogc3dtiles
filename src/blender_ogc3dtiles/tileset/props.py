@@ -369,7 +369,7 @@ class TilesetItem(PropertyGroup):
                     "Solid view, snapping and exports see the cut. Faces across the boundary "
                     "stay whole outside the Material and Rendered views. Costs some viewport "
                     "time per tile",
-        default=False, update=_on_clip_edit)
+        default=True, update=_on_clip_edit)
     clip_polygons: CollectionProperty(type=ClipPolygonItem)
     active_clip: IntProperty(default=0)
 
@@ -507,7 +507,7 @@ class TilesSceneProps(PropertyGroup):
         default=8.0, min=0.0, max=200.0,
     )
     auto_relight: BoolProperty(
-        name="Relight shader nodes",
+        name="Shared shader nodes",
         description="Put the shared 'OGC3D Relight' node group in every tile material, "
                     "loaded and streamed later (roughness / gold mask / shadow lift derived "
                     "from the albedo). Off restores the plain material and keeps the group",

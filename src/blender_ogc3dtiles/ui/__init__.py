@@ -2188,7 +2188,7 @@ class OGC3D_PT_LodPanel(_OGC3DSidebar, Panel):
 
 
 class OGC3D_PT_DisplayPanel(_OGC3DSidebar, Panel):
-    bl_label = "Geometry"
+    bl_label = "Nodes: Geometry"
     bl_idname = "OGC3D_PT_display"
     bl_order = 3
 
@@ -2238,7 +2238,7 @@ class OGC3D_PT_DisplayPanel(_OGC3DSidebar, Panel):
 
 
 class OGC3D_PT_MaterialsPanel(_OGC3DSidebar, Panel):
-    bl_label = "Materials"
+    bl_label = "Nodes: Material"
     bl_idname = "OGC3D_PT_materials"
     bl_order = 4
 
@@ -2284,7 +2284,7 @@ class OGC3D_PT_PhasesPanel(_OGC3DSidebar, Panel):
 
 
 class OGC3D_PT_CompositorPanel(_OGC3DSidebar, Panel):
-    bl_label = "Compositor"
+    bl_label = "Nodes: Compositing"
     bl_idname = "OGC3D_PT_compositor"
     bl_order = 5
 

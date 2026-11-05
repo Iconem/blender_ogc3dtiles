@@ -116,8 +116,9 @@ sub-panel: build time while navigating, direct mesh, disk cache, per-stream
 backend stats, and with the pure Python backend its own settings: Max Tiles,
 foveation, detail falloff, max distance), **Geometry** (shared geometry
 nodes, point display and radius, relation lines),
-**Materials** (relight: Apply / Remove, sliders), **Compositor** (edges and
-sliders, stable viewport, Build / Remove), **Render** (collapsed), then the
+**Materials** (relight shader nodes, viewport-region clip, faces),
+**Compositor** (beauty compositor nodes, edges and sliders, stable viewport),
+**Metadata** (collapsed), **Render** (collapsed), then the
 collapsed **Coordinate Info** panel.  The backend is chosen in the add-on
 preferences.  **Max points / vertices (M)** caps what is shown, all tilesets
 together: over the cap every tileset is streamed coarser (its SSE is
@@ -125,8 +126,16 @@ multiplied, the panel shows by how much) until the view fits, and detail
 returns when there is room.  0, the default, means no cap; the coarsest tiles
 of a tileset are always shown, so a cap below their size cannot be met.
 Defaults: Max SSE 8 px, 16 parallel downloads, 4 imports per
-tick (lower it if the UI stutters while tiles pour in).  The node-tree
-button next to Apply Relight, Build and the point display opens the
+tick (lower it if the UI stutters while tiles pour in).
+
+The four shared node groups have the same row: *Shared geometry nodes*,
+*Relight shader nodes*, *Beauty compositor nodes* and *Color tiles by*.  The
+checkbox creates the group when missing and puts it on every tile, loaded or
+streamed later (on the scene, for the compositor); unticking takes it off and
+keeps the group in the file, so hand edits survive.  Its options show below
+while it is ticked.  The arrow menu at the end of the row resets the group to
+the add-on's default nodes or deletes it.  The node-tree
+button of the row, and the one next to the point display, opens the
 corresponding tree ('OGC3D Relight' shader group, 'OGC3D Beauty' compositor
 tree, 'OGC3D Points…' geometry nodes) pinned in a node editor — an existing
 one, or the 3D viewport split in two — so the shader or the compositor can
@@ -288,7 +297,7 @@ Tiles entirely cut by the
 volumes aren't downloaded.
 
 On mesh tiles the cut is done in the material, so Solid view, snapping and
-exports still see the full mesh. **Cut Geometry** also deletes the faces that
+exports still see the full mesh. **Also cut in Solid view and exports** also deletes the faces that
 are entirely cut, with Geometry Nodes and without fetching anything again. Faces
 across the boundary stay whole outside the Material and Rendered views. It's off
 by default because it slows down dragging a box on large scenes. Point clouds
@@ -586,7 +595,8 @@ shows it live; the Compositing workspace shows the nodes.  The tree holds
 both edge branches; *Edges* (eye-dome lighting from depth, Sobel creases
 from normals, or both), *EDL strength*, *Crease strength*, *AO* and *Haze*
 drive Value nodes of the existing tree, so they update live without a
-rebuild (*Rebuild* only re-derives the haze range from the loaded extent).
+rebuild (*Reset to default* in the row's menu rebuilds the tree and re-derives the
+haze range from the loaded extent).
 Viewport quirks handled: the viewport compositor's Depth pass is 0 / NaN
 where nothing is drawn (sanitised to "far"), its Mist and AO passes are 1
 everywhere (haze is a ramp on Depth instead), and Rendered shading lights
@@ -777,7 +787,7 @@ flowchart LR
     B1 --> OBJ
     B2 --> OBJ
     VIS --> OBJ
-    OBJ -. "Apply Relight / Build" .-> MAT --> OBJ
+    OBJ -. "Relight / compositor checkbox" .-> MAT --> OBJ
 ```
 
 What each stage needs and produces:

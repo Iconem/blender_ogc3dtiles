@@ -473,6 +473,40 @@ def apply_relight(mat) -> bool:
     return True
 
 
+def set_relight(enabled: bool) -> int:
+    """The Relight group on, or off, every tile material."""
+    if enabled:
+        ensure_relight_group()
+    return sum(1 for m in list(tile_materials()) if (apply_relight(m) if enabled else remove_relight(m)))
+
+
+def reset_relight_group():
+    """Default nodes again, in place: materials keep pointing at the group."""
+    ng = bpy.data.node_groups.get(GROUP_NAME)
+    if ng is None:
+        return ensure_relight_group()
+    for n in list(ng.nodes):
+        ng.nodes.remove(n)
+    _build_relight_group(ng)
+    return ng
+
+
+def reset_metadata_group(scene):
+    """Default nodes and ramp again. The group's sockets are rebuilt, so the tile
+    materials are taken off it first and put back."""
+    props = scene.ogc3dtiles
+    was = props.meta_color
+    if was:
+        props.meta_color = False
+    ng = bpy.data.node_groups.get(META_GROUP)
+    if ng is not None:
+        ng.nodes.clear()
+        ng.interface.clear()
+    update_metadata_group(scene)
+    if was:
+        props.meta_color = True
+
+
 def remove_relight(mat) -> bool:
     if mat is None or not mat.use_nodes or mat.node_tree is None:
         return False
@@ -857,6 +891,8 @@ class OGC3D_OT_RelightApply(Operator):
     def execute(self, context):
         ensure_relight_group()                 # also upgrades a group from an older version
         n = sum(1 for m in tile_materials() if apply_relight(m))
+        if not context.scene.ogc3dtiles.auto_relight:
+            context.scene.ogc3dtiles.auto_relight = True
         self.report({"INFO"}, f"Relight applied to {n} materials")
         return {"FINISHED"}
 
@@ -869,17 +905,16 @@ class OGC3D_OT_RelightRemove(Operator):
 
     def execute(self, context):
         n = sum(1 for m in tile_materials() if remove_relight(m))
+        if context.scene.ogc3dtiles.auto_relight:
+            context.scene.ogc3dtiles.auto_relight = False
         self.report({"INFO"}, f"Relight removed from {n} materials")
         return {"FINISHED"}
 
 
 def draw_panel(layout, props):
     """Body of the collapsible "Materials" sub-panel."""
-    row = layout.row(align=True)
-    row.operator("ogc3dtiles.relight_apply", icon="SHADING_RENDERED", text="Apply Relight")
-    row.operator("ogc3dtiles.relight_remove", icon="X", text="")
-    row.operator("ogc3dtiles.open_nodes", icon="NODETREE", text="").kind = "RELIGHT"
-    layout.prop(props, "auto_relight", text="Relight new tiles")
+    from . import node_rows
+    relit = node_rows.draw(layout, props, "auto_relight", "Relight shader nodes", "RELIGHT")
     row = layout.row(align=True)
     row.prop(props, "clip_materials", text="Clip to viewport region (Alt+B)")
     layout.prop(props, "backface_mode", text="Faces")
@@ -891,7 +926,8 @@ def draw_panel(layout, props):
                      else "No region: drag one with Alt+B", icon="MOD_BOOLEAN" if on else "INFO")
     from .io import addon_pref
     ng = bpy.data.node_groups.get(GROUP_NAME)
-    if ng is not None and addon_pref("beta_material_controls", False):
+    if ng is not None and relit and addon_pref("beta_material_controls", False):
+        layout.label(text="Custom shader controls (beta)")
         col = layout.column(align=True)
         for name, *_rest in TUNABLES:
             if name == "Gold Hue":
@@ -929,7 +965,8 @@ def draw_metadata_panel(layout, props):
     if not props.meta_columns:
         layout.label(text="No metadata column loaded yet", icon="INFO")
         return
-    layout.prop(props, "meta_color")
+    from . import node_rows
+    node_rows.draw(layout, props, "meta_color", "Color tiles by", "METADATA")
     layout.prop_search(props, "meta_column", props, "meta_columns", text="Column")
     layout.prop(props, "meta_strength")
     layout.prop(props, "meta_all_columns")
@@ -988,6 +1025,9 @@ def _upgrade_group_on_load(_dummy=None):
             if props.tile_geometry:
                 from .io import set_tile_geometry
                 set_tile_geometry(True)
+            from . import compositor         # files from before the checkbox
+            if compositor.is_built(scene) and not props.comp_enabled:
+                props.comp_enabled = True
             break
     except Exception as e:                        # noqa: BLE001
         print(f"[3DTiles] relight group upgrade failed: {e}")

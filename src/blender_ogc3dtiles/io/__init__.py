@@ -1508,6 +1508,19 @@ def ensure_tile_geometry_group():
     ng.is_modifier = True
     ng.interface.new_socket("Geometry", in_out="INPUT", socket_type="NodeSocketGeometry")
     ng.interface.new_socket("Geometry", in_out="OUTPUT", socket_type="NodeSocketGeometry")
+    return _pass_through(ng)
+
+
+def reset_tile_geometry_group():
+    """Back to a pass-through, in place: the tiles' modifiers keep the group."""
+    ng = bpy.data.node_groups.get(TILE_GEOMETRY_GROUP)
+    if ng is None:
+        return ensure_tile_geometry_group()
+    ng.nodes.clear()
+    return _pass_through(ng)
+
+
+def _pass_through(ng):
     gi = ng.nodes.new("NodeGroupInput")
     gi.location = (-300, 0)
     go = ng.nodes.new("NodeGroupOutput")

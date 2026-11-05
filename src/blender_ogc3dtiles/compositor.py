@@ -362,6 +362,30 @@ def set_viewport_compositor(context, mode: str = "ALWAYS"):
                         space.shading.use_compositor = mode
 
 
+def set_enabled(context, enabled: bool) -> None:
+    """Attach the beauty tree to the scene (built when missing, kept with its hand
+    edits when it exists), or detach it."""
+    sc = context.scene
+    if not enabled:
+        sc.render.use_compositing = False
+        if hasattr(sc, "compositing_node_group"):
+            sc.compositing_node_group = None
+        set_viewport_compositor(context, "DISABLED")
+        set_stable_viewport(sc, False)
+        return
+    nt = bpy.data.node_groups.get(TREE_NAME) if hasattr(sc, "compositing_node_group") else None
+    if nt is not None and nt.nodes.get(VERSION_NODE) is not None:
+        _passes(sc)
+        sc.compositing_node_group = nt
+        sc.render.use_compositing = True
+        apply_settings(sc)
+    else:
+        build_beauty_tree(sc)
+    set_viewport_compositor(context, "ALWAYS")
+    set_stable_viewport(sc, sc.ogc3dtiles.comp_stable_viewport)
+    ensure_world_light(sc)
+
+
 class OGC3D_OT_CompositorBuild(Operator):
     """Build the 'OGC3D Beauty' compositor tree (edges, AO, grade, haze, glare)
     for this scene and show it in Rendered viewport shading"""
@@ -374,6 +398,8 @@ class OGC3D_OT_CompositorBuild(Operator):
         set_viewport_compositor(context, "ALWAYS")
         set_stable_viewport(context.scene, context.scene.ogc3dtiles.comp_stable_viewport)
         lit = ensure_world_light(context.scene)
+        if not context.scene.ogc3dtiles.comp_enabled:
+            context.scene.ogc3dtiles.comp_enabled = True
         self.report({"INFO"}, "Compositor tree built: see the Compositing workspace, "
                               "or Rendered shading in the viewport"
                               + (" (unlit scene: world brightened)" if lit else ""))
@@ -386,16 +412,16 @@ class OGC3D_OT_CompositorRemove(Operator):
     bl_label = "Remove Beauty Compositor"
 
     def execute(self, context):
-        sc = context.scene
-        sc.render.use_compositing = False
-        if hasattr(sc, "compositing_node_group"):
-            sc.compositing_node_group = None
-        set_viewport_compositor(context, "DISABLED")
-        set_stable_viewport(sc, False)
+        set_enabled(context, False)
+        if context.scene.ogc3dtiles.comp_enabled:
+            context.scene.ogc3dtiles.comp_enabled = False
         return {"FINISHED"}
 
 
 def draw_panel(layout, props):
+    from . import node_rows
+    if not node_rows.draw(layout, props, "comp_enabled", "Beauty compositor nodes", "COMPOSITOR"):
+        return
     layout.prop(props, "comp_edges", text="Edges")
     col = layout.column(align=True)
     if props.comp_edges in ("EDL", "BOTH"):
@@ -405,12 +431,6 @@ def draw_panel(layout, props):
     col.prop(props, "comp_ao", text="AO")
     col.prop(props, "comp_haze", text="Haze")
     layout.prop(props, "comp_stable_viewport", text="Stable viewport (1 sample, no shimmer)")
-    row = layout.row(align=True)
-    built = bpy.data.node_groups.get(TREE_NAME) is not None
-    row.operator("ogc3dtiles.compositor_build", icon="NODE_COMPOSITING",
-                 text="Rebuild" if built else "Build")
-    row.operator("ogc3dtiles.compositor_remove", icon="X", text="")
-    row.operator("ogc3dtiles.open_nodes", icon="NODETREE", text="").kind = "COMPOSITOR"
     layout.label(text="Shown in Rendered shading (viewport compositor: Always)", icon="INFO")
 
 

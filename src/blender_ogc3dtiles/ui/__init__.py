@@ -1971,7 +1971,7 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
             col.alert = True    # Blender's red error tint
             col.label(text=f"cesium-native-python: {status}", icon="ERROR")
             col.operator("ogc3dtiles.install_cesium_wheel", icon="IMPORT",
-                         text="Install cesium-native (release wheel)")
+                         text="Install cesium-native-python library")
 
         box = layout.box()
         icon = "RADIOBUT_ON" if props.is_streaming else "RADIOBUT_OFF"
@@ -2198,10 +2198,8 @@ class OGC3D_PT_DisplayPanel(_OGC3DSidebar, Panel):
     def draw(self, context):
         layout = self.layout
         props = context.scene.ogc3dtiles
-        row = layout.row(align=True)
-        row.prop(props, "tile_geometry", text="Shared geometry nodes")
-        op = row.operator("ogc3dtiles.open_nodes", text="", icon="NODETREE")
-        op.kind = "GEOMETRY"
+        from .. import node_rows
+        node_rows.draw(layout, props, "tile_geometry", "Shared geometry nodes", "GEOMETRY")
         row = layout.row(align=True)
         row.prop(props, "point_display", text="Points")
         op = row.operator("ogc3dtiles.open_nodes", text="", icon="NODETREE")
@@ -2435,6 +2433,8 @@ class OGC3D_OT_OpenNodes(Operator):
         ("COMPOSITOR", "Beauty compositor", "'OGC3D Beauty' compositor tree"),
         ("POINTS", "Point display nodes", "Geometry Nodes group of the current point display mode"),
         ("GEOMETRY", "Tile geometry nodes", "'OGC3D Tile Geometry' group applied to every tile"),
+        ("METADATA", "Metadata color nodes", "'OGC3D Metadata' shader group: the Color Ramp "
+                                             "of number columns, the palette of classes"),
     ], default="RELIGHT")
 
     def execute(self, context):
@@ -2442,7 +2442,11 @@ class OGC3D_OT_OpenNodes(Operator):
         from .. import compositor as _compositor
         from ..io import _GROUP_FOR_MODE
         props = context.scene.ogc3dtiles
-        if self.kind == "RELIGHT":
+        if self.kind == "METADATA":
+            _materials.update_metadata_group(context.scene)
+            ng = bpy.data.node_groups.get(_materials.META_GROUP)
+            ui_type = "ShaderNodeTree"
+        elif self.kind == "RELIGHT":
             ng = bpy.data.node_groups.get(_materials.GROUP_NAME)
             if ng is None:
                 _materials.ensure_relight_group()
@@ -2451,7 +2455,8 @@ class OGC3D_OT_OpenNodes(Operator):
         elif self.kind == "COMPOSITOR":
             ng = bpy.data.node_groups.get(_compositor.TREE_NAME)
             if ng is None:
-                bpy.ops.ogc3dtiles.compositor_build()
+                props.comp_enabled = False
+                props.comp_enabled = True
                 ng = bpy.data.node_groups.get(_compositor.TREE_NAME)
             ui_type = "CompositorNodeTree"
         elif self.kind == "GEOMETRY":
@@ -2483,6 +2488,55 @@ class OGC3D_OT_OpenNodes(Operator):
             self.report({"WARNING"}, f"Editor opened, select the tree by hand ({e})")
         area.tag_redraw()
         _view_all_nodes(context, area)
+        return {"FINISHED"}
+
+
+class OGC3D_OT_NodesReset(Operator):
+    """Reset a shared node group to the add-on's default nodes, or delete it"""
+    bl_idname = "ogc3dtiles.nodes_reset"
+    bl_label = "Node Group"
+    bl_options = {"REGISTER", "UNDO"}
+
+    kind: bpy.props.EnumProperty(items=[
+        ("GEOMETRY", "Tile geometry nodes", ""), ("RELIGHT", "Relight shader group", ""),
+        ("COMPOSITOR", "Beauty compositor", ""), ("METADATA", "Metadata color nodes", ""),
+    ], default="GEOMETRY", options={"HIDDEN"})
+    action: bpy.props.EnumProperty(items=[
+        ("RESET", "Reset to default", "Replace the group's nodes with the add-on's defaults; "
+                                      "hand edits are lost. Tiles keep using it"),
+        ("DELETE", "Delete group", "Switch it off and remove the node group from the file"),
+    ], default="RESET")
+
+    _TOGGLE = {"GEOMETRY": "tile_geometry", "RELIGHT": "auto_relight",
+               "COMPOSITOR": "comp_enabled", "METADATA": "meta_color"}
+
+    def execute(self, context):
+        from .. import compositor as _compositor
+        from .. import io as _io
+        from .. import materials as _materials
+        scene = context.scene
+        props = scene.ogc3dtiles
+        name = {"GEOMETRY": _io.TILE_GEOMETRY_GROUP, "RELIGHT": _materials.GROUP_NAME,
+                "COMPOSITOR": _compositor.TREE_NAME, "METADATA": _materials.META_GROUP}[self.kind]
+        toggle = self._TOGGLE[self.kind]
+        if self.action == "DELETE":
+            if getattr(props, toggle):
+                setattr(props, toggle, False)
+            ng = bpy.data.node_groups.get(name)
+            if ng is not None:
+                bpy.data.node_groups.remove(ng)
+            self.report({"INFO"}, f"'{name}' deleted")
+            return {"FINISHED"}
+        if self.kind == "GEOMETRY":
+            _io.reset_tile_geometry_group()
+        elif self.kind == "RELIGHT":
+            _materials.reset_relight_group()
+        elif self.kind == "METADATA":
+            _materials.reset_metadata_group(scene)
+        else:
+            _compositor.build_beauty_tree(scene)
+            _compositor.set_enabled(context, props.comp_enabled)
+        self.report({"INFO"}, f"'{name}' reset to default")
         return {"FINISHED"}
 
 
@@ -2563,6 +2617,7 @@ class OGC3D_PT_CoordPanel(_OGC3DSidebar, Panel):
 # ── Registration ──────────────────────────────────────────────────────────────
 _classes = [
     OGC3D_OT_OpenNodes,
+    OGC3D_OT_NodesReset,
     OGC3D_OT_RenderConverged,
     OGC3D_OT_TilesetAdd,
     OGC3D_OT_TilesetRemove,

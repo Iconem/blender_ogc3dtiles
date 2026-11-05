@@ -146,6 +146,22 @@ def _on_point_scale(self, context):
     apply_point_scale(self.point_scale)
 
 
+def _on_relight(self, context):
+    try:
+        from .. import materials
+        materials.set_relight(bool(self.auto_relight))
+    except Exception as e:                        # noqa: BLE001
+        print(f"[3DTiles] relight: {e}")
+
+
+def _on_comp_enabled(self, context):
+    try:
+        from .. import compositor
+        compositor.set_enabled(context, bool(self.comp_enabled))
+    except Exception as e:                        # noqa: BLE001
+        print(f"[3DTiles] compositor: {e}")
+
+
 def _on_comp_stable(self, context):
     try:
         from .. import compositor
@@ -348,7 +364,7 @@ class TilesetItem(PropertyGroup):
     clip_mode: EnumProperty(name="Mode", items=CLIP_MODES, default="CUT_ANY",
                             update=_on_clip_edit)
     clip_geometry: BoolProperty(
-        name="Cut Geometry",
+        name="Also cut in Solid view and exports",
         description="Also delete the mesh faces that are entirely cut (Geometry Nodes), so "
                     "Solid view, snapping and exports see the cut. Faces across the boundary "
                     "stay whole outside the Material and Rendered views. Costs some viewport "
@@ -491,10 +507,18 @@ class TilesSceneProps(PropertyGroup):
         default=8.0, min=0.0, max=200.0,
     )
     auto_relight: BoolProperty(
-        name="Relight new tiles",
-        description="Give every newly imported tile the shared 'OGC3D Relight' node group "
-                    "(roughness / gold mask / shadow lift derived from the albedo)",
-        default=False,
+        name="Relight shader nodes",
+        description="Put the shared 'OGC3D Relight' node group in every tile material, "
+                    "loaded and streamed later (roughness / gold mask / shadow lift derived "
+                    "from the albedo). Off restores the plain material and keeps the group",
+        default=False, update=_on_relight,
+    )
+    comp_enabled: BoolProperty(
+        name="Beauty compositor nodes",
+        description="Use the 'OGC3D Beauty' compositor tree on this scene (edges, AO, grade, "
+                    "haze, glare), shown in Rendered viewport shading. Off detaches it and "
+                    "keeps the tree",
+        default=False, update=_on_comp_enabled,
     )
     point_display: EnumProperty(
         name="Point display",

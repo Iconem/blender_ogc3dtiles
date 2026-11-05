@@ -1,0 +1,13 @@
+{
+  "title": "Development",
+  "defaultOpen": false,
+  "pages": [
+    "setup-and-tests",
+    "architecture",
+    "releasing",
+    "cesium-native-wheel",
+    "cesium-native-versions",
+    "roadmap",
+    "notes"
+  ]
+}

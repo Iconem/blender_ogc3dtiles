@@ -1,0 +1,10 @@
+/node_modules
+# copied at build time by scripts/sync-content.mjs: the developer notes of ../docs/*.md and the images of ../docs/img
+/content/docs/dev/notes/
+/public/img/
+/.source
+/.next/
+/out/
+*.tsbuildinfo
+next-env.d.ts
+.DS_Store

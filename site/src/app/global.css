@@ -1,0 +1,18 @@
+@import 'tailwindcss';
+@import 'fumadocs-ui/css/neutral.css';
+@import 'fumadocs-ui/css/preset.css';
+
+html {
+  scrollbar-gutter: stable;
+}
+
+/* Wide tables (coverage.md is ~200 countries x 8 columns) scroll inside the prose column on their own: fumadocs wraps
+   every table in an overflow-auto box. A `display: block` on the table itself, once used for that, kept narrow tables
+   from filling the box: a bordered frame with an empty band on the right. */
+
+/* Screenshots fill the text column, whatever their pixel width (a 700 px card would otherwise sit narrower than the
+   column, beside a 1400 px one). */
+.prose img {
+  width: 100%;
+  height: auto;
+}

@@ -1,0 +1,22 @@
+{
+  "title": "Features",
+  "defaultOpen": true,
+  "pages": [
+    "scene-origin",
+    "place-search",
+    "raster-overlays",
+    "gaussian-splats",
+    "clipping",
+    "several-tilesets",
+    "libraries-and-local-files",
+    "point-clouds",
+    "feature-metadata",
+    "voxels",
+    "beta",
+    "editing-geometry",
+    "compositor",
+    "rendering-animations",
+    "cycles-viewport",
+    "orthographic-views"
+  ]
+}

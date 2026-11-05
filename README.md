@@ -107,9 +107,9 @@ install cesium-python` in Blender's Python) once wheels are published there.
 Every section of the sidebar is its own panel (boxed, collapsible, and
 re-orderable with the drag handle in its header, like the Object
 Properties tabs; Blender remembers the order and the folded state).
-Default order, top to bottom: tileset list, the selected tileset's fields,
-its **Raster overlays** and **Clipping** each in a box of its own with the
-checkbox that switches it on, and Start / Stop / Clear;
+Default order, top to bottom: the status line, Start / Stop / Clear, the
+tileset list, the selected tileset's fields, then its **Raster overlays** and
+**Clipping** each in a box of its own with the checkbox that switches it on;
 **Scene Origin** (collapsed), then **LOD / Streaming** (Max SSE, Parallel
 DL, Imports / tick, Max points / vertices, and a collapsed *Advanced*
 sub-panel: build time while navigating, direct mesh, disk cache, per-stream

@@ -1969,6 +1969,12 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
         icon = "RADIOBUT_ON" if props.is_streaming else "RADIOBUT_OFF"
         box.label(text=(_state.get("status") if props.is_streaming and _state.get("status")
                         else props.status_text), icon=icon)
+        row = layout.row(align=True)
+        if not props.is_streaming:
+            row.operator("ogc3dtiles.start_stream", icon="PLAY", text="Start")
+        else:
+            row.operator("ogc3dtiles.stop_stream", icon="PAUSE", text="Stop")
+        row.operator("ogc3dtiles.clear_tiles", icon="TRASH", text="Clear All Tiles")
 
         # Tilesets
         row = layout.row()
@@ -2024,12 +2030,6 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
             layout.prop(props, "tileset_url", text="URL")
             layout.prop(props, "cesium_ion_token", text="Ion Token")
 
-        row = layout.row(align=True)
-        if not props.is_streaming:
-            row.operator("ogc3dtiles.start_stream", icon="PLAY", text="Start")
-        else:
-            row.operator("ogc3dtiles.stop_stream", icon="PAUSE", text="Stop")
-        row.operator("ogc3dtiles.clear_tiles", icon="TRASH", text="Clear All Tiles")
         ok, status = _cesium_status
         if not ok:              # the backend choice itself is in the add-on preferences
             layout.label(text=f"cesium-native-python: {status}", icon="INFO")

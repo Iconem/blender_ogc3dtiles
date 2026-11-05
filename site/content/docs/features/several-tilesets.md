@@ -42,6 +42,9 @@ data and on the tool that tiled it:
 - a COPC point cloud that declared more error than its point spacing (1.2 px between points at 3.2 px
   of error) looked fine at 16 to 32 px.
 
+The view that selects the tiles can be another camera than the one you navigate with: see
+[Rendering](/features/rendering).
+
 ## Details
 
 - Two entries with the same name get separate collections (`... - 2`), and the entry is renamed to

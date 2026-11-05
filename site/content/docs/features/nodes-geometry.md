@@ -3,13 +3,20 @@ title: "Nodes: Geometry"
 description: "One Geometry Nodes graph on every tile, and the point display"
 ---
 
-**Shared geometry nodes** (Nodes: Geometry section) puts one Geometry Nodes
-modifier, 'OGC3D Tile Geometry', first in the modifier stack of every tile
-mesh, loaded or streamed later, so a single graph edits the vertices, edges
-or attributes of all tiles (the point display modifier runs after it).  The
-group starts as a pass-through; the node-tree button opens it pinned in a
-node editor.  Untick to remove the modifier from every tile; the group stays
-in the file for the next time.
+## Shared geometry nodes
+
+Tick **Shared geometry nodes** to put one Geometry Nodes modifier on every tile, those loaded and
+those that stream in later. A single graph then edits the vertices, edges or attributes of all tiles:
+displace them, scatter objects on them, turn a mesh into points.
+
+- The group, `OGC3D Tile Geometry`, starts empty: it passes the geometry through unchanged.
+- The node button opens it in a node editor.
+- Untick to take the modifier off every tile. The group stays in the file for the next time.
+
+It is first in each tile's modifier stack, so the point display below runs after it.
+
+A modifier is evaluated per tile, and tiles come and go as you move. Light graphs are fine; heavy
+ones (subdivision, remeshing, booleans) on hundreds of tiles will slow streaming down.
 
 ## Point display
 

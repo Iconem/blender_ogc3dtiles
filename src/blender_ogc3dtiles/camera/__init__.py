@@ -122,11 +122,14 @@ class CesiumCameraAdapter:
 
     def _source(self, props):
         """(view_matrix, window_matrix, width_px, height_px, is_persp,
-        ortho_pull_back, signature) from the 3D viewport, or from the scene
-        camera at the render resolution when ``view_source`` is CAMERA."""
+        ortho_pull_back, signature) from the 3D viewport, or at the render
+        resolution from the scene camera (``view_source`` CAMERA) or from the
+        camera the user chose (OBJECT)."""
         scene = self.scene
-        if getattr(props, "view_source", "VIEWPORT") == "CAMERA" and scene.camera is not None:
-            cam = scene.camera
+        source = getattr(props, "view_source", "VIEWPORT")
+        cam = (scene.camera if source == "CAMERA"
+               else getattr(props, "view_camera", None) if source == "OBJECT" else None)
+        if cam is not None:
             r = scene.render
             w = max(int(r.resolution_x * r.resolution_percentage / 100), 1)
             hpx = max(int(r.resolution_y * r.resolution_percentage / 100), 1)

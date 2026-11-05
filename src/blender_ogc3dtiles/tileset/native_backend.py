@@ -241,6 +241,15 @@ class _GlbPreparer:
         payload = load_result.mesh_payload
         if payload is not None and "unit_verts" in payload:
             self._owner.place_voxels(tile, payload)
+        if self._owner.read_metadata:
+            try:                              # where the tile sits in the hierarchy
+                level, up = 0, tile.parent
+                while up is not None and level < 64:
+                    level, up = level + 1, up.parent
+                from .feature_meta import note_tile
+                self._owner.tile_info[load_result.key] = note_tile(level, tile.geometric_error)
+            except Exception as exc:          # noqa: BLE001
+                print("[3DTiles/native] tile level of %s: %r" % (load_result.key, exc))
         cb = self._owner.on_main_thread_ready
         if cb is not None:
             try:
@@ -255,6 +264,7 @@ class _GlbPreparer:
     def free_tile(self, tile, load_result, main_result):
         rt = main_result or load_result
         if rt is not None:
+            self._owner.tile_info.pop(rt.key, None)
             with self._owner._lock:
                 self._owner._freed.append(rt.key)
             for p in [rt.glb_path] + list(rt.aux_files):
@@ -513,6 +523,7 @@ class CesiumNativeBackend:
                  voxel_grids=False, voxel_exaggeration=1.0, **_ignored):
         self._max_sse = max_sse
         self.read_metadata = bool(read_metadata)
+        self.tile_info = {}                     # tile key -> {column: value} (feature_meta.TILE_COLUMNS)
         self.voxel_grids = bool(voxel_grids)    # keep the whole grid of voxel tiles (Volume, lookup)
         self.voxel_exaggeration = float(voxel_exaggeration)
         self.direct_mesh = bool(direct_mesh)   # numpy -> bpy mesh instead of GLB re-import

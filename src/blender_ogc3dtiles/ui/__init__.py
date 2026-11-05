@@ -1656,6 +1656,10 @@ def _build_native_tile(scene, props, st, rt) -> bool:
     if r:
         st["tiles"][rt.key] = _Rec(r[0], r[1])
         st["dirty"] = True
+        info = getattr(st["backend"], "tile_info", {}).get(rt.key)
+        if info:
+            from ..io import set_tile_info
+            set_tile_info(r[0], info, scene)
         waiting = st.get("pending_overlays", {}).pop(rt.key, None)
         if waiting:
             from .. import overlays as ovl
@@ -2087,6 +2091,15 @@ def _draw_overlays(b, it, st) -> None:
             ob.label(text="Changes apply live", icon="INFO")
 
 
+def _draw_view_source(layout, props) -> None:
+    """Which view selects the tiles; the same rows in LOD / Streaming and Render."""
+    layout.prop(props, "view_source", text="Stream for")
+    if props.view_source == "OBJECT":
+        layout.prop(props, "view_camera", text="Camera")
+        if props.view_camera is None:
+            layout.label(text="No camera chosen: the 3D viewport is used", icon="INFO")
+
+
 def _group_button(row, name) -> None:
     """Node-editor button for a node group that exists only once it is in use."""
     if name and name in bpy.data.node_groups:
@@ -2168,6 +2181,7 @@ class OGC3D_PT_LodPanel(_OGC3DSidebar, Panel):
     def draw(self, context):
         layout = self.layout
         props = context.scene.ogc3dtiles
+        _draw_view_source(layout, props)
         col = layout.column(align=True)
         col.prop(props, "max_screen_space_error", text="Max SSE (live)")
         col.prop(props, "max_concurrent_requests", text="Parallel DL")
@@ -2331,7 +2345,7 @@ class OGC3D_PT_RenderPanel(_OGC3DSidebar, Panel):
     def draw(self, context):
         layout = self.layout
         props = context.scene.ogc3dtiles
-        layout.prop(props, "view_source", text="Stream for")
+        _draw_view_source(layout, props)
         col = layout.column(align=True)
         col.prop(props, "render_warmup_s", text="Warm-up s (first frame)")
         col.prop(props, "render_settle_s", text="Settle s (every frame)")

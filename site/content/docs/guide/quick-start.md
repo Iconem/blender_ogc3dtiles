@@ -10,8 +10,6 @@ description: "Stream a first tileset in five steps"
 4. Leave the origin mode on *Auto*: the first tileset centres the scene.
 5. Press **Start** and move around: tiles load as the camera moves, finer ones as you get closer.
 
-![The add-on sidebar, shown here in three columns](/img/sidebar.jpg)
-
 ## What to try next
 
 - **Imagery**: tick *Raster overlays* and add OpenStreetMap or Esri World Imagery from the bookmark

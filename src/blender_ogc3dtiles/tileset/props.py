@@ -275,6 +275,10 @@ def _on_clip_edit(self, context):
     clip_mark_dirty(context.scene, self)
 
 
+def _camera_poll(self, obj):
+    return obj.type == "CAMERA"
+
+
 def _clip_object_poll(self, obj):
     return obj.type in {"MESH", "CURVE"} and "tile_url" not in obj
 
@@ -742,8 +746,16 @@ class TilesSceneProps(PropertyGroup):
             ("VIEWPORT", "3D viewport", "The largest 3D viewport (interactive use)"),
             ("CAMERA", "Scene camera", "The active scene camera at the render resolution "
                                        "(scrubbing the timeline re-selects tiles)"),
+            ("OBJECT", "Chosen camera", "A camera object of your choice, at the render resolution: "
+                                        "tiles are selected for it while you look at the result "
+                                        "from anywhere in the viewport"),
         ],
         default="VIEWPORT",
+    )
+    view_camera: bpy.props.PointerProperty(
+        name="Camera", type=bpy.types.Object, poll=_camera_poll,
+        description="Camera that selects the tiles when 'Stream for' is 'Chosen camera'. Move it, "
+                    "or animate it, and the tiles follow",
     )
     render_settle_s: FloatProperty(
         name="Settle time",

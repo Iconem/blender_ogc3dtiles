@@ -1,66 +1,78 @@
 ---
 title: "Rendering"
-description: "Converged animations, Cycles, orthographic views and the clip range"
+description: "Which camera selects the tiles, animations that wait for their tiles, Cycles, orthographic views"
 ---
+
+## Which view selects the tiles
+
+**Stream for**, in the LOD / Streaming and Render panels, says which view decides what is loaded and
+how fine.
+
+| Stream for | Tiles are selected for |
+|---|---|
+| **3D viewport** (default) | The view you navigate in. |
+| **Scene camera** | The active scene camera, at the render resolution. Scrubbing the timeline re-selects tiles along the camera path. |
+| **Chosen camera** | A camera object you pick. |
+
+With *Scene camera* or *Chosen camera* you keep navigating the viewport freely while another camera
+does the selecting: step back and see exactly which tiles a shot pulls in, and how detailed they are.
+Move or animate that camera and the tiles follow.
+
+To freeze what is loaded while you look around, untick the tileset's checkbox in the list: nothing
+more is loaded or unloaded until you tick it again.
 
 ## Animations that wait for their tiles
 
-Blender cannot pause inside a render to wait for tiles: streaming advances
-on the UI timer, which stops while a frame renders, so *Render Animation*
-renders whatever happens to be loaded.  The **Render** section does it the
-other way round:
+Blender cannot pause inside a render to wait for tiles: streaming stops while a frame renders, so
+*Render Animation* renders whatever happens to be loaded. **Render converged animation**, in the
+Render panel, does it the other way round: it steps through the frame range from the scene camera,
+waits for the tiles of each frame, then renders it.
 
-- **Stream for**: *3D viewport* (interactive, default) or *Scene camera*,
-  which selects tiles for the active camera at the render resolution, so
-  scrubbing the timeline re-selects tiles along the camera path.
-- **Render converged animation** steps through the frame range from the
-  scene camera.  The first frame waits at least *Warm-up s* (default 10:
-  empty scene, cold cache).  Every frame then waits until the download /
-  build queue is empty and nothing has changed for *Settle s* (or until
-  *Max wait s* has passed), renders the frame with the scene's output settings to the
-  Output path (one file per frame, like Render Animation), then moves on.
-  ESC cancels; the sidebar shows the frame, the queue length and how long
-  the scene has been quiet.  Streaming starts if it is not running, and the
-  stream mode is restored afterwards.
+| Setting | Meaning |
+|---|---|
+| **Warm-up s** | Minimum wait before the first frame (10 by default): empty scene, cold cache. |
+| **Settle s** | A frame renders once the queue is empty and nothing has changed for this long. |
+| **Max wait s** | A ceiling per frame, so one slow tile never stalls the render. |
 
-Rule of thumb for *Settle s*: the time the viewport usually takes to stop
-changing after you jump the camera, plus a margin; one or two seconds on a
-local cache, more over a slow link.  Lower *Max SSE* before rendering if
-you want finer tiles than you use interactively.
+Frames go to the scene's Output path, one file per frame, with the scene's output settings. ESC
+cancels. The sidebar shows the frame, the queue length and how long the scene has been quiet.
 
-## Cycles viewport
+Tips:
 
-Cycles restarts its viewport render whenever the scene is tagged for update.
-The add-on therefore keeps the per-tick status line out of scene properties
-and only redraws the sidebar; tiles appearing or disappearing still restart
-it, which is unavoidable.  If "GPU Compute" is greyed out in the render
-device selector, no device is ticked under Preferences, System, Cycles
-Render Devices (CUDA / OptiX / HIP / oneAPI / Metal).
+- For *Settle s*, take the time the viewport usually needs to stop changing after you jump the camera,
+  plus a margin: one or two seconds on a local cache, more over a slow link.
+- Lower *Max SSE* before rendering if you want finer tiles than you navigate with.
 
-The beauty compositor shows less in a Cycles viewport than in EEVEE: see
-[Nodes: Compositor](/features/nodes-compositor).
+## Cycles
 
-## Orthographic views and the clip range
+- A Cycles viewport restarts its render whenever tiles appear or disappear. That is unavoidable while
+  streaming; pause the tileset (its checkbox in the list) for a stable preview.
+- If *GPU Compute* is greyed out in the render device selector, no device is ticked under Preferences,
+  System, Cycles Render Devices.
+- The beauty compositor shows less in a Cycles viewport than in EEVEE: see
+  [Nodes: Compositor](/features/nodes-compositor).
 
-The Python traversal reads the orthographic projection directly (SSE =
-`ge · viewport_h / frame_height`, no distance term).  cesium-native only
-knows perspective cameras, so for an orthographic viewport the adapter hands
-it a 1-degree camera pulled back far enough that its frame at the view pivot
-matches the orthographic frame: same screen-space error, same tiles, instead
-of the thin cone / inflated SSE an un-adjusted 1-degree camera gives
-(`ViewState.native_position`, `ortho_eye_offset`).  cesium-native fog
-culling is off (it is height-based and would cull that far eye's view).
+## Orthographic views
 
-When a tileset root arrives the add-on sizes every 3D viewport's clip range
-to it: clip end = 6 x the root radius, clamped to 1 km - 200 km, clip start
-raised to clip end / 1e6; camera objects get the same clip end when theirs
-is smaller (the 100 m default renders a site-scale tileset as empty).  The fixed 1e6 m clip end of earlier versions had
-two side effects: Blender's clipping region (Alt+B) computes its planes in
-single precision from the near and far corners, and past a far / near ratio
-of about 1e7 the planes come out NaN (nothing is clipped, or a flat slab is);
-and orthographic depth, which spans the whole clip range linearly, dropped to
-centimetre precision.  Raise the clip end by hand for globe-scale tilesets;
-keep clip start above clip end / 1e7 if you use Alt+B.  The clipping region
-only affects drawing, not which tiles stream, and in Blender 5.1 only Solid
-and Wireframe shading honour it: EEVEE (Material Preview, Rendered) ignores
-the clipping region on any scene, add-on or not.
+Orthographic viewports and cameras work: plans and elevations select the tiles that the same frame
+would get in perspective.
+
+## Clip range
+
+When a tileset arrives, the add-on sets the clip range of every 3D viewport to fit it: clip end at
+6 times the tileset's radius, between 1 km and 200 km. Camera objects get the same clip end when
+theirs is smaller, since Blender's 100 m default would render a site as empty.
+
+- For a globe-scale tileset, raise the clip end by hand.
+- If you use the clipping region (Alt+B), keep clip start above clip end / 10,000,000: beyond that
+  ratio Blender's region stops clipping correctly.
+
+## How it works
+
+- cesium-native only knows perspective cameras. For an orthographic view the add-on hands it a
+  1-degree camera pulled back far enough that its frame at the view's pivot matches the orthographic
+  one: same screen-space error, same tiles. cesium-native's fog culling is off, as it would cull that
+  far-away eye's view. The pure Python backend reads the orthographic projection directly.
+- Clip start is raised to clip end / 1,000,000. With a very large range, orthographic depth loses
+  precision, and Blender computes the Alt+B planes in single precision.
+- The clipping region only affects drawing, not which tiles stream.

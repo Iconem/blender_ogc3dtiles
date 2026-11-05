@@ -690,6 +690,35 @@ def _add_texels(me, payload, scene):
                 mat.node_tree.links.new(mat.node_tree.nodes["OGC3D Metadata Texel"].outputs["Color"], group.inputs["Texel"])
 
 
+TILE_INFO_PROP = "ogc3d_tile_info"       # per-tile {"tile level": 3.0, ...}, as JSON
+
+
+def _set_tile_attributes(obj, columns) -> None:
+    """One value for the whole tile, as a point attribute like the other columns."""
+    import numpy as np
+    from ..tileset.feature_meta import attribute_name
+    values = json.loads(obj[TILE_INFO_PROP])
+    me = obj.data
+    for column in columns:
+        name = attribute_name(column)
+        if column in values and name not in me.attributes:
+            n = len(me.attributes.new(name, "FLOAT", "POINT").data)
+            me.attributes[name].data.foreach_set("value", np.full(n, values[column], np.float32))
+
+
+def set_tile_info(holder_name: str, values: dict, scene) -> None:
+    """Level and geometric error of a tile just built, on its mesh objects."""
+    from ..materials import metadata_columns
+    holder = bpy.data.objects.get(holder_name)
+    if holder is None or not values:
+        return
+    columns = metadata_columns(scene.ogc3dtiles)
+    for obj in [holder, *holder.children_recursive]:
+        if obj.type == "MESH" and obj.data is not None:
+            obj[TILE_INFO_PROP] = json.dumps(values)
+            _set_tile_attributes(obj, columns)
+
+
 def refresh_feature_attributes(scene):
     """Give the tiles already loaded the columns now in use."""
     import numpy as np
@@ -701,6 +730,8 @@ def refresh_feature_attributes(scene):
     from ..tileset.feature_meta import FEATURE_ID_ATTR, attribute_name
     columns = metadata_columns(scene.ogc3dtiles)
     for o in bpy.data.objects:
+        if o.type == "MESH" and TILE_INFO_PROP in o:
+            _set_tile_attributes(o, columns)
         if FEATURES_PROP not in o or o.type != "MESH":
             continue
         me = o.data

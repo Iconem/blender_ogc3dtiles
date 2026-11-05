@@ -156,6 +156,28 @@ class Registry:
 
 REGISTRY = Registry()
 
+# One value per tile, from the tileset's hierarchy rather than from its content
+TILE_LEVEL = "tile level"                 # depth below the root, 0 = root
+TILE_ERROR = "tile error (log2 m)"        # log2 of the geometric error: it halves per level
+TILE_COLUMNS = (TILE_LEVEL, TILE_ERROR)
+_MIN_ERROR_M = 1.0 / 1024.0               # leaves declare 0: shown as about a millimetre
+
+
+def tile_values(level, geometric_error) -> dict:
+    """{column: value} of one tile."""
+    import math
+    error = float(geometric_error)
+    if not math.isfinite(error):
+        error = 0.0
+    return {TILE_LEVEL: float(level), TILE_ERROR: math.log2(max(error, _MIN_ERROR_M))}
+
+
+def note_tile(level, geometric_error, registry=REGISTRY) -> dict:
+    values = tile_values(level, geometric_error)
+    for name, value in values.items():
+        registry.note_range(name, np.asarray([value], np.float64))
+    return values
+
 
 def attribute_name(column: str) -> str:
     return ATTR_PREFIX + re.sub(r"[^0-9A-Za-z_]+", "_", column)

@@ -37,6 +37,18 @@ Point values work the same way, per point.
 Tested on an IGN LiDAR HD COPC tile streamed by 3dtiled, which sends both when the tileset URL ends
 with `&attributes=intensity,classification`.
 
+## Colour by level of detail
+
+Two columns come from the tileset's hierarchy instead of its content, one value per tile, through the
+Color Ramp:
+
+- **tile level**: how deep the tile is in the hierarchy, 0 being the root. Tilesets that nest other
+  tilesets count those levels too.
+- **tile error (log2 m)**: the geometric error the tile declares, as a base-2 logarithm, since it
+  roughly halves at each level. 3 means 8 m, 0 means 1 m, -10 stands for tiles that declare none.
+
+They show which level of detail is on screen where, and where two levels meet.
+
 ## For your own nodes
 
 - Each tile has an `ogc3d_feature` vertex attribute (the row of the table) and a `meta_<column>`

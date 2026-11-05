@@ -6,7 +6,7 @@ Edit → Preferences → Add-ons → OGC 3D Tiles → Preferences
 Sections
   1. Traversal Backend   — CESIUM / PYTHON / AUTO + status + perf stats
   2. Performance         — live timing comparison between backends
-  3. Developer           — dev mode, coord debug, wheel/install path
+  3. Developer           — direct mesh, wheel/install path
 """
 
 from __future__ import annotations
@@ -82,16 +82,6 @@ class OGC3DTilesPreferences(AddonPreferences):
     )
 
     # ── Developer ──────────────────────────────────────────────────────────────
-    dev_mode: BoolProperty(
-        name="Developer Mode",
-        description="Show ECEF coords, SSE values, tile counts in the 3D view panel",
-        default=False,
-    )
-    show_coord_debug: BoolProperty(
-        name="Coordinate Debug Panel",
-        description="Show ENU ↔ ECEF ↔ Blender mapping in a sidebar panel",
-        default=False,
-    )
     cesium_wheel_repo: StringProperty(
         name="Wheel release repo",
         description="GitHub repository whose latest Release carries cesium-native-python "
@@ -250,6 +240,11 @@ class OGC3DTilesPreferences(AddonPreferences):
         row.operator("ogc3dtiles.cache_trim", text="", icon="BRUSH_DATA")
         boxc.prop(self, "mapped_drives_as_unc")
         boxc.prop(self, "library_files", text="Libraries")
+        from . import library as _library
+        for p in _library.split_paths(self.library_files):
+            import os
+            boxc.operator("ogc3dtiles.library_edit", text=f"Edit {os.path.basename(p)} in a text editor",
+                          icon="TEXT").path = p
         boxc.operator("ogc3dtiles.library_add_file", text="Add library file…", icon="FILEBROWSER")
 
         # ── Place search ───────────────────────────────────────────────────────
@@ -274,9 +269,7 @@ class OGC3DTilesPreferences(AddonPreferences):
         layout.separator()
         box3 = layout.box()
         box3.label(text="Developer", icon="SCRIPT")
-        box3.prop(self, "dev_mode")
         box3.prop(self, "direct_mesh")
-        box3.prop(self, "show_coord_debug")
 
 
 # ── Operators ─────────────────────────────────────────────────────────────────

@@ -22,10 +22,12 @@ from .tileset.feature_meta import MAX_CLASSES, REGISTRY, attribute_name
 GROUP_NAME = "OGC3D Relight"
 TUNABLES = (
     # (node name, default, min, max, description)
-    ("Albedo Strength", 1.0, 0.0, 1.0, "1 = photo albedo, 0 = pure clay (the 'Clay Color' RGB node "
-                                       "in the group)"),
-    ("Shadow Lift", 1.3, 0.5, 3.0, "Gamma on the albedo: >1 lifts baked shadows"),
-    ("Saturation", 1.1, 0.0, 2.0, "Albedo saturation"),
+    ("Albedo Strength", 1.0, -1.0, 2.0, "1 = photo albedo, 0 = pure clay (the 'Clay Color' RGB node "
+                                        "in the group). Above 1 pushes the photo away from the "
+                                        "clay, below 0 gives its negative around the clay"),
+    ("Shadow Lift", 1.3, 0.0, 3.0, "Gamma on the albedo: >1 lifts baked shadows, <1 deepens them"),
+    ("Saturation", 1.1, -1.0, 2.0, "Albedo saturation: 0 = grey, 1 = as shot, above 1 = stronger, "
+                                   "below 0 = complementary colours"),
     ("Baked Light", 0.5, 0.0, 1.0, "0 = fully lit Principled BSDF, 1 = unlit albedo. Photogrammetry "
                                   "already carries its lighting; higher values also hide "
                                   "shading seams between tiles"),
@@ -38,6 +40,9 @@ TUNABLES = (
     ("Gold Roughness", 0.25, 0.0, 1.0, "Roughness inside the mask"),
     ("Gold Boost", 0.35, 0.0, 2.0, "Extra brightness inside the mask"),
     ("Specular", 0.3, 0.0, 1.0, "Specular IOR level outside the mask"),
+    ("X-ray", 0.0, 0.0, 1.0, "See-through: faces turned to the viewer fade out, grazing ones "
+                             "stay, so walls and outlines read through each other"),
+    ("X-ray Falloff", 2.0, 0.1, 8.0, "How fast a face fades as it turns to the viewer"),
 )
 HIDDEN_TUNABLES = (("Gold Enable", 0.0),)     # driven by scene props, not sliders
 
@@ -52,7 +57,7 @@ CLIP_MIX = "OGC3D Clip Mix"
 CLIP_TRANSPARENT = "OGC3D Clip Transparent"
 CLIP_PLANES = 6                                # RegionView3D.clip_planes
 _last_clip = [None]
-GROUP_VERSION_NODE = "Clay Color"             # presence marks an up-to-date group
+GROUP_VERSION_NODE = "X-ray"                  # presence marks an up-to-date group
 
 
 def _value_node(ng, name, default):
@@ -70,11 +75,19 @@ def ensure_relight_group():
         # older group from a previous version: rebuild the nodes in place.
         # The interface sockets are kept (removing them would drop the links
         # of every material using the group → black tiles).
+        kept = {n.name: tuple(n.outputs[0].default_value) if n.bl_idname == "ShaderNodeRGB"
+                else n.outputs[0].default_value
+                for n in ng.nodes if n.bl_idname in ("ShaderNodeValue", "ShaderNodeRGB")}
         for n in list(ng.nodes):
             ng.nodes.remove(n)
     else:
+        kept = {}
         ng = bpy.data.node_groups.new(GROUP_NAME, "ShaderNodeTree")
     _build_relight_group(ng)
+    for name, value in kept.items():        # the user's tuning survives the rebuild
+        n = ng.nodes.get(name)
+        if n is not None:
+            n.outputs[0].default_value = value
     return ng
 
 
@@ -104,10 +117,18 @@ def _build_relight_group(ng):
     gamma.location = (-1100, 100)
     links.new(n_in.outputs["Albedo"], gamma.inputs["Color"])
     links.new(vals["Shadow Lift"].outputs[0], gamma.inputs["Gamma"])
-    hsv = nodes.new("ShaderNodeHueSaturation")
-    hsv.location = (-900, 100)
-    links.new(gamma.outputs["Color"], hsv.inputs["Color"])
-    links.new(vals["Saturation"].outputs[0], hsv.inputs["Saturation"])
+    grey = nodes.new("ShaderNodeRGBToBW")
+    links.new(gamma.outputs["Color"], grey.inputs["Color"])
+    hsv = nodes.new("ShaderNodeMix")
+    hsv.data_type = "RGBA"
+    hsv.blend_type = "MIX"
+    hsv.clamp_factor = False
+    hsv.clamp_result = True
+    hsv.label = "saturation"
+    links.new(vals["Saturation"].outputs[0], hsv.inputs["Factor"])
+    links.new(grey.outputs["Val"], hsv.inputs[6])               # A: luminance
+    links.new(gamma.outputs["Color"], hsv.inputs[7])            # B: colour
+    sat_out = hsv.outputs[2]
 
     # albedo ↔ clay
     clay = nodes.new("ShaderNodeRGB")
@@ -118,10 +139,12 @@ def _build_relight_group(ng):
     albedo_mix.data_type = "RGBA"
     albedo_mix.blend_type = "MIX"
     albedo_mix.label = "albedo strength"
+    albedo_mix.clamp_factor = False
+    albedo_mix.clamp_result = True
     albedo_mix.location = (-750, 200)
     links.new(vals["Albedo Strength"].outputs[0], albedo_mix.inputs["Factor"])
     links.new(clay.outputs[0], albedo_mix.inputs[6])           # A: clay
-    links.new(hsv.outputs["Color"], albedo_mix.inputs[7])      # B: processed albedo
+    links.new(sat_out, albedo_mix.inputs[7])                   # B: processed albedo
     hsv_out = albedo_mix.outputs[2]
 
     # luminance → roughness ramp
@@ -141,7 +164,7 @@ def _build_relight_group(ng):
     sep = nodes.new("ShaderNodeSeparateColor")
     sep.mode = "HSV"
     sep.location = (-700, -350)
-    links.new(hsv.outputs["Color"], sep.inputs["Color"])
+    links.new(sat_out, sep.inputs["Color"])
     hue_d = nodes.new("ShaderNodeMath")
     hue_d.operation = "SUBTRACT"
     hue_d.location = (-500, -350)
@@ -228,6 +251,27 @@ def _build_relight_group(ng):
     links.new(vals["Baked Light"].outputs[0], mixsh.inputs["Fac"])
     links.new(bsdf.outputs["BSDF"], mixsh.inputs[1])
     links.new(emis_a.outputs[0], mixsh.inputs[2])
+    # X-ray: transparent where the face looks at the viewer
+    facing = nodes.new("ShaderNodeLayerWeight")
+    facing.inputs["Blend"].default_value = 0.5
+    fade = nodes.new("ShaderNodeMath")              # facing 0 (front) .. 1 (grazing)
+    fade.operation = "POWER"
+    fade.use_clamp = True
+    links.new(facing.outputs["Facing"], fade.inputs[0])
+    links.new(vals["X-ray Falloff"].outputs[0], fade.inputs[1])
+    seen = nodes.new("ShaderNodeMix")               # 1 without X-ray, the fade with it
+    seen.data_type = "FLOAT"
+    seen.label = "x-ray opacity"
+    links.new(vals["X-ray"].outputs[0], seen.inputs["Factor"])
+    seen.inputs[2].default_value = 1.0
+    links.new(fade.outputs[0], seen.inputs[3])
+    xray_t = nodes.new("ShaderNodeBsdfTransparent")
+    xray = nodes.new("ShaderNodeMixShader")
+    xray.label = "x-ray"
+    links.new(seen.outputs[0], xray.inputs["Fac"])
+    links.new(xray_t.outputs[0], xray.inputs[1])
+    links.new(mixsh.outputs[0], xray.inputs[2])
+    mixsh = xray
     n_out.location = (1250, 0)
     links.new(mixsh.outputs[0], n_out.inputs["BSDF"])
     from .node_layout import arrange
@@ -462,7 +506,6 @@ def apply_relight(mat) -> bool:
     albedo, alpha = _albedo_socket(mat)
     for n in [n for n in nt.nodes if n.type == "BSDF_PRINCIPLED"]:
         n.mute = True
-        n.hide = True
         n.location.y -= 400
     grp = nt.nodes.new("ShaderNodeGroup")
     grp.node_tree = ensure_relight_group()
@@ -565,6 +608,7 @@ def tile_materials():
 META_GROUP = "OGC3D Metadata"
 META_NODE = "OGC3D Metadata Color"
 META_PALETTE = "OGC3D Metadata Palette"
+META_OPACITY = "OGC3D Metadata Opacity"
 _PALETTE_SIZE = MAX_CLASSES + 1          # pixel 0 is transparent: no class
 _meta_seen = [-1]
 
@@ -595,17 +639,28 @@ def _palette_image():
     return img
 
 
+def _opacity_image():
+    img = bpy.data.images.get(META_OPACITY)
+    if img is None:
+        img = bpy.data.images.new(META_OPACITY, _PALETTE_SIZE, 1, alpha=True, float_buffer=True)
+        img.colorspace_settings.name = "Non-Color"
+        img.use_fake_user = True
+    return img
+
+
 def write_palette(scene):
-    """Class colors of the active column into the palette image."""
+    """Class colors and opacities of the active column into their images."""
     props = scene.ogc3dtiles
     px = [0.0] * (_PALETTE_SIZE * 4)
+    opacity = [1.0] * (_PALETTE_SIZE * 4)
     for item in props.meta_classes:
         if item.column == props.meta_column and 0 < item.code < _PALETTE_SIZE:
             px[item.code * 4:item.code * 4 + 4] = (*item.color, 1.0)
-    img = _palette_image()
-    img.pixels.foreach_set(px)
-    img.update()
-    img.pack()
+            opacity[item.code * 4:item.code * 4 + 3] = (item.alpha,) * 3
+    for img, values in ((_palette_image(), px), (_opacity_image(), opacity)):
+        img.pixels.foreach_set(values)
+        img.update()
+        img.pack()
     from . import phases
     phases.apply_year(scene)
 
@@ -617,7 +672,9 @@ _META_LAYOUT = {
     "Min": (-1400, -320), "Max": (-1400, -440), "Strength": (-1400, -560),
     "Column Value": (-1150, 200),
     "Math.001": (-900, 420), "Math": (-700, 420), "Combine XYZ": (-500, 420),
-    "Palette": (-300, 480),
+    "Palette": (-300, 480), "Opacity": (-300, 800),
+    "Not Number": (-300, 980), "Is Class": (-50, 900), "Class Opacity": (150, 800),
+    "Alpha Out": (450, 600),
     "Map Range": (-700, 100), "Ramp": (-450, 120),
     "Math.003": (-900, -320), "Math.002": (-700, -320),
     "Mix": (50, 300), "Mix.001": (50, -150), "Math.004": (250, -150),
@@ -636,16 +693,28 @@ def _layout_metadata_group(ng, only_if_stacked=False):
 
 def ensure_metadata_group():
     ng = bpy.data.node_groups.get(META_GROUP)
-    if ng is not None and "Texel" in ng.interface.items_tree:
+    if ng is not None and "Texel" in ng.interface.items_tree and "Alpha" in ng.interface.items_tree:
         return ng
+    stops = None
     if ng is None:
         ng = bpy.data.node_groups.new(META_GROUP, "ShaderNodeTree")
-    else:                    # a file from before texture metadata: same group, current nodes
-        ng.nodes.clear()
+    elif "Texel" not in ng.interface.items_tree:
+        ng.nodes.clear()     # a file from before texture metadata: same group, current nodes
         ng.interface.clear()
-    ng.interface.new_socket("Color", in_out="INPUT", socket_type="NodeSocketColor")
-    ng.interface.new_socket("Texel", in_out="INPUT", socket_type="NodeSocketFloat")
-    ng.interface.new_socket("Color", in_out="OUTPUT", socket_type="NodeSocketColor")
+    else:                    # from before class opacity: the sockets in use stay, with their links
+        old = ng.nodes.get("Ramp")
+        if old is not None:
+            stops = [(e.position, tuple(e.color)) for e in old.color_ramp.elements]
+        ng.nodes.clear()
+    have = {(it.name, it.in_out) for it in ng.interface.items_tree
+            if getattr(it, "item_type", "") == "SOCKET"}
+    for name, in_out, kind in (("Color", "INPUT", "NodeSocketColor"), ("Texel", "INPUT", "NodeSocketFloat"),
+                               ("Alpha", "INPUT", "NodeSocketFloat"), ("Color", "OUTPUT", "NodeSocketColor"),
+                               ("Alpha", "OUTPUT", "NodeSocketFloat")):
+        if (name, in_out) not in have:
+            socket = ng.interface.new_socket(name, in_out=in_out, socket_type=kind)
+            if name == "Alpha" and in_out == "INPUT":
+                socket.default_value = 1.0
     nodes, links = ng.nodes, ng.links
     gin, gout = nodes.new("NodeGroupInput"), nodes.new("NodeGroupOutput")
     attr = nodes.new("ShaderNodeAttribute")
@@ -689,6 +758,12 @@ def ensure_metadata_group():
     els[0].color = (0.05, 0.03, 0.4, 1.0)
     els[1].color = (0.98, 0.9, 0.15, 1.0)
     els.new(0.5).color = (0.1, 0.6, 0.5, 1.0)
+    if stops:                                   # the ramp as the user left it
+        while len(els) > 1:
+            els.remove(els[-1])
+        els[0].position, els[0].color = stops[0]
+        for position, color in stops[1:]:
+            els.new(position).color = color
     links.new(span.outputs[0], ramp.inputs["Fac"])
     above = nodes.new("ShaderNodeMath")
     above.operation = "GREATER_THAN"
@@ -719,6 +794,36 @@ def ensure_metadata_group():
     links.new(gin.outputs[0], out.inputs[6])
     links.new(pick.outputs[2], out.inputs[7])
     links.new(out.outputs[2], gout.inputs[0])
+
+    # class opacity: only where the column is a class and the cell has one
+    opac = nodes.new("ShaderNodeTexImage")
+    opac.name = "Opacity"
+    opac.image = _opacity_image()
+    opac.interpolation = "Closest"
+    opac.extension = "EXTEND"
+    links.new(uv.outputs[0], opac.inputs["Vector"])
+    not_number = nodes.new("ShaderNodeMath")
+    not_number.name = "Not Number"
+    not_number.operation = "SUBTRACT"
+    not_number.inputs[0].default_value = 1.0
+    links.new(numeric.outputs[0], not_number.inputs[1])
+    is_class = nodes.new("ShaderNodeMath")
+    is_class.name = "Is Class"
+    is_class.operation = "MULTIPLY"
+    links.new(tex.outputs["Alpha"], is_class.inputs[0])
+    links.new(not_number.outputs[0], is_class.inputs[1])
+    shown = nodes.new("ShaderNodeMix")
+    shown.name = "Class Opacity"
+    shown.data_type = "FLOAT"
+    links.new(is_class.outputs[0], shown.inputs[0])
+    shown.inputs[2].default_value = 1.0
+    links.new(opac.outputs["Color"], shown.inputs[3])
+    alpha = nodes.new("ShaderNodeMath")
+    alpha.name = "Alpha Out"
+    alpha.operation = "MULTIPLY"
+    links.new(gin.outputs["Alpha"], alpha.inputs[0])
+    links.new(shown.outputs[0], alpha.inputs[1])
+    links.new(alpha.outputs[0], gout.inputs["Alpha"])
     _layout_metadata_group(ng)
     return ng
 
@@ -851,6 +956,29 @@ def _emission_target(mat):
 TEXEL_NODE = "OGC3D Metadata Texel"
 
 
+def _alpha_target(mat):
+    """Alpha input next to ``_color_target``."""
+    nt = mat.node_tree
+    grp = next((n for n in nt.nodes if n.type == "GROUP" and n.node_tree
+                and n.node_tree.name == GROUP_NAME), None)
+    if grp is not None:
+        return grp.inputs["Alpha"]
+    bsdf = next((n for n in nt.nodes if n.type == "BSDF_PRINCIPLED" and not n.mute), None)
+    return bsdf.inputs["Alpha"] if bsdf is not None else None
+
+
+def _link_metadata_alpha(nt, node, target) -> bool:
+    """Class opacity: the node multiplies the alpha that reached ``target``."""
+    if target is None or "Alpha" not in node.outputs or node.outputs["Alpha"].links:
+        return False
+    if target.links:
+        nt.links.new(target.links[0].from_socket, node.inputs["Alpha"])
+    else:
+        node.inputs["Alpha"].default_value = target.default_value
+    nt.links.new(node.outputs["Alpha"], target)
+    return True
+
+
 def _insert_metadata_node(nt, name, target):
     node = nt.nodes.new("ShaderNodeGroup")
     node.node_tree = ensure_metadata_group()
@@ -864,18 +992,21 @@ def _insert_metadata_node(nt, name, target):
     else:
         node.inputs[0].default_value = target.default_value
     nt.links.new(node.outputs[0], target)
+    return node
 
 
 def apply_metadata(mat) -> bool:
     if mat is None or not mat.use_nodes or mat.node_tree is None:
         return False
     nt = mat.node_tree
-    if nt.nodes.get(META_NODE) is not None:
-        return False
+    node = nt.nodes.get(META_NODE)
+    if node is not None:                 # there already: from before class opacity, maybe
+        return _link_metadata_alpha(nt, node, _alpha_target(mat))
     target = _color_target(mat)
     if target is None:
         return False
-    _insert_metadata_node(nt, META_NODE, target)
+    node = _insert_metadata_node(nt, META_NODE, target)
+    _link_metadata_alpha(nt, node, _alpha_target(mat))
     emission = _emission_target(mat)
     if emission is not None:
         _insert_metadata_node(nt, META_NODE + " Emission", emission)
@@ -891,12 +1022,14 @@ def remove_metadata(mat) -> bool:
         node = nt.nodes.get(name)
         if node is None:
             continue
-        source = node.inputs[0].links[0].from_socket if node.inputs[0].links else None
-        targets = [l.to_socket for l in node.outputs[0].links]
+        through = [(node.inputs[key].links[0].from_socket if node.inputs[key].links else None,
+                    [link.to_socket for link in node.outputs[key].links])
+                   for key in (0, "Alpha") if key == 0 or key in node.outputs]
         nt.nodes.remove(node)
-        if source is not None:
-            for t in targets:
-                nt.links.new(source, t)
+        for source, targets in through:
+            if source is not None:
+                for t in targets:
+                    nt.links.new(source, t)
         removed = True
     return removed
 
@@ -940,6 +1073,39 @@ class OGC3D_OT_RelightRemove(Operator):
         return {"FINISHED"}
 
 
+def _tunable_prop(name) -> str:
+    return name.lower().replace(" ", "_").replace("-", "")
+
+
+def _tunable_accessors(name, default):
+    def get(self):
+        ng = bpy.data.node_groups.get(GROUP_NAME)
+        n = ng.nodes.get(name) if ng is not None else None
+        return n.outputs[0].default_value if n is not None else default
+
+    def put(self, value):
+        ng = bpy.data.node_groups.get(GROUP_NAME)
+        n = ng.nodes.get(name) if ng is not None else None
+        if n is not None:
+            n.outputs[0].default_value = value
+    return get, put
+
+
+def _relight_sliders():
+    """A slider per tunable, with its range; the value itself lives in the
+    group's Value node, so editing either one moves the other."""
+    annotations = {}
+    for name, default, lo, hi, text in TUNABLES:
+        get, put = _tunable_accessors(name, default)
+        annotations[_tunable_prop(name)] = bpy.props.FloatProperty(
+            name=name, description=text, soft_min=lo, soft_max=hi, get=get, set=put)
+    return type("OGC3D_RelightSliders", (bpy.types.PropertyGroup,),
+                {"__annotations__": annotations})
+
+
+OGC3D_RelightSliders = _relight_sliders()
+
+
 def draw_panel(layout, props):
     """Body of the collapsible "Materials" sub-panel."""
     from . import node_rows
@@ -955,9 +1121,9 @@ def draw_panel(layout, props):
                 col.prop(props, "relight_gold", text="Gold transfer", toggle=True)
             if name.startswith("Gold") and not props.relight_gold:
                 continue
-            n = ng.nodes.get(name)
-            if n is not None:
-                col.prop(n.outputs[0], "default_value", text=name)
+            if ng.nodes.get(name) is not None:
+                col.prop(bpy.context.window_manager.ogc3d_relight, _tunable_prop(name),
+                         slider=True)
     layout.operator("ogc3dtiles.open_nodes", text="Open a tile's material",
                     icon="MATERIAL").kind = "TILE"
 
@@ -1019,6 +1185,7 @@ def _draw_metadata_columns(layout, props):
         row = box.row(align=True)
         row.prop(item, "color", text="")
         row.label(text=item.name)
+        row.prop(item, "alpha", text="", slider=True)
     if len(rows) > _MAX_LEGEND_ROWS:
         layout.label(text=f"+ {len(rows) - _MAX_LEGEND_ROWS} more classes")
 
@@ -1065,6 +1232,8 @@ def _upgrade_group_on_load(_dummy=None):
 
 
 def register():
+    bpy.utils.register_class(OGC3D_RelightSliders)
+    bpy.types.WindowManager.ogc3d_relight = bpy.props.PointerProperty(type=OGC3D_RelightSliders)
     for c in _classes:
         bpy.utils.register_class(c)
     handlers = getattr(getattr(bpy, "app", None), "handlers", None)
@@ -1078,3 +1247,5 @@ def unregister():
         handlers.load_post.remove(_upgrade_group_on_load)
     for c in reversed(_classes):
         bpy.utils.unregister_class(c)
+    del bpy.types.WindowManager.ogc3d_relight
+    bpy.utils.unregister_class(OGC3D_RelightSliders)

@@ -333,6 +333,11 @@ class MetaClassItem(PropertyGroup):
         name="Color", subtype="COLOR", size=3, min=0.0, max=1.0,
         update=_on_meta_class_color,
     )
+    alpha: FloatProperty(
+        name="Opacity", description="Opacity of this class: 0 hides it (the ground of a LiDAR "
+                                    "cloud, for one)",
+        subtype="FACTOR", default=1.0, min=0.0, max=1.0, update=_on_meta_class_color,
+    )
 
 
 class TilesetItem(PropertyGroup):

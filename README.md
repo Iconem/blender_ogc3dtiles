@@ -215,7 +215,10 @@ With the cesium-native backend any streamed tileset can be draped with
 raster imagery, the way Cesium for Unreal / Unity do it: add entries under
 *Raster overlays* in the tileset box (URL template `{z}/{x}/{y}`, TMS, WMTS,
 WMS, Cesium ion imagery, Bing Maps, Google Map Tiles 2D, or cesium-native's
-debug colouriser) and press Start.  cesium-native projects each tile onto
+debug colouriser) and press Start.  The bookmark button under + / - adds a
+ready-made one: OpenStreetMap, Esri World Imagery and IGN orthophotos (WMTS and
+WMS) need no key and come with the add-on; overlays that need a key (Google Map
+Tiles, Bing Maps) are read from the `overlays` list of the library files.  cesium-native projects each tile onto
 the overlay's tiling scheme, adds a `_CESIUMOVERLAY_<n>` texture-coordinate
 set to the tile and streams the raster tiles that cover it at a resolution
 matching the tile's screen size; the add-on turns each raster into a packed
@@ -431,7 +434,9 @@ name. It re-reads the file just before writing and replaces it atomically.
 The bookmark button under the tileset list adds an entry from any library
 through a search popup, optionally only meshes, point clouds, splats or voxels (an entry's
 `content` field, else guessed from its words). A .blend keeps the entry's URL once added, so it
-still opens if the library entry goes away.
+still opens if the library entry goes away. The preferences have an *Edit ... in a text
+editor* button per library file; besides `tilesets`, a file can hold `overlays`, the raster
+overlay presets of the overlay list's bookmark button (same fields as an entry's own overlays).
 
 **Copy into project.** It copies the active tileset (explicit tilesets,
 external tilesets followed) into a folder, by default
@@ -498,7 +503,8 @@ object as JSON, in the `ogc3d_features` custom property, for lookups by feature 
 **Color tiles by** mixes colors into every tile material through the shared
 'OGC3D Metadata' group: one editable color per class for text, a Color Ramp between the
 column's min and max for numbers (the group's own 'Ramp' node, shown in the Metadata
-panel: add, move and recolor its stops there; edits are kept). Measured on swissBUILDINGS3D over Bern, 608 tiles:
+panel: add, move and recolor its stops there; edits are kept). Each class also has an opacity
+slider next to its color: 0 hides the class, the ground of a LiDAR cloud for one. Measured on swissBUILDINGS3D over Bern, 608 tiles:
 about 10 ms per tile on the worker threads, 2.7 MB of JSON for 468 tiles on screen, and
 0.5 s to switch to another column. Columns that differ on every row, like UUIDs, stay in
 the table only.
@@ -605,8 +611,9 @@ Off by default, under *Preferences > Add-ons > OGC 3D Tiles > Beta features*:
   metres toward the viewer to *Behind* metres away; an outline that wraps around a corner
   needs a stroke per face. *Build class grid* then treats both like any other volume.
   Checked with generated strokes, not yet with hand-drawn ones.
-- **Material controls.** The Relight sliders, gold transfer included, in the Materials
-  panel. Off, the buttons remain and the shared `OGC3D Relight` node group is where to edit
+- **Material controls.** The Relight sliders, gold transfer and X-ray (faces turned to the
+  viewer fade out) included, in the Materials panel. Albedo strength and saturation run
+  from -1 to 2. Off, the buttons remain and the shared `OGC3D Relight` node group is where to edit
   these values.
 
 ### Editing tile geometry
@@ -630,6 +637,9 @@ from normals, or both), *EDL strength*, *Crease strength*, *AO* and *Haze*
 drive Value nodes of the existing tree, so they update live without a
 rebuild (*Reset to default* in the row's menu rebuilds the tree and re-derives the
 haze range from the loaded extent).
+Cycles gives the viewport compositor the image only, no depth, normal or AO pass: in a
+Cycles Rendered viewport the tree keeps its grade and glare, and edges, AO and haze are
+switched off (the panel says so) until an F12 render, which has every pass.
 Viewport quirks handled: the viewport compositor's Depth pass is 0 / NaN
 where nothing is drawn (sanitised to "far"), its Mist and AO passes are 1
 everywhere (haze is a ramp on Depth instead), and Rendered shading lights

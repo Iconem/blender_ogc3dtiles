@@ -265,6 +265,75 @@ class OGC3D_OT_LibrarySave(Operator):
         return {"FINISHED"}
 
 
+_overlay_presets = []        # as read when the menu last drew
+
+
+class OGC3D_OT_OverlayPreset(Operator):
+    """Add this raster overlay to the selected tileset"""
+    bl_idname = "ogc3dtiles.overlay_preset"
+    bl_label = "Add Overlay Preset"
+    bl_options = {"REGISTER", "UNDO", "INTERNAL"}
+
+    index: IntProperty(options={"HIDDEN"})
+
+    def execute(self, context):
+        it = _active_item(context)
+        if it is None or not (0 <= self.index < len(_overlay_presets)):
+            return {"CANCELLED"}
+        import uuid
+        entry = _overlay_presets[self.index]
+        ov = it.overlays.add()
+        ov.uid = f"ov_{uuid.uuid4().hex[:8]}"
+        ov.enabled = False               # one live reload, once every field is set
+        library.apply_overlay(ov, entry)
+        ov.enabled = entry.get("enabled", True)
+        it.active_overlay = len(it.overlays) - 1
+        self.report({"INFO"}, f"Added overlay {ov.name}")
+        return {"FINISHED"}
+
+
+class OGC3D_MT_OverlayLibrary(bpy.types.Menu):
+    """Raster overlays ready to add: OpenStreetMap, Esri and IGN imagery, and the
+    "overlays" of the library files (those that need a key)"""
+    bl_idname = "OGC3D_MT_overlay_library"
+    bl_label = "Overlay Library"
+
+    def draw(self, context):
+        _overlay_presets[:] = library.overlay_presets(_library_paths())
+        for i, e in enumerate(_overlay_presets):
+            self.layout.operator(OGC3D_OT_OverlayPreset.bl_idname, text=e["name"]).index = i
+
+
+class OGC3D_OT_LibraryEdit(Operator):
+    """Open this library file in the system's text editor"""
+    bl_idname = "ogc3dtiles.library_edit"
+    bl_label = "Edit Library File"
+
+    path: StringProperty(options={"HIDDEN"})
+
+    def execute(self, context):
+        import subprocess
+        import sys
+        p = bpy.path.abspath(self.path)
+        if not os.path.isfile(p):
+            self.report({"ERROR"}, f"No such file: {p}")
+            return {"CANCELLED"}
+        try:
+            if sys.platform == "win32":
+                try:
+                    os.startfile(p, "edit")          # the editor registered for .json
+                except OSError:
+                    subprocess.Popen(["notepad.exe", p])
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", "-t", p])
+            else:
+                subprocess.Popen(["xdg-open", p])
+        except OSError as exc:
+            self.report({"ERROR"}, f"Could not open {p}: {exc}")
+            return {"CANCELLED"}
+        return {"FINISHED"}
+
+
 class OGC3D_OT_LibraryAddFile(Operator):
     """Add (or create) a tileset library JSON file to the preferences' list"""
     bl_idname = "ogc3dtiles.library_add_file"
@@ -478,6 +547,9 @@ _classes = [
     OGC3D_OT_LibraryAdd,
     OGC3D_OT_LibrarySave,
     OGC3D_OT_LibraryAddFile,
+    OGC3D_OT_LibraryEdit,
+    OGC3D_OT_OverlayPreset,
+    OGC3D_MT_OverlayLibrary,
     OGC3D_OT_TilesetCopy,
     OGC3D_OT_TilesetCopyCancel,
 ]

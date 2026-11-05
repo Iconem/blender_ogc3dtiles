@@ -257,6 +257,24 @@ def test_library_save_read_replace(tmp_path):
     assert library.split_paths(' a.json ; "b c.json";') == ["a.json", "b c.json"]
 
 
+def test_library_overlay_presets_survive_a_save(tmp_path):
+    lib = tmp_path / "lib.json"
+    lib.write_text('{"version": 1, "tilesets": [{"name": "a", "url": "u"}], '
+                   '"overlays": [{"name": "Keyed", "kind": "GOOGLE", "key": "k"}]}', encoding="utf-8")
+    assert [e["name"] for e in library.read_overlays(str(lib))] == ["Keyed"]
+    names = [e["name"] for e in library.overlay_presets([str(lib), str(tmp_path / "missing.json")])]
+    assert names[0] == "OpenStreetMap" and names[-1] == "Keyed"
+    library.save_entry(str(lib), {"name": "b", "url": "v"})
+    assert [e["name"] for e in library.read(str(lib))] == ["a", "b"]
+    assert [e["name"] for e in library.read_overlays(str(lib))] == ["Keyed"]
+
+    class Ov:
+        pass
+    ov = Ov()
+    library.apply_overlay(ov, library.BUILTIN_OVERLAYS[2])
+    assert (ov.kind, ov.matrix_set) == ("WMTS", "PM")
+
+
 def test_library_content_filter():
     splat = {"name": "Interior splat v3", "group": "San Pietro"}
     pts = {"name": "AkYum", "group": "Cambodia point clouds"}

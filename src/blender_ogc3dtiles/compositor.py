@@ -92,11 +92,26 @@ def _tiles_extent(scene) -> float:
     return (hi - lo).length if n else 0.0
 
 
+_rendering = [False]
+_engine_seen = {}
+
+
+def passes_missing(scene) -> bool:
+    """Cycles gives the viewport compositor the image only: no depth, normal
+    or AO pass. A final render (F12) has them all."""
+    return (scene.render.engine == "CYCLES" and not _rendering[0]
+            and not getattr(bpy.app, "background", False))
+
+
 def _settings(scene, edges=None, edl_strength=None, crease_strength=None, ao=None, haze=None):
     """Slider values: explicit arguments win, then the scene properties, then defaults."""
     p = getattr(scene, "ogc3dtiles", None)
     g = (lambda name, d: float(getattr(p, name, d)) if p is not None else d)
     edges = (edges or (getattr(p, "comp_edges", "EDL") if p is not None else "EDL")).upper()
+    if passes_missing(scene):
+        # no depth to tell near from far: the haze would cover the whole view
+        return {EDL_ENABLE: 0.0, CREASE_ENABLE: 0.0, EDL_STRENGTH: 0.0, CREASE_STRENGTH: 0.0,
+                AO_STRENGTH: 0.0, HAZE: 0.0}
     return {
         EDL_ENABLE: 1.0 if edges in ("EDL", "BOTH") else 0.0,
         CREASE_ENABLE: 1.0 if edges in ("NORMAL", "BOTH") else 0.0,
@@ -434,16 +449,55 @@ def draw_panel(layout, props):
     col.prop(props, "comp_haze", text="Haze")
     layout.prop(props, "comp_stable_viewport", text="Stable viewport (1 sample, no shimmer)")
     layout.label(text="Shown in Rendered shading (viewport compositor: Always)", icon="INFO")
+    if passes_missing(bpy.context.scene):
+        col = layout.column(align=True)
+        col.label(text="Cycles viewport: grade and glare only", icon="ERROR")
+        col.label(text="Edges, AO and haze need its passes: F12, or EEVEE")
 
 
 _classes = [OGC3D_OT_CompositorBuild, OGC3D_OT_CompositorRemove]
 
 
+def _persistent(fn):
+    handlers = getattr(getattr(bpy, "app", None), "handlers", None)
+    return handlers.persistent(fn) if handlers is not None else fn
+
+
+@_persistent
+def _on_render_start(scene, *_):
+    _rendering[0] = True
+    apply_settings(scene)
+
+
+@_persistent
+def _on_render_end(scene, *_):
+    _rendering[0] = False
+    apply_settings(scene)
+
+
+@_persistent
+def _on_engine_change(scene, *_):
+    """Switching between EEVEE and Cycles changes what the viewport tree can use."""
+    engine = scene.render.engine
+    if _engine_seen.get(scene.name) != engine:
+        _engine_seen[scene.name] = engine
+        apply_settings(scene)
+
+
+_HANDLERS = (("render_pre", _on_render_start), ("render_post", _on_render_end),
+             ("render_cancel", _on_render_end), ("depsgraph_update_post", _on_engine_change))
+
+
 def register():
     for c in _classes:
         bpy.utils.register_class(c)
+    for name, fn in _HANDLERS:
+        getattr(bpy.app.handlers, name).append(fn)
 
 
 def unregister():
+    for name, fn in _HANDLERS:
+        if fn in getattr(bpy.app.handlers, name):
+            getattr(bpy.app.handlers, name).remove(fn)
     for c in reversed(_classes):
         bpy.utils.unregister_class(c)

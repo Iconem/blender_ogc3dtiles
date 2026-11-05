@@ -107,8 +107,6 @@ class _FallbackPrefs:
     terrain_tiles_url = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"
     geoid_url = "https://raw.githubusercontent.com/CesiumGS/cesium-native/v0.59.0/data/WW15MGH.DAC"
     traversal_backend = "AUTO"
-    dev_mode = False
-    show_coord_debug = True
     cesium_install_path = ""
 
 
@@ -2058,6 +2056,7 @@ def _draw_overlays(b, it, st) -> None:
     col = row.column(align=True)
     col.operator("ogc3dtiles.overlay_add", icon="ADD", text="")
     col.operator("ogc3dtiles.overlay_remove", icon="REMOVE", text="")
+    col.menu("OGC3D_MT_overlay_library", icon="BOOKMARKS", text="")
     if 0 <= it.active_overlay < len(it.overlays):
         ov = it.overlays[it.active_overlay]
         ob = b.box()

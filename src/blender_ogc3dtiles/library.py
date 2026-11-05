@@ -11,7 +11,13 @@ add-on or its repository. Several files can be listed in the preferences
         "ion_asset_id": 0, "ion_token": "", "use_own_sse": false, "max_sse": 8.0,
         "use_overlays": false, "group": "Rome", "notes": "", "content": "MESH",
         "overlays": [{"name": "OSM", "kind": "URL", "url": "...", ...}]}
+     ],
+     "overlays": [
+       {"name": "Google satellite", "kind": "GOOGLE", "key": "...", "layer": "satellite"}
      ]}
+
+The top-level ``overlays`` are raster overlay presets, offered next to the
+key-less ones below by the overlay list's library button.
 
 ``content`` (MESH, POINTS, SPLATS or VOXELS) is optional; without it the type is guessed
 from the entry's words. No bpy here: entries convert from / to anything with the TilesetItem /
@@ -29,6 +35,19 @@ ITEM_FIELDS = ("name", "kind", "url", "ion_asset_id", "ion_token", "use_own_sse"
 OVERLAY_FIELDS = ("name", "kind", "url", "key", "layer", "style", "matrix_set",
                   "image_format", "min_level", "max_level", "detail_px", "enabled", "alpha")
 
+
+BUILTIN_OVERLAYS = (
+    {"name": "OpenStreetMap", "kind": "URL",
+     "url": "https://tile.openstreetmap.org/{z}/{x}/{y}.png", "max_level": 19},
+    {"name": "Esri World Imagery", "kind": "URL",
+     "url": "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/"
+            "tile/{z}/{y}/{x}", "max_level": 19},
+    {"name": "IGN orthophotos, France (WMTS)", "kind": "WMTS", "url": "https://data.geopf.fr/wmts",
+     "layer": "ORTHOIMAGERY.ORTHOPHOTOS", "style": "normal", "matrix_set": "PM",
+     "image_format": "image/jpeg", "max_level": 19},
+    {"name": "IGN orthophotos, France (WMS)", "kind": "WMS", "url": "https://data.geopf.fr/wms-r",
+     "layer": "ORTHOIMAGERY.ORTHOPHOTOS", "image_format": "image/jpeg", "max_level": 19},
+)
 
 CONTENT_WORDS = (("VOXELS", ("voxel",)),
                  ("SPLATS", ("splat", "3dgs", "spz")),
@@ -70,6 +89,34 @@ def read(path: str) -> list:
     return [e for e in entries if isinstance(e, dict) and e.get("name")]
 
 
+def read_overlays(path: str) -> list:
+    """Raster overlay presets of one library file."""
+    if not os.path.isfile(path):
+        return []
+    with open(path, "r", encoding="utf-8") as fh:
+        txt = fh.read().strip()
+    data = json.loads(txt) if txt else {}
+    entries = data.get("overlays", []) if isinstance(data, dict) else []
+    return [e for e in entries if isinstance(e, dict) and e.get("name")]
+
+
+def overlay_presets(paths) -> list:
+    """The key-less presets, then those of every library (unreadable files skipped)."""
+    out = [dict(e) for e in BUILTIN_OVERLAYS]
+    for p in paths:
+        try:
+            out.extend(read_overlays(p))
+        except (OSError, ValueError):
+            pass
+    return out
+
+
+def apply_overlay(ov, entry: dict) -> None:
+    for f in OVERLAY_FIELDS:
+        if f in entry:
+            setattr(ov, f, entry[f])
+
+
 def read_all(paths) -> list:
     """[(path, entry)] over every library; unreadable files are reported as
     (path, {"error": ...})."""
@@ -109,6 +156,12 @@ def save_entry(path: str, entry: dict) -> bool:
     writing and replaces it atomically, so teammates editing the same NAS
     file lose at most a concurrent edit of the same entry. True = replaced."""
     entries = read(path) if os.path.isfile(path) else []
+    other = {}                       # overlay presets and whatever else the file holds
+    if entries:
+        with open(path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        if isinstance(data, dict):
+            other = {k: v for k, v in data.items() if k not in ("version", "tilesets")}
     replaced = False
     for i, e in enumerate(entries):
         if e.get("name") == entry["name"]:
@@ -122,7 +175,8 @@ def save_entry(path: str, entry: dict) -> bool:
     os.makedirs(d, exist_ok=True)
     fd, tmp = tempfile.mkstemp(prefix=".tilesets-", suffix=".json", dir=d)
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
-        json.dump({"version": VERSION, "tilesets": entries}, fh, indent=2, ensure_ascii=False)
+        json.dump({"version": VERSION, "tilesets": entries, **other}, fh, indent=2,
+                  ensure_ascii=False)
         fh.write("\n")
     os.replace(tmp, path)
     return replaced

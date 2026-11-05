@@ -216,6 +216,8 @@ def ensure_group():
     links.new(pick.outputs[2], out.inputs[7])
     links.new(out.outputs[2], gout.inputs[0])
     links.new(_math(ng, "SUBTRACT", 1.0, _math(ng, "MULTIPLY", _value(ng, "Cut"), _math(ng, "SUBTRACT", 1.0, has))), gout.inputs[1])
+    from .node_layout import arrange
+    arrange(ng)
     return ng
 
 

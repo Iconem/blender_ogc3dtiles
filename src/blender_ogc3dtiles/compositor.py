@@ -327,6 +327,8 @@ def build_beauty_tree(scene, edges: str = None, edl_radius_px: int = 3,
         scene.use_nodes = True
     apply_settings(scene, edges=edges, edl_strength=edl_strength,
                    crease_strength=crease_strength, ao=ao, haze=haze)
+    from .node_layout import arrange
+    arrange(nt)
     return nt
 
 

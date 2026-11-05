@@ -486,9 +486,11 @@ class TilesSceneProps(PropertyGroup):
     )
     native_cache_mb: IntProperty(
         name="cesium-native cache (MB)",
-        description="Memory cesium-native may keep for tiles that are loaded but no longer "
-                    "shown, so coming back to a view is instant. It does not limit what is "
-                    "shown: tiles in view are never dropped. Applies at the next Start",
+        description="Not a cap on what is shown. cesium-native only uses it to decide how "
+                    "many tiles to keep once they are no longer shown, so that returning to "
+                    "a view is instant. Tiles in view are never dropped, even far over the "
+                    "limit. Counts cesium-native's own copy in RAM, not Blender's meshes or "
+                    "GPU memory. Applies at the next Start",
         default=512, min=0, soft_max=8192,
     )
     detail_falloff: FloatProperty(

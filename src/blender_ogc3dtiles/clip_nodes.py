@@ -216,6 +216,8 @@ def _build_volumes(name, base, loops, boxes):
             L(t, comb.inputs[1])
             acc = comb.outputs[0]
         L(acc, out)
+    from .node_layout import arrange
+    arrange(ng)
     return ng
 
 
@@ -474,6 +476,8 @@ def build_group(cfg, faces=False):
         L(cut, dg.inputs["Selection"])
         L(dg.outputs[0], go.inputs[0])
     ng["sig"] = sig
+    from .node_layout import arrange
+    arrange(ng)
     return ng
 
 

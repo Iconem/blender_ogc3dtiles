@@ -230,6 +230,8 @@ def _build_relight_group(ng):
     links.new(emis_a.outputs[0], mixsh.inputs[2])
     n_out.location = (1250, 0)
     links.new(mixsh.outputs[0], n_out.inputs["BSDF"])
+    from .node_layout import arrange
+    arrange(ng)
     return ng
 
 
@@ -296,6 +298,8 @@ def _build_clip_group(ng):
     links.new(lt.outputs[0], mul.inputs[0])
     links.new(enable.outputs[0], mul.inputs[1])
     links.new(mul.outputs[0], out.inputs[0])
+    from .node_layout import arrange
+    arrange(ng)
 
 
 def surface_target(nt, include_poly=True):
@@ -940,17 +944,15 @@ def draw_panel(layout, props):
     """Body of the collapsible "Materials" sub-panel."""
     from . import node_rows
     relit = node_rows.draw(layout, props, "auto_relight", "Shared shader nodes", "RELIGHT")
-    layout.operator("ogc3dtiles.open_nodes", text="Open a tile's material",
-                    icon="MATERIAL").kind = "TILE"
     row = layout.row(align=True)
     row.prop(props, "clip_materials", text="Clip to viewport region (Alt+B)")
-    layout.prop(props, "backface_mode", text="Faces")
     if props.clip_materials:
         from .camera import find_view3d
         r3d, _ = find_view3d()
         on = bool(r3d is not None and r3d.use_clip_planes)
         layout.label(text="Region active (Alt+B clears it)" if on
                      else "No region: drag one with Alt+B", icon="MOD_BOOLEAN" if on else "INFO")
+    layout.prop(props, "backface_mode", text="Faces")
     from .io import addon_pref
     ng = bpy.data.node_groups.get(GROUP_NAME)
     if ng is not None and relit and addon_pref("beta_material_controls", False):
@@ -964,6 +966,8 @@ def draw_panel(layout, props):
             n = ng.nodes.get(name)
             if n is not None:
                 col.prop(n.outputs[0], "default_value", text=name)
+    layout.operator("ogc3dtiles.open_nodes", text="Open a tile's material",
+                    icon="MATERIAL").kind = "TILE"
 
 
 _MAX_LEGEND_ROWS = 32
@@ -972,6 +976,7 @@ _MAX_LEGEND_ROWS = 32
 def draw_metadata_panel(layout, props):
     """Body of the collapsible "Metadata" sub-panel."""
     layout.prop(props, "read_metadata")
+    _draw_metadata_columns(layout, props)
     layout.prop(props, "voxel_display")
     if props.voxel_display == "VOLUME":
         layout.prop(props, "voxel_opacity")
@@ -980,6 +985,9 @@ def draw_metadata_panel(layout, props):
         layout.prop(props, "voxel_cut")
     else:
         layout.prop(props, "voxel_exaggeration")
+
+
+def _draw_metadata_columns(layout, props):
     from .tileset.feature_meta import TILESET_METADATA
     if TILESET_METADATA.tileset:
         box = layout.column(align=True)

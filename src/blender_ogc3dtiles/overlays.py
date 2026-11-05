@@ -281,6 +281,8 @@ def _mode_group(tileset_uid):
     L(sub.outputs[0], ab.inputs[0])
     L(ab.outputs[0], step.inputs[0])
     L(step.outputs[0], go.inputs[0])
+    from .node_layout import arrange
+    arrange(ng)
     return ng
 
 

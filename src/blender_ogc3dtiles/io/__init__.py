@@ -1148,6 +1148,8 @@ def _splats_nodegroup():
     ng.links.new(gi.outputs[0], m2p.inputs["Mesh"])
     ng.links.new(m2p.outputs[0], st.inputs[0])
     ng.links.new(st.outputs[0], go.inputs[0])
+    from ..node_layout import arrange
+    arrange(ng)
     return ng
 
 
@@ -1313,6 +1315,8 @@ def _points_nodegroup(mesh_mode=False):
     L(n_in.outputs["Material"], setmat.inputs["Material"])
     if display != "DISCS":
         L(setmat.outputs["Geometry"], n_out.inputs["Geometry"])
+    from ..node_layout import arrange
+    arrange(ng)
     return ng
 
 

@@ -2511,6 +2511,10 @@ def _open_tile_material(self, context):
         o.select_set(False)
     obj.select_set(True)
     layer.objects.active = obj
+    from ..node_layout import arrange
+    for m in obj.data.materials:        # generated per tile: nobody's hand layout to keep
+        if m is not None and m.node_tree is not None:
+            arrange(m.node_tree)
     area = _node_editor_area(context, "ShaderNodeTree")
     if area is None:
         self.report({"ERROR"}, "Could not open a node editor")

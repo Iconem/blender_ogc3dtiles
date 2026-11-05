@@ -971,8 +971,7 @@ def draw_metadata_panel(layout, props):
     _draw_metadata_columns(layout, props)
     row = layout.row(align=True)
     row.prop(props, "voxel_display")
-    from .ui import _group_button
-    _group_button(row, "OGC3D Voxel Lookup")
+    row.operator("ogc3dtiles.open_nodes", text="", icon="NODETREE").kind = "VOXEL"
     if props.voxel_display == "VOLUME":
         layout.prop(props, "voxel_opacity")
     if props.voxel_display == "PROJECT":

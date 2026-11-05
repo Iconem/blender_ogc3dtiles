@@ -45,7 +45,7 @@ What works today:
 
 ![Google Photorealistic 3D Tiles over the Colosseum in Blender: viewport with the add-on sidebar, then EEVEE, Cycles with a 10 kW lamp, and EEVEE through the beauty compositor (EDL 16)](docs/img/rome_google_3dtiles.jpg)
 
-![Sidebar: tileset list, Scene Origin, LOD / Streaming - Display, Materials - Compositor, Render, Backend](docs/img/sidebar.jpg)
+![Sidebar in three columns: main panel with raster overlays, clipping and viewport-region clip - Scene Origin, LOD / Streaming, Nodes: Material, Nodes: Geometry, Coordinate Info - Nodes: Compositing, Nodes: Metadata, Render](docs/img/sidebar.jpg)
 
 ## Installation
 

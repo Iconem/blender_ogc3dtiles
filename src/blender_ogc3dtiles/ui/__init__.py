@@ -2460,6 +2460,8 @@ class OGC3D_OT_OpenNodes(Operator):
         ("TILE", "A tile's material", "Material of the active tile, else of the first tile "
                                       "found: its texture, then the shared groups in a row"),
         ("NAMED", "Node group", "The node group named in 'group'"),
+        ("VOXEL", "Voxel lookup nodes", "'OGC3D Voxel Lookup' shader group: colors a surface "
+                                        "from the voxel tiles around it"),
     ], default="RELIGHT")
     group: bpy.props.StringProperty(options={"HIDDEN"})
 
@@ -2473,6 +2475,10 @@ class OGC3D_OT_OpenNodes(Operator):
         if self.kind == "NAMED":
             ng = bpy.data.node_groups.get(self.group)
             ui_type = ng.bl_idname if ng is not None else ""
+        elif self.kind == "VOXEL":
+            from .. import voxel_lookup
+            ng = voxel_lookup.ensure_group()
+            ui_type = "ShaderNodeTree"
         elif self.kind == "METADATA":
             _materials.update_metadata_group(context.scene)
             ng = bpy.data.node_groups.get(_materials.META_GROUP)

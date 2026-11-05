@@ -250,8 +250,11 @@ Read on 2026-11-02, nothing merged. v0.66 only reads and writes the glTF 2.1 and
 - **Caleb:** everything in section 1. Items 1 and 2 of the upstream list are small
   and ready, but he hasn't answered since 2026-10-22, and Jonathan's rule is to
   wait before opening more.
-- **3dtiled:** sending intensity and classification. Another agent has this; don't
-  touch that repo. 3dtiled's level 1 tiles also seem to overstate their geometric
+- **3dtiled:** now sends intensity and classification, opt-in with
+  `&attributes=intensity,classification` on the stream URL; checked on 2026-11-05
+  with an IGN LiDAR HD COPC tile (classification as classes, intensity through the
+  ramp with a custom range). Class names (Ground, Building...) are not shown, only
+  codes. Another agent has that repo; don't touch it. 3dtiled's level 1 tiles also seem to overstate their geometric
   error (about 3.4 m declared against 1.3 m point spacing), so 16 to 32 px suits
   them for now.
 - **Cesium:** #1486, #1914, #1488.
@@ -272,7 +275,7 @@ links and Google keys, and none were found. Keep it that way.
 |---|---|
 | `harness/` | Drives a GUI Blender from a shell: `gui_repl.py`, `run.sh`, `h.py`, `h_shot.py`. Paths inside point to `%TEMP%\ogc_tests\r9`. |
 | `adaptive_point_size/` | The #1914 comparison image, its panels, `gen_r9.py` and the generated scripts. |
-| `intensity/` | Hand-written tile with real IGN LiDAR HD `_INTENSITY` values. 3dtiled doesn't send these yet. |
+| `intensity/` | Hand-written tile with real IGN LiDAR HD `_INTENSITY` values, from before 3dtiled sent them. |
 | `spz/` | Splat tiles, compressed and raw. |
 | `nas_sample/`, `localmesh/` | Local and NAS-style tilesets. |
 | `phases/`, `strokes/` | Voxel phases written from closed meshes and from strokes. |

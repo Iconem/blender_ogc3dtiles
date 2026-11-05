@@ -212,6 +212,7 @@ def tile_payload(cs, model, raw, y_up=True, want_grid=False, registry=feature_me
         arr = _raw_accessor(model, index, keep_integers=True)
         if arr is None:
             continue
+        arr = arr.astype(np.float32, copy=False)
         if arr.shape[1] == 1:
             grid = to_tile_axes(arr[:, 0], dims, y_up, padding)
             valid = np.isfinite(grid)

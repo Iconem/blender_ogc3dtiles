@@ -167,7 +167,9 @@ def _raw_accessor(model, ai, keep_integers=False):
     the component type, byte stride and KHR normalisation.  The binding's
     typed AccessorViews are float-only, so ubyte/ushort colours (the usual
     COLOR_0 encoding of point clouds) must be decoded here.  ``keep_integers``:
-    unsigned values stay as they are unless the accessor says normalized."""
+    unsigned values stay as they are unless the accessor says normalized, and
+    bytes keep their integer type, which is what tells a LiDAR classification
+    (a class column) from a 16-bit intensity (a number column)."""
     acc = model.accessors[ai]
     ct = _enum_int(acc.component_type)
     dtype = _CT_DTYPE.get(ct)
@@ -187,6 +189,8 @@ def _raw_accessor(model, ai, keep_integers=False):
     else:
         rows = np.lib.stride_tricks.as_strided(buf[start:], shape=(n, item), strides=(stride, 1))
         arr = np.ascontiguousarray(rows).view(dtype).reshape(n, ncomp)
+    if keep_integers and not acc.normalized and np.dtype(dtype).kind in "iu" and np.dtype(dtype).itemsize == 1:
+        return arr.copy()
     out = arr.astype(np.float32)
     if dtype is not np.float32 and (acc.normalized or (ct in (5121, 5123) and not keep_integers)):
         out = out / float(np.iinfo(dtype).max)

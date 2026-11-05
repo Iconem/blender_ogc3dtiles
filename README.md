@@ -462,8 +462,10 @@ through the ramp. Batched `pnts` use the table path above.
 **Intensity and other point values.** Scalar attributes of point tiles become number columns, with
 or without `EXT_structural_metadata`: `_INTENSITY` is the column `intensity`. Their ramp spans the 1st
 to 99th percentile, since LiDAR intensity has rare huge values. **Custom range** sets both ends, live.
-Tested on real IGN LiDAR HD values written to a local tile: 3dtiled's live COPC tiles don't send
-intensity yet.
+A byte attribute with few values, such as `_CLASSIFICATION`, is a class column instead, with one
+palette color per code. Tested on an IGN LiDAR HD COPC tile streamed by 3dtiled, which sends both
+when the tileset URL ends with `&attributes=intensity,classification`. *Read feature metadata* must
+be on before Start.
 
 **Tileset, group, tile and content metadata** are read from `tileset.json`. The tileset's
 own values show in the Metadata panel; the others, merged per tile, are in the
@@ -1033,7 +1035,7 @@ the converters compiled into cesium-native.
 - [ ] Beta: burn classes into point clouds with PDAL ([draft](scripts/pdal_burn_classes.py))
 - [x] Raster overlays on point clouds
 - [x] Intensity and other number columns on point clouds, with *Custom range* for the ramp
-- [ ] Send intensity and classification through 3dtiled, whose live COPC tiles only hold positions and colors
+- [x] Intensity and classification from 3dtiled's live COPC tiles (`&attributes=intensity,classification`)
 - [x] Quantized-mesh terrain entries
 
 ## License

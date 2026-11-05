@@ -34,3 +34,17 @@ def test_robust_range_ignores_rare_huge_values():
     values = np.r_[np.linspace(100.0, 200.0, 2000), [65535.0]]
     registry.note_range("intensity", values, robust=True)
     assert registry.get("intensity").hi < 300.0
+
+
+def test_byte_attribute_with_few_values_is_a_class_column(monkeypatch):
+    """A LiDAR classification byte gets palette codes; 16-bit intensity stays a number."""
+    monkeypatch.setattr(feature_meta, "_structural", lambda model: None)
+    registry = type(feature_meta.REGISTRY)()
+    values = {1: np.array([2, 5, 6, 2], np.uint8).reshape(-1, 1),
+              2: np.array([10, 20, 30, 40], np.float32).reshape(-1, 1)}
+    prim = _prim(0, {"_CLASSIFICATION": 1, "_INTENSITY": 2})
+    columns = feature_meta.point_columns(object(), prim, 4, _read(values))
+    out = feature_meta.vertex_columns([(4, columns)], 4, registry)
+    assert registry.get("classification").kind == "class"
+    assert registry.get("intensity").kind == "number"
+    assert out[feature_meta.attribute_name("classification")].tolist() == [3, 6, 7, 3]   # code = value + 1

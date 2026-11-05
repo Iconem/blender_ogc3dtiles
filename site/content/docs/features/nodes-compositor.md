@@ -21,6 +21,17 @@ it live.
 The sliders drive Value nodes of the tree, so they act at once. The node button opens the tree to edit
 it by hand; *Reset to default* in the arrow menu rebuilds it.
 
+## Atmosphere preset
+
+**Atmosphere preset: sun, sky, haze** sets outdoor light in one click:
+
+- a sun lamp, `OGC3D Sun`: rotate it to move the light;
+- a sky for the world, with its sun in the same direction;
+- the beauty compositor on, with haze.
+
+It replaces the nodes of the scene's world. With Shared shader nodes on, lower *Baked Light* to let
+the sun shade the tiles: see [Nodes: Material Shader](/features/nodes-material).
+
 ## In Cycles
 
 Cycles gives the viewport compositor the image only: no depth, normal or ambient occlusion pass. In a

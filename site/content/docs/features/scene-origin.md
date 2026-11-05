@@ -26,6 +26,18 @@ worldwide tileset: Google Photorealistic 3D Tiles, or the WGS84 globe with image
 
 The origin is put on the ground, so the ground sits near z = 0.
 
+## Terrain tiles and geoid grid
+
+The add-on preferences list a *Terrain tiles* address and a *Geoid grid* address. Both are only used
+by *Search place*:
+
+- the **terrain tiles** give the height of the ground at the place found, above sea level;
+- the **geoid grid** converts that height above sea level into the height above the ellipsoid, which
+  is what 3D Tiles use.
+
+They are not terrain to display. To show terrain, add a *Quantized-mesh terrain* or a Cesium ion
+entry: see [Raster overlays](/features/raster-overlays).
+
 ## Details
 
 - Places come from [Photon](https://photon.komoot.io), which searches OpenStreetMap. Only the text you

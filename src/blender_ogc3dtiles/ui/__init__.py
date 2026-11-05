@@ -2237,6 +2237,8 @@ class OGC3D_PT_DisplayPanel(_OGC3DSidebar, Panel):
         props = context.scene.ogc3dtiles
         from .. import node_rows
         node_rows.draw(layout, props, "tile_geometry", "Shared geometry nodes", "GEOMETRY")
+        layout.operator_menu_enum("ogc3dtiles.geometry_demo", "demo", text="Demo graphs",
+                                  icon="GEOMETRY_NODES")
         row = layout.row(align=True)
         row.prop(props, "point_display", text="Points")
         op = row.operator("ogc3dtiles.open_nodes", text="", icon="NODETREE")

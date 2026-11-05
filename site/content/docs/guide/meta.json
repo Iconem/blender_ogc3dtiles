@@ -4,6 +4,7 @@
   "pages": [
     "installation",
     "quick-start",
-    "sidebar"
+    "sidebar",
+    "slides"
   ]
 }

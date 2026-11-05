@@ -247,7 +247,8 @@ class _GlbPreparer:
                 while up is not None and level < 64:
                     level, up = level + 1, up.parent
                 from .feature_meta import note_tile
-                self._owner.tile_info[load_result.key] = note_tile(level, tile.geometric_error)
+                self._owner.tile_info[load_result.key] = note_tile(level, tile.geometric_error,
+                                                                   load_result.key)
             except Exception as exc:          # noqa: BLE001
                 print("[3DTiles/native] tile level of %s: %r" % (load_result.key, exc))
         cb = self._owner.on_main_thread_ready

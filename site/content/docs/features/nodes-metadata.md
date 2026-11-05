@@ -49,6 +49,9 @@ Color Ramp:
 
 They show which level of detail is on screen where, and where two levels meet.
 
+A third one, **tile (random color)**, gives every tile one of 24 palette colours, to see the tiles
+themselves. A tile keeps its colour when it comes back.
+
 ## For your own nodes
 
 - Each tile has an `ogc3d_feature` vertex attribute (the row of the table) and a `meta_<column>`

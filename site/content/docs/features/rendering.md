@@ -16,7 +16,8 @@ how fine.
 
 With *Scene camera* or *Chosen camera* you keep navigating the viewport freely while another camera
 does the selecting: step back and see exactly which tiles a shot pulls in, and how detailed they are.
-Move or animate that camera and the tiles follow.
+Move or animate that camera and the tiles follow. [LOD / Streaming](/features/lod-streaming) has
+more on it, and on Max SSE.
 
 To freeze what is loaded while you look around, untick the tileset's checkbox in the list: nothing
 more is loaded or unloaded until you tick it again.

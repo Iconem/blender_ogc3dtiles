@@ -437,7 +437,10 @@ class OGC3D_OT_CompositorRemove(Operator):
 
 def draw_panel(layout, props):
     from . import node_rows
-    if not node_rows.draw(layout, props, "comp_enabled", "Beauty compositor nodes", "COMPOSITOR"):
+    on = node_rows.draw(layout, props, "comp_enabled", "Beauty compositor nodes", "COMPOSITOR")
+    layout.operator("ogc3dtiles.atmosphere", text="Atmosphere preset: sun, sky, haze",
+                    icon="LIGHT_SUN")
+    if not on:
         return
     layout.prop(props, "comp_edges", text="Edges")
     col = layout.column(align=True)

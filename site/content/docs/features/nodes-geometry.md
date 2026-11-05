@@ -18,6 +18,19 @@ It is first in each tile's modifier stack, so the point display below runs after
 A modifier is evaluated per tile, and tiles come and go as you move. Light graphs are fine; heavy
 ones (subdivision, remeshing, booleans) on hundreds of tiles will slow streaming down.
 
+## Demo graphs
+
+**Demo graphs**, under the row, replaces the shared group with a ready-made graph, on every tile. They
+are starting points to open and edit; the Value nodes at the left of each graph are its settings.
+
+| Demo | What it does |
+|---|---|
+| **Suzanne on points** | A monkey head on a share of the vertices, or of the points of a point cloud. |
+| **Noise displacement** | Vertices move along their normal with a noise that drifts over time. Press Play. |
+| **Height reveal** | The scene builds up from the ground, over and over. Press Play. |
+
+*Reset to default*, in the arrow menu of the row, takes a demo off.
+
 ## Point display
 
 Point tiles are drawn by a geometry nodes group of their own, `OGC3D Points`, which runs after the

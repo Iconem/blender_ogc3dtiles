@@ -229,6 +229,7 @@ class OGC3DTilesPreferences(AddonPreferences):
             box2.label(text="Start streaming to gather samples.", icon="INFO")
 
         layout.prop(self, "open_sidebar")
+        layout.label(text="Add-on maintainer: Jonathan Chemla, Iconem CTO", icon="USER")
 
         # ── Cache / library ───────────────────────────────────────────────────
         layout.separator()

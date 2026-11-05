@@ -305,7 +305,7 @@ class OGC3D_MT_OverlayLibrary(bpy.types.Menu):
 
 
 class OGC3D_OT_LibraryEdit(Operator):
-    """Open this library file in the system's text editor"""
+    """Open this library file in the program your system opens .json files with"""
     bl_idname = "ogc3dtiles.library_edit"
     bl_label = "Edit Library File"
 
@@ -321,11 +321,11 @@ class OGC3D_OT_LibraryEdit(Operator):
         try:
             if sys.platform == "win32":
                 try:
-                    os.startfile(p, "edit")          # the editor registered for .json
-                except OSError:
+                    os.startfile(p)                  # the program .json opens with
+                except OSError:                      # no association at all
                     subprocess.Popen(["notepad.exe", p])
             elif sys.platform == "darwin":
-                subprocess.Popen(["open", "-t", p])
+                subprocess.Popen(["open", p])
             else:
                 subprocess.Popen(["xdg-open", p])
         except OSError as exc:

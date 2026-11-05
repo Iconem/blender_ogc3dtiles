@@ -46,7 +46,8 @@ one, share a team one on the NAS: the preferences take several files, separated 
   It can show only meshes, point clouds, splats or voxels.
 - **Save to library** writes the selected entry under its name: URL, type, ion id and token, SSE, its
   overlays and their keys. An entry of the same name is replaced.
-- **Edit ... in a text editor**, in the preferences, opens a library file.
+- **Edit ... in a text editor**, in the preferences, opens a library file in the program your system
+  opens `.json` files with.
 
 A .blend keeps the URL of an entry once added, so it still opens if the library changes.
 

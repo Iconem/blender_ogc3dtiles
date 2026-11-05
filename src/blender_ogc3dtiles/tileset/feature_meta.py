@@ -159,7 +159,9 @@ REGISTRY = Registry()
 # One value per tile, from the tileset's hierarchy rather than from its content
 TILE_LEVEL = "tile level"                 # depth below the root, 0 = root
 TILE_ERROR = "tile error (log2 m)"        # log2 of the geometric error: it halves per level
-TILE_COLUMNS = (TILE_LEVEL, TILE_ERROR)
+TILE_RANDOM = "tile (random color)"       # one of TILE_COLORS palette classes, from the tile's key
+TILE_COLUMNS = (TILE_LEVEL, TILE_ERROR, TILE_RANDOM)
+TILE_COLORS = 24
 _MIN_ERROR_M = 1.0 / 1024.0               # leaves declare 0: shown as about a millimetre
 
 
@@ -172,10 +174,15 @@ def tile_values(level, geometric_error) -> dict:
     return {TILE_LEVEL: float(level), TILE_ERROR: math.log2(max(error, _MIN_ERROR_M))}
 
 
-def note_tile(level, geometric_error, registry=REGISTRY) -> dict:
+def note_tile(level, geometric_error, key="", registry=REGISTRY) -> dict:
     values = tile_values(level, geometric_error)
     for name, value in values.items():
         registry.note_range(name, np.asarray([value], np.float64))
+    import zlib
+    pick = "%02d" % (zlib.crc32(str(key).encode("utf-8")) % TILE_COLORS + 1)   # stable per tile
+    codes = registry.codes_for(TILE_RANDOM, [pick])
+    if codes is not None:
+        values[TILE_RANDOM] = float(codes[0])
     return values
 
 

@@ -63,11 +63,16 @@ def test_user_defined_las_classes_keep_their_number(monkeypatch):
 def test_tile_level_and_error_are_number_columns():
     from blender_ogc3dtiles.tileset import feature_meta
     registry = feature_meta.Registry()
-    root = feature_meta.note_tile(0, 512.0, registry)
-    leaf = feature_meta.note_tile(9, 0.0, registry)          # leaves declare no error
-    assert root == {feature_meta.TILE_LEVEL: 0.0, feature_meta.TILE_ERROR: 9.0}
+    root = feature_meta.note_tile(0, 512.0, registry=registry)
+    leaf = feature_meta.note_tile(9, 0.0, registry=registry)          # leaves declare no error
+    assert (root[feature_meta.TILE_LEVEL], root[feature_meta.TILE_ERROR]) == (0.0, 9.0)
     assert leaf[feature_meta.TILE_ERROR] == -10.0
     columns = {name: (kind, lo, hi) for name, kind, lo, hi, _n in registry.columns()}
     assert columns[feature_meta.TILE_LEVEL] == ("number", 0.0, 9.0)
     assert columns[feature_meta.TILE_ERROR] == ("number", -10.0, 9.0)
     assert feature_meta.tile_values(3, float("inf"))[feature_meta.TILE_ERROR] == -10.0
+    # a palette class per tile, the same one whenever that tile comes back
+    a = feature_meta.note_tile(4, 2.0, "tiles/a.glb", registry)[feature_meta.TILE_RANDOM]
+    again = feature_meta.note_tile(4, 2.0, "tiles/a.glb", registry)[feature_meta.TILE_RANDOM]
+    assert a == again and 1 <= a <= feature_meta.TILE_COLORS + 1
+    assert dict((n, k) for n, k, *_ in registry.columns())[feature_meta.TILE_RANDOM] == "class"

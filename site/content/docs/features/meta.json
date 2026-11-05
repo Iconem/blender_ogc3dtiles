@@ -3,6 +3,7 @@
   "defaultOpen": true,
   "pages": [
     "scene-origin",
+    "lod-streaming",
     "raster-overlays",
     "clipping",
     "---Tileset types---",

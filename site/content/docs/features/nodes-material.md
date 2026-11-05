@@ -32,9 +32,30 @@ The node button opens the group to edit it by hand. Its Value nodes are also ava
   from -1 to 2. Off, the buttons remain and the shared `OGC3D Relight` node group is where to edit
   these values.
 
-In Rendered shading without lamps the tiles are not black: *Baked Light* (0.5 by default) makes half
-of the material emit its own colour, and the add-on brightens Blender's default dark world once when
-the scene has no sun.
+## Lighting with your own lamps
+
+In Rendered shading the tiles are lit by three things, and two of them are not your lamps:
+
+- **Baked Light** (0.5 by default) makes that share of the material emit its own colour, as
+  photogrammetry already carries its light;
+- the **world**: the add-on brightens Blender's default dark world once, when the scene has no sun;
+- your **lamps**.
+
+For lamps only, set *Baked Light* to 0 and the world's Surface strength to 0 (World properties).
+
+Without Shared shader nodes there is no Baked Light: mesh tiles are plain lit materials. Two cases
+still emit their colour whatever the lamps: point clouds, and tiles that declare themselves unlit,
+which Google Photorealistic 3D Tiles do.
+
+## X-ray
+
+The **X-ray** slider makes the tiles see-through: faces turned toward you fade out, faces seen at a
+grazing angle stay. Walls and outlines then read through each other, which suits interiors and
+plan-like views from an orthographic top camera. **X-ray Falloff** sets how fast a face fades as it
+turns toward you.
+
+In Material Preview the transparency looks stippled; it smooths out in Rendered shading as samples
+accumulate, and in final renders.
 
 ## Faces
 

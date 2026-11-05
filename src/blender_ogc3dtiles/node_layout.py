@@ -22,8 +22,8 @@ _EXTRA = {                       # rows of buttons a node draws besides its sock
 
 
 def _height(node) -> float:
-    if node.hide:
-        return 40.0
+    if node.hide:                    # collapsed: grows with its sockets, drawn around its origin
+        return 60.0 + 14.0 * max(len(node.inputs), len(node.outputs))
     rows = sum(1 for s in node.outputs if s.enabled and not s.hide)
     rows += sum(1 for s in node.inputs if s.enabled and not s.hide)
     return 40.0 + _ROW * (rows + _EXTRA.get(node.bl_idname, 1))
@@ -78,15 +78,22 @@ def arrange(tree) -> bool:
             return sum(ys) / len(ys) if ys else 0.0
 
         want = {n: wanted(n) for n in col}
-        col.sort(key=lambda n: -want[n])
+        if d == 0:                                 # outputs first, dead ends under them
+            col.sort(key=lambda n: "Output" not in n.bl_idname)
+        else:
+            col.sort(key=lambda n: -want[n])
         y = None
         placed = []
         for n in col:
             ny = want[n] if y is None else min(want[n], y - GAP_Y)
+            if n.hide:
+                ny -= _height(n) / 2
             placed.append((n, ny))
             y = ny - _height(n)
         # the stack drifts down when nodes want the same place: centre it back
         shift = (sum(want[n] for n in col) - sum(ny for _, ny in placed)) / len(col)
+        if d == 0:
+            shift = 0.0
         for n, ny in placed:
             top[n] = ny + shift
             n.location = (x, ny + shift)

@@ -858,7 +858,7 @@ def _start_stream(scene, props, st, choice, cache) -> None:
                            detail_falloff=props.detail_falloff,
                            max_dist=props.load_distance,
                            cache_dir=cache.root if props.use_disk_cache else None,
-                           direct_mesh=props.native_direct_mesh,
+                           direct_mesh=addon_pref("direct_mesh", True),
                            read_metadata=props.read_metadata,
                            voxel_grids=props.voxel_display != "FACES",
                            voxel_exaggeration=1.0 if props.voxel_display == "PROJECT" else props.voxel_exaggeration,
@@ -900,7 +900,7 @@ def _start_stream(scene, props, st, choice, cache) -> None:
             fit_clip_range(root_r)
         st["download_mgr"] = TileDownloadManager(
             max_concurrent=props.max_concurrent_requests, token=st["token"], cache=cache,
-            direct_mesh=props.native_direct_mesh)
+            direct_mesh=addon_pref("direct_mesh", True))
         st["mode"] = "python"
         _add_root_bbox(scene, st)
     else:
@@ -2038,6 +2038,16 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
         else:
             layout.prop(props, "tileset_url", text="URL")
             layout.prop(props, "cesium_ion_token", text="Ion Token")
+        b = layout.box()                # all tilesets: the viewport's Alt+B region
+        row = b.row(align=True)
+        row.prop(props, "clip_materials", text="Clip to viewport region (Alt+B)")
+        _group_button(row, "OGC3D Clip")
+        if props.clip_materials:
+            from ..camera import find_view3d
+            r3d, _ = find_view3d()
+            on = bool(r3d is not None and r3d.use_clip_planes)
+            b.label(text="Region active (Alt+B clears it)" if on
+                    else "No region: drag one with Alt+B", icon="MOD_BOOLEAN" if on else "INFO")
 
 
 
@@ -2078,8 +2088,20 @@ def _draw_overlays(b, it, st) -> None:
             ob.label(text="Changes apply live", icon="INFO")
 
 
+def _group_button(row, name) -> None:
+    """Node-editor button for a node group that exists only once it is in use."""
+    if name and name in bpy.data.node_groups:
+        op = row.operator("ogc3dtiles.open_nodes", text="", icon="NODETREE")
+        op.kind = "NAMED"
+        op.group = name
+
+
 def _draw_clipping(b, it, st) -> None:
-    b.prop(it, "clip_mode", text="")
+    row = b.row(align=True)
+    row.prop(it, "clip_mode", text="")
+    from .. import clip_nodes
+    volumes = clip_nodes._current_volumes(it.uid) if it.uid else None
+    _group_button(row, volumes.name if volumes is not None else "")
     b.prop(it, "clip_geometry")
     row = b.row()
     row.template_list("OGC3D_UL_ClipPolygons", "", it, "clip_polygons", it, "active_clip", rows=2)
@@ -2168,7 +2190,6 @@ class OGC3D_PT_LodPanel(_OGC3DSidebar, Panel):
                 sub.prop(props, "load_distance", text="Max Distance m")
             else:
                 sub.prop(props, "native_cache_mb", text="cesium-native cache MB")
-            sub.prop(props, "native_direct_mesh", text="Direct mesh (numpy, both backends)")
             row = sub.row(align=True)
             row.prop(props, "use_disk_cache", text="Disk cache")
             row.operator("ogc3dtiles.clear_cache", icon="TRASH", text="")
@@ -2223,10 +2244,12 @@ class OGC3D_PT_DisplayPanel(_OGC3DSidebar, Panel):
         else:
             layout.prop(props, "point_scale", text="Point scale")
         if any(o.get("splats") for o in bpy.data.objects):
-            from ..io import splats_supported
-            layout.label(text=("Gaussian splat tiles: native 3DGS point clouds" if splats_supported()
-                               else "Splat tiles shown as points (Blender 5.3+ renders splats)"),
-                         icon="OUTLINER_OB_POINTCLOUD" if splats_supported() else "INFO")
+            from ..io import SPLATS_NODEGROUP, splats_supported
+            row = layout.row(align=True)
+            row.label(text=("Gaussian splat tiles: native 3DGS point clouds" if splats_supported()
+                            else "Splat tiles shown as points (Blender 5.3+ renders splats)"),
+                      icon="OUTLINER_OB_POINTCLOUD" if splats_supported() else "INFO")
+            _group_button(row, SPLATS_NODEGROUP)
         if props.point_display == "MESH":
             layout.label(text="Solid mode: Shading → Color → Attribute", icon="INFO")
         elif props.point_display == "DISCS":
@@ -2252,7 +2275,7 @@ class OGC3D_PT_MaterialsPanel(_OGC3DSidebar, Panel):
 
 
 class OGC3D_PT_MetadataPanel(_OGC3DSidebar, Panel):
-    bl_label = "Metadata"
+    bl_label = "Nodes: Metadata"
     bl_idname = "OGC3D_PT_metadata"
     bl_order = 6
     bl_options = {"DEFAULT_CLOSED"}
@@ -2436,7 +2459,9 @@ class OGC3D_OT_OpenNodes(Operator):
                                              "of number columns, the palette of classes"),
         ("TILE", "A tile's material", "Material of the active tile, else of the first tile "
                                       "found: its texture, then the shared groups in a row"),
+        ("NAMED", "Node group", "The node group named in 'group'"),
     ], default="RELIGHT")
+    group: bpy.props.StringProperty(options={"HIDDEN"})
 
     def execute(self, context):
         from .. import materials as _materials
@@ -2445,7 +2470,10 @@ class OGC3D_OT_OpenNodes(Operator):
         props = context.scene.ogc3dtiles
         if self.kind == "TILE":
             return self._open_tile_material(context)
-        if self.kind == "METADATA":
+        if self.kind == "NAMED":
+            ng = bpy.data.node_groups.get(self.group)
+            ui_type = ng.bl_idname if ng is not None else ""
+        elif self.kind == "METADATA":
             _materials.update_metadata_group(context.scene)
             ng = bpy.data.node_groups.get(_materials.META_GROUP)
             ui_type = "ShaderNodeTree"

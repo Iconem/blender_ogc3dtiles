@@ -169,6 +169,12 @@ class OGC3DTilesPreferences(AddonPreferences):
         description="Relight sliders in the Nodes: Material panel, gold transfer included. Off, the "
                     "shared 'OGC3D Relight' node group is the place to edit them",
         default=False)
+    direct_mesh: BoolProperty(
+        name="Direct mesh (numpy, both backends)",
+        description="Build Blender meshes from numpy arrays instead of re-importing a GLB "
+                    "(faster). Off = use the glTF importer, to compare or to work around a "
+                    "tile the direct path gets wrong. Applies at the next Start",
+        default=True)
     cesium_install_path: StringProperty(
         name="cesium-native-python source dir",
         description=(
@@ -269,6 +275,7 @@ class OGC3DTilesPreferences(AddonPreferences):
         box3 = layout.box()
         box3.label(text="Developer", icon="SCRIPT")
         box3.prop(self, "dev_mode")
+        box3.prop(self, "direct_mesh")
         box3.prop(self, "show_coord_debug")
 
 

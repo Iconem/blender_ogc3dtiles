@@ -109,17 +109,19 @@ re-orderable with the drag handle in its header, like the Object
 Properties tabs; Blender remembers the order and the folded state).
 Default order, top to bottom: the status line, Start / Stop / Clear, the
 tileset list, the selected tileset's fields, then its **Raster overlays** and
-**Clipping** each in a box of its own with the checkbox that switches it on;
+**Clipping** each in a box of its own with the checkbox that switches it on,
+and a third box for **Clip to viewport region (Alt+B)**, which applies to all
+tilesets;
 **Scene Origin** (collapsed), then **LOD / Streaming** (Max SSE, Parallel
 DL, Imports / tick, Max points / vertices, and a collapsed *Advanced*
-sub-panel: build time while navigating, direct mesh, disk cache, per-stream
+sub-panel: build time while navigating, disk cache, per-stream
 backend stats, and with the pure Python backend its own settings: Max Tiles,
 foveation, detail falloff, max distance; with cesium-native its cache size in
 MB), **Nodes: Material** (shared shader nodes, a button that opens a tile's own
-material, viewport-region clip, faces), **Nodes: Geometry** (shared geometry
+material, faces), **Nodes: Geometry** (shared geometry
 nodes, point display and radius, relation lines),
 **Nodes: Compositing** (beauty compositor nodes, edges and sliders, stable viewport),
-**Metadata** (collapsed), **Render** (collapsed), then the
+**Nodes: Metadata** (collapsed), **Render** (collapsed), then the
 collapsed **Coordinate Info** panel.  The backend is chosen in the add-on
 preferences.  **Max points / vertices (M, beta)** caps what is shown, all tilesets
 together: over the cap every tileset is streamed coarser (its SSE is
@@ -147,6 +149,30 @@ own texture.  The shared groups are nodes inside each of them, in this order:
 tile texture (or vertex color) → `OGC3D Metadata` (*Color tiles by*) →
 `OGC3D Relight` (*Shared shader nodes*) → Material Output.  *Open a tile's
 material* shows it for the active tile, or the first one found.
+
+Every node group the add-on builds is laid out in columns when it is built or
+reset, and has a node-editor button next to the setting it belongs to: the
+four rows above, the point display, splat tiles, the voxel display, a
+tileset's clipping volumes and the viewport-region clip.  Raster overlays have
+no group of their own: their nodes are in each tile's material.
+
+A tile's material, here a point tile with a raster overlay, clipping, the
+metadata colors and the shared shader nodes:
+
+![A tile's own material](docs/img/nodes_tile_material.jpg)
+
+Its parts: `OGC3D Clip` (viewport-region clip), `OGC3D Relight` (shared shader
+nodes) and `OGC3D Metadata` (color tiles by):
+
+![OGC3D Clip](docs/img/nodes_clip.jpg)
+![OGC3D Relight](docs/img/nodes_relight.jpg)
+![OGC3D Metadata](docs/img/nodes_metadata.jpg)
+
+Geometry nodes of the point display (`OGC3D Points`; the shared geometry nodes
+are a pass-through until edited) and the `OGC3D Beauty` compositor tree:
+
+![OGC3D Points](docs/img/nodes_points.jpg)
+![OGC3D Beauty](docs/img/nodes_compositor.jpg)
 
 The glTF importer (Python backend, or "Direct mesh" off) is silenced to
 WARNING while tiles import; the direct mesh path prints nothing per tile.
@@ -675,7 +701,7 @@ keep clip start above clip end / 1e7 if you use Alt+B.  The clipping region
 only affects drawing, not which tiles stream, and in Blender 5.1 only Solid
 and Wireframe shading honour it: EEVEE (Material Preview, Rendered) ignores
 the clipping region on any scene, add-on or not.  **Clip to viewport region**
-(Nodes: Material section) works around that: every tile material gets a Mix Shader
+(main panel, under Clipping) works around that: every tile material gets a Mix Shader
 to a Transparent BSDF driven by the shared 'OGC3D Clip' group, into which the
 add-on copies the viewport's clip planes each tick.  While it is on, Alt+B
 alone toggles the clipping (drag a region to clip, Alt+B again to clear);
@@ -908,7 +934,7 @@ material.  Point clouds become vertex-only meshes, see [Point clouds](#point-clo
 Measured main-thread cost per tile: 8–9 ms direct vs 10–13 ms
 through `bpy.ops.import_scene.gltf`; the direct path also needs no temp files
 and works regardless of which glTF extensions Blender's importer knows.
-Toggle: "Direct mesh" in the sidebar (off = GLB re-import).
+Toggle: "Direct mesh" in the add-on preferences, Developer box (off = GLB re-import).
 
 The Python backend uses the same route: `tileset/gltf_payload.py` is a pure
 numpy GLB reader (any accessor type incl. KHR_mesh_quantization, interleaved

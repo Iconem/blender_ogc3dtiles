@@ -944,14 +944,6 @@ def draw_panel(layout, props):
     """Body of the collapsible "Materials" sub-panel."""
     from . import node_rows
     relit = node_rows.draw(layout, props, "auto_relight", "Shared shader nodes", "RELIGHT")
-    row = layout.row(align=True)
-    row.prop(props, "clip_materials", text="Clip to viewport region (Alt+B)")
-    if props.clip_materials:
-        from .camera import find_view3d
-        r3d, _ = find_view3d()
-        on = bool(r3d is not None and r3d.use_clip_planes)
-        layout.label(text="Region active (Alt+B clears it)" if on
-                     else "No region: drag one with Alt+B", icon="MOD_BOOLEAN" if on else "INFO")
     layout.prop(props, "backface_mode", text="Faces")
     from .io import addon_pref
     ng = bpy.data.node_groups.get(GROUP_NAME)
@@ -977,7 +969,10 @@ def draw_metadata_panel(layout, props):
     """Body of the collapsible "Metadata" sub-panel."""
     layout.prop(props, "read_metadata")
     _draw_metadata_columns(layout, props)
-    layout.prop(props, "voxel_display")
+    row = layout.row(align=True)
+    row.prop(props, "voxel_display")
+    from .ui import _group_button
+    _group_button(row, "OGC3D Voxel Lookup")
     if props.voxel_display == "VOLUME":
         layout.prop(props, "voxel_opacity")
     if props.voxel_display == "PROJECT":

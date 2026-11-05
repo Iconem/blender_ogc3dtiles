@@ -1,0 +1,26 @@
+{
+  "name": "blender-ogc3dtiles-slides",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "packageManager": "pnpm@10.20.0",
+  "scripts": {
+    "sync:assets": "node scripts/sync-assets.mjs",
+    "dev": "node scripts/sync-assets.mjs && open-slide dev",
+    "build": "node scripts/sync-assets.mjs && open-slide build",
+    "preview": "open-slide preview",
+    "static": "node scripts/publish.mjs --serve",
+    "pdf": "node scripts/publish.mjs --pdf"
+  },
+  "dependencies": {
+    "@open-slide/core": "^2.0.1",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "pdf-lib": "1.17.1",
+    "playwright-core": "1.63.0"
+  }
+}

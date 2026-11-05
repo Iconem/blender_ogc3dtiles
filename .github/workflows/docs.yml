@@ -1,10 +1,17 @@
-# Builds site/ (a standalone Next.js + Fumadocs app: user guide and features in site/content/docs, developer notes
-# and screenshots copied from docs/ at build time by site/scripts/sync-content.mjs) and deploys the static export to
-# GitHub Pages: https://<owner>.github.io/blender_ogc3dtiles/.
-# Run by hand for now. Once Pages is enabled on the repository (Settings > Pages > Source: GitHub Actions), add:
-#   push: { branches: [main], paths: ["site/**", "docs/**", ".github/workflows/docs.yml"] }
+# Builds and deploys to GitHub Pages (https://<owner>.github.io/blender_ogc3dtiles/):
+#   site/    a standalone Next.js + Fumadocs app: user guide and features in site/content/docs, developer notes and
+#            screenshots copied from docs/ at build time by site/scripts/sync-content.mjs;
+#   slides/  the open-slide decks, as a static site under /slides/ and one PDF per deck under /slides/pdf/.
+# Pages serves one artifact per repository, so the decks are copied into the docs export before the upload.
 name: docs site
 on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "slides/**"
+      - "docs/**"
+      - ".github/workflows/docs.yml"
   workflow_dispatch:
 permissions:
   contents: read
@@ -21,9 +28,18 @@ jobs:
       - uses: pnpm/action-setup@v4
         with: { version: 10.20.0 }        # no package.json at the repository root to infer it from
       - uses: actions/setup-node@v5
-        with: { node-version: 22, cache: pnpm, cache-dependency-path: site/pnpm-lock.yaml }
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: |
+            site/pnpm-lock.yaml
+            slides/pnpm-lock.yaml
       - run: pnpm --dir site install --frozen-lockfile
       - run: pnpm --dir site build
+      - run: pnpm --dir slides install --frozen-lockfile
+      # the static decks, then each one printed to .site/pdf/<deck>.pdf by the runner's own Chrome
+      - run: node slides/scripts/publish.mjs --base /blender_ogc3dtiles/slides/ --pdf
+      - run: cp -r slides/.site site/out/slides
       - uses: actions/upload-pages-artifact@v4
         with: { path: site/out }
   deploy:

@@ -1,0 +1,2 @@
+# A workspace root of its own (its own install and lockfile), like docs/ and tools/.
+packages: []

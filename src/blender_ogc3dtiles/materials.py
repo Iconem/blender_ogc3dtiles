@@ -940,6 +940,8 @@ def draw_panel(layout, props):
     """Body of the collapsible "Materials" sub-panel."""
     from . import node_rows
     relit = node_rows.draw(layout, props, "auto_relight", "Shared shader nodes", "RELIGHT")
+    layout.operator("ogc3dtiles.open_nodes", text="Open a tile's material",
+                    icon="MATERIAL").kind = "TILE"
     row = layout.row(align=True)
     row.prop(props, "clip_materials", text="Clip to viewport region (Alt+B)")
     layout.prop(props, "backface_mode", text="Faces")
@@ -969,6 +971,7 @@ _MAX_LEGEND_ROWS = 32
 
 def draw_metadata_panel(layout, props):
     """Body of the collapsible "Metadata" sub-panel."""
+    layout.prop(props, "read_metadata")
     layout.prop(props, "voxel_display")
     if props.voxel_display == "VOLUME":
         layout.prop(props, "voxel_opacity")
@@ -983,7 +986,6 @@ def draw_metadata_panel(layout, props):
         box.label(text="Tileset", icon="INFO")
         for name, value in sorted(TILESET_METADATA.tileset.items()):
             box.label(text=f"{name}: {value}")
-    layout.prop(props, "read_metadata")
     if not props.read_metadata:
         return
     if not props.meta_columns:

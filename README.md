@@ -114,13 +114,14 @@ tileset list, the selected tileset's fields, then its **Raster overlays** and
 DL, Imports / tick, Max points / vertices, and a collapsed *Advanced*
 sub-panel: build time while navigating, direct mesh, disk cache, per-stream
 backend stats, and with the pure Python backend its own settings: Max Tiles,
-foveation, detail falloff, max distance), **Nodes: Geometry** (shared geometry
+foveation, detail falloff, max distance; with cesium-native its cache size in
+MB), **Nodes: Material** (shared shader nodes, a button that opens a tile's own
+material, viewport-region clip, faces), **Nodes: Geometry** (shared geometry
 nodes, point display and radius, relation lines),
-**Nodes: Material** (shared shader nodes, viewport-region clip, faces),
 **Nodes: Compositing** (beauty compositor nodes, edges and sliders, stable viewport),
 **Metadata** (collapsed), **Render** (collapsed), then the
 collapsed **Coordinate Info** panel.  The backend is chosen in the add-on
-preferences.  **Max points / vertices (M)** caps what is shown, all tilesets
+preferences.  **Max points / vertices (M, beta)** caps what is shown, all tilesets
 together: over the cap every tileset is streamed coarser (its SSE is
 multiplied, the panel shows by how much) until the view fits, and detail
 returns when there is room.  0, the default, means no cap; the coarsest tiles
@@ -144,8 +145,8 @@ be adapted by hand; the sliders keep driving the same Value nodes.
 There is no single material for all tiles: every tile keeps its own, with its
 own texture.  The shared groups are nodes inside each of them, in this order:
 tile texture (or vertex color) → `OGC3D Metadata` (*Color tiles by*) →
-`OGC3D Relight` (*Shared shader nodes*) → Material Output.  To see it, select a
-tile and open the Shader Editor.
+`OGC3D Relight` (*Shared shader nodes*) → Material Output.  *Open a tile's
+material* shows it for the active tile, or the first one found.
 
 The glTF importer (Python backend, or "Direct mesh" off) is silenced to
 WARNING while tiles import; the direct mesh path prints nothing per tile.
@@ -303,7 +304,7 @@ Tiles entirely cut by the
 volumes aren't downloaded.
 
 On mesh tiles the cut is done in the material, so Solid view, snapping and
-exports still see the full mesh. **Also cut in Solid view and exports** also deletes the faces that
+exports still see the full mesh. **Slower: Also cut in solid view/exports** also deletes the faces that
 are entirely cut, with Geometry Nodes and without fetching anything again. Faces
 across the boundary stay whole outside the Material and Rendered views. It's off
 by default because it slows down dragging a box on large scenes. Point clouds

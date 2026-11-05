@@ -854,6 +854,7 @@ def _start_item(scene, props, item) -> dict:
 def _start_stream(scene, props, st, choice, cache) -> None:
     backend = make_backend(choice, max_sse=st["max_sse"] * _state.get("cap_factor", 1.0),
                            max_tiles=props.max_loaded_tiles,
+                           max_cached_mb=props.native_cache_mb,
                            detail_falloff=props.detail_falloff,
                            max_dist=props.load_distance,
                            cache_dir=cache.root if props.use_disk_cache else None,
@@ -2150,7 +2151,7 @@ class OGC3D_PT_LodPanel(_OGC3DSidebar, Panel):
         col.prop(props, "max_screen_space_error", text="Max SSE (live)")
         col.prop(props, "max_concurrent_requests", text="Parallel DL")
         col.prop(props, "imports_per_tick", text="Imports / tick")
-        col.prop(props, "max_elements_m", text="Max points / vertices (M)")
+        col.prop(props, "max_elements_m", text="Max points / vertices (M, beta)")
         if props.max_elements_m > 0 and props.is_streaming:
             layout.label(text=f"Shown: {_state.get('cap_total', 0) / 1e6:.2f} M   "
                               f"SSE x{_state.get('cap_factor', 1.0):.2f}", icon="INFO")
@@ -2165,6 +2166,8 @@ class OGC3D_PT_LodPanel(_OGC3DSidebar, Panel):
                 row.prop(props, "foveated_relaxation", text="Edge SSE relax")
                 sub.prop(props, "detail_falloff", text="Detail Falloff m")
                 sub.prop(props, "load_distance", text="Max Distance m")
+            else:
+                sub.prop(props, "native_cache_mb", text="cesium-native cache MB")
             sub.prop(props, "native_direct_mesh", text="Direct mesh (numpy, both backends)")
             row = sub.row(align=True)
             row.prop(props, "use_disk_cache", text="Disk cache")
@@ -2190,7 +2193,7 @@ class OGC3D_PT_LodPanel(_OGC3DSidebar, Panel):
 class OGC3D_PT_DisplayPanel(_OGC3DSidebar, Panel):
     bl_label = "Nodes: Geometry"
     bl_idname = "OGC3D_PT_display"
-    bl_order = 3
+    bl_order = 4
 
     def draw_header(self, context):
         self.layout.label(text="", icon="OUTLINER_DATA_POINTCLOUD")
@@ -2230,17 +2233,13 @@ class OGC3D_PT_DisplayPanel(_OGC3DSidebar, Panel):
             layout.label(text="Discs follow glTF normals, else face the view", icon="INFO")
         else:
             layout.label(text="Colours in Material Preview / Rendered", icon="INFO")
-        row = layout.row(align=True)
-        row.prop(props, "hide_relation_lines", text="Hide relation lines")
-        shown = _relationship_lines_shown(context)
-        row.operator("ogc3dtiles.relation_lines", text="",
-                     icon="HIDE_OFF" if shown else "HIDE_ON", depress=shown)
+        layout.prop(props, "hide_relation_lines", text="Hide relation lines")
 
 
 class OGC3D_PT_MaterialsPanel(_OGC3DSidebar, Panel):
     bl_label = "Nodes: Material"
     bl_idname = "OGC3D_PT_materials"
-    bl_order = 4
+    bl_order = 3
 
     def draw_header(self, context):
         self.layout.label(text="", icon="MATERIAL")
@@ -2255,7 +2254,7 @@ class OGC3D_PT_MaterialsPanel(_OGC3DSidebar, Panel):
 class OGC3D_PT_MetadataPanel(_OGC3DSidebar, Panel):
     bl_label = "Metadata"
     bl_idname = "OGC3D_PT_metadata"
-    bl_order = 5
+    bl_order = 6
     bl_options = {"DEFAULT_CLOSED"}
 
     def draw_header(self, context):
@@ -2301,7 +2300,7 @@ class OGC3D_PT_CompositorPanel(_OGC3DSidebar, Panel):
 class OGC3D_PT_RenderPanel(_OGC3DSidebar, Panel):
     bl_label = "Render"
     bl_idname = "OGC3D_PT_render"
-    bl_order = 6
+    bl_order = 7
     bl_options = {"DEFAULT_CLOSED"}
 
     def draw_header(self, context):
@@ -2435,6 +2434,8 @@ class OGC3D_OT_OpenNodes(Operator):
         ("GEOMETRY", "Tile geometry nodes", "'OGC3D Tile Geometry' group applied to every tile"),
         ("METADATA", "Metadata color nodes", "'OGC3D Metadata' shader group: the Color Ramp "
                                              "of number columns, the palette of classes"),
+        ("TILE", "A tile's material", "Material of the active tile, else of the first tile "
+                                      "found: its texture, then the shared groups in a row"),
     ], default="RELIGHT")
 
     def execute(self, context):
@@ -2442,6 +2443,8 @@ class OGC3D_OT_OpenNodes(Operator):
         from .. import compositor as _compositor
         from ..io import _GROUP_FOR_MODE
         props = context.scene.ogc3dtiles
+        if self.kind == "TILE":
+            return self._open_tile_material(context)
         if self.kind == "METADATA":
             _materials.update_metadata_group(context.scene)
             ng = bpy.data.node_groups.get(_materials.META_GROUP)
@@ -2489,6 +2492,39 @@ class OGC3D_OT_OpenNodes(Operator):
         area.tag_redraw()
         _view_all_nodes(context, area)
         return {"FINISHED"}
+
+
+def _open_tile_material(self, context):
+    from .. import materials as _materials
+
+    def usable(o):
+        return (o is not None and o.type == "MESH" and o.data is not None
+                and any(m is not None and m.use_nodes for m in o.data.materials)
+                and _materials._is_tile_object(o))
+    layer = context.view_layer
+    obj = layer.objects.active if usable(layer.objects.active) else next(
+        (o for o in layer.objects if usable(o) and o.visible_get()), None)
+    if obj is None:
+        self.report({"WARNING"}, "No tile with a material in the scene yet")
+        return {"CANCELLED"}
+    for o in context.selected_objects:
+        o.select_set(False)
+    obj.select_set(True)
+    layer.objects.active = obj
+    area = _node_editor_area(context, "ShaderNodeTree")
+    if area is None:
+        self.report({"ERROR"}, "Could not open a node editor")
+        return {"CANCELLED"}
+    space = area.spaces.active
+    space.shader_type = "OBJECT"
+    space.pin = False                   # follows the active object: this tile
+    area.tag_redraw()
+    _view_all_nodes(context, area)
+    self.report({"INFO"}, f"Material of tile '{obj.name}'")
+    return {"FINISHED"}
+
+
+OGC3D_OT_OpenNodes._open_tile_material = _open_tile_material
 
 
 class OGC3D_OT_NodesReset(Operator):

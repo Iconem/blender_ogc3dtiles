@@ -123,7 +123,7 @@ entries and point intensity. Section 4 lists what to do next.
   explicit) are no longer refused. A Google crop was copied for real with the
   studio key, the key ended up nowhere on disk, and the copy streams.
 - Clipping, second pass (`docs/clipping.md`): mode switches touch no material
-  (two view-layer attributes), masks always per polygon, optional geometry cut (*Also cut in Solid view and exports*).
+  (two view-layer attributes), masks always per polygon, optional geometry cut (*Slower: Also cut in solid view/exports*).
 - Imagery overlays keyed by uid and mixed in list order: layers sharing a
   projection coexist.
 - 3D Tiles of splats stream and clip, SPZ

@@ -28,7 +28,7 @@ which chain to read (`any`), and whether to invert the result (`invert`).
 | Clip-polygon test | Shader, edge by edge | Geometry Nodes, vertical raycast on a flat helper mesh |
 | Clip-polygon over 64 points | cesium-native mask, sampled in the shader | Same raycast |
 | Box test | Shader, in the box's object space | Geometry Nodes, in the box's object space |
-| Removing what's cut | Transparent BSDF; faces too with *Also cut in Solid view and exports* | Delete Geometry on points |
+| Removing what's cut | Transparent BSDF; faces too with *Also cut in solid view/exports* | Delete Geometry on points |
 | Skipping whole tiles, clip-polygons | cesium-native excluder | cesium-native excluder |
 | Skipping whole tiles, boxes | Python `ITileExcluder` | Python `ITileExcluder` |
 
@@ -176,10 +176,10 @@ first in the stack) deletes the cut points.
 Terms combine the same way as in materials. The cesium mask can't serve here:
 these tiles carry no overlay texture coordinates.
 
-## Also cut in Solid view and exports (mesh tiles)
+## Also cut in solid view/exports (mesh tiles)
 
 The shader only hides pixels. Solid and Wireframe views, snapping and exports
-still see the full mesh. **Also cut in Solid view and exports** adds the same test to mesh tiles as a
+still see the full mesh. **Slower: Also cut in solid view/exports** adds the same test to mesh tiles as a
 second group (`OGC3D Clip Faces <uid>`), which deletes the faces whose points
 are **all** cut. No tile is fetched again.
 

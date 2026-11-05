@@ -264,6 +264,11 @@ TILESET_KINDS = [
 ]
 
 
+def _on_relation_lines(self, context):
+    from ..ui import _set_relationship_lines
+    _set_relationship_lines(context, not self.hide_relation_lines)
+
+
 def _on_clip_edit(self, context):
     """Clipping list / mode edited: rebuild the masks of a running tileset."""
     from ..ui import clip_mark_dirty
@@ -364,7 +369,7 @@ class TilesetItem(PropertyGroup):
     clip_mode: EnumProperty(name="Mode", items=CLIP_MODES, default="CUT_ANY",
                             update=_on_clip_edit)
     clip_geometry: BoolProperty(
-        name="Also cut in Solid view and exports",
+        name="Slower: Also cut in solid view/exports",
         description="Also delete the mesh faces that are entirely cut (Geometry Nodes), so "
                     "Solid view, snapping and exports see the cut. Faces across the boundary "
                     "stay whole outside the Material and Rendered views. Costs some viewport "
@@ -474,9 +479,17 @@ class TilesSceneProps(PropertyGroup):
     )
     hide_relation_lines: BoolProperty(
         name="Hide relation lines",
-        description="Turn off the dashed object→parent lines overlay in every 3D viewport "
-                    "when streaming starts (it is a per-viewport overlay, not per object)",
-        default=True,
+        description="Turn off the dashed object→parent lines overlay in every 3D viewport, "
+                    "now and when streaming starts (it is a per-viewport overlay, not per "
+                    "object)",
+        default=True, update=_on_relation_lines,
+    )
+    native_cache_mb: IntProperty(
+        name="cesium-native cache (MB)",
+        description="Memory cesium-native may keep for tiles that are loaded but no longer "
+                    "shown, so coming back to a view is instant. It does not limit what is "
+                    "shown: tiles in view are never dropped. Applies at the next Start",
+        default=512, min=0, soft_max=8192,
     )
     detail_falloff: FloatProperty(
         name="Detail Falloff (m)",

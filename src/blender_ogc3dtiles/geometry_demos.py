@@ -97,7 +97,7 @@ def _suzanne_on_points(ng, gin, gout):
 
 
 def _noise_displacement(ng, gin, gout):
-    amplitude = _value(ng, "Amplitude", 2.0)
+    amplitude = _value(ng, "Amplitude", 6.0)
     scale = _value(ng, "Noise Scale", 0.05)
     speed = _value(ng, "Speed", 0.5)
     time = ng.nodes.new("GeometryNodeInputSceneTime")

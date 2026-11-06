@@ -18,6 +18,10 @@ With a camera selected, the viewport is free: orbit, step back, and look at what
 in. Tiles refine inside its view and stay coarse, or are not loaded at all, outside of it. Move the
 camera, or scrub the timeline when it is animated, and the tiles follow.
 
+![Looking through the scene camera that selects the tiles, over the Capitoline Hill in Rome](/img/lod_camera_view.jpg)
+
+![The same moment from outside: tiles exist, and are detailed, only where the camera looks](/img/lod_outside_view.jpg)
+
 - Looking through the camera (Numpad 0) shows what a render will contain.
 - Looking from outside shows how far the selection reaches and where detail stops. It is the way to
   check a shot before a long render, or to understand why a view is heavy.

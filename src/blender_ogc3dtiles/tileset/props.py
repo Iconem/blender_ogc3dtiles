@@ -585,11 +585,11 @@ class TilesSceneProps(PropertyGroup):
     )
     point_adapt_min_px: FloatProperty(
         name="Min size (px)", description="Attenuated mode: points never smaller than this on screen",
-        default=2.0, min=0.0, max=64.0, update=_on_point_radius,
+        default=1.0, min=0.0, max=64.0, update=_on_point_radius,
     )
     point_adapt_max_px: FloatProperty(
         name="Max size (px)", description="Attenuated mode: points never larger than this on screen",
-        default=12.0, min=0.5, max=256.0, update=_on_point_radius,
+        default=3.0, min=0.5, max=256.0, update=_on_point_radius,
     )
     point_px: FloatProperty(
         name="Point size (px)", description="Screen mode: point diameter in pixels",

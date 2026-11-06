@@ -6,7 +6,7 @@ description: "What changed, newest first"
 Dates are those of the commits. Versions are the tags on the Releases page; *Unreleased* is on the
 main branch and not in a release zip yet.
 
-## Unreleased
+## 0.6.0 (2026-11-06)
 
 **Streaming and cameras**
 
@@ -20,6 +20,11 @@ main branch and not in a release zip yet.
 - An **opacity per class**: hide the ground of a LiDAR cloud.
 - LiDAR classification read from COPC tiles streamed by 3dtiled, with the LAS class names and colours.
 - The Color Ramp of number columns is editable in the panel.
+
+**Point clouds**
+
+- Attenuated point size stays between 1 and 3 px on screen by default (it was 2 to 12 px), so
+  coarse tiles no longer show as large discs while finer ones load.
 
 **Nodes**
 

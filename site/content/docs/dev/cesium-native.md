@@ -7,13 +7,17 @@ description: "Building the wheel, versions and upgrade notes"
 
 The add-on installs pre-built wheels (see
 [Installing the native backend](/guide/installation)).  The build
-fixes for Windows, manylinux and macOS were merged upstream
+fixes for Windows, manylinux and macOS
 ([cesium-native-python#3](https://github.com/calebbuffa/cesium-native-python/pull/3),
-October 2026), so `pip install .` works from a plain checkout; the
-cibuildwheel workflow that publishes wheels
-([#4](https://github.com/calebbuffa/cesium-native-python/pull/4)) is under
-review, and the jo-chemla fork publishes them meanwhile.  This repository's
-manual `cesium-native-wheel.yml` workflow predates both.
+October 2026) and the cibuildwheel workflow that builds wheels for the three
+OSes and CPython 3.11 to 3.13
+([#4](https://github.com/calebbuffa/cesium-native-python/pull/4), merged
+5 November 2026) are both upstream, so `pip install .` works from a plain
+checkout and a `v*` tag there builds and publishes wheels.  Upstream has not
+tagged a release yet, so the add-on still installs from the jo-chemla fork's
+release; once a release exists on the upstream repository, the
+*Wheel release repo* preference can point there.  The add-on no longer
+carries a patch or a wheel workflow of its own.
 
 ## What vcpkg is, and why the wheel takes hours to build the first time
 

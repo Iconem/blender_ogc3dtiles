@@ -6,13 +6,14 @@ Blender backend (`tileset/native_backend.py`, `tileset/native_mesh.py`,
 
 ## A. Blocks Windows users, fix ready (PR material)
 
-Patch: `third_party/cesium-native-python-windows.patch` (109 lines, 4 files).
+> Done: A1 and A2 merged as #3 (2026-10-22), A3 as #4 (2026-11-05). The patch
+> this section described was removed from `third_party/` on 2026-11-07.
 
 | # | Symptom | Ask |
 |---|---------|-----|
 | A1 | Head does not compile with MSVC: `GeometryBindings.cpp` is missing a `});`; `UpsampledQuadtreeNode` and `GeocoderFeature` are bound with `py::init<>()` but have no default constructor; a `def_property` carries a `py::arg`; `TileChildrenResult` needs `pybind11::detail::is_copy_constructible` specialised to `false` (it holds move-only `Tile`s). | Merge the patch. Note pybind11 2.13 vs 3.x differ on the property annotations. |
 | A2 | `Dependencies.cmake`: libzip is configured before cesium-native, so vcpkg's zlib is not found on Windows. | Order libzip after cesium-native, set `ZLIB_ROOT` to the vcpkg prefix on WIN32. |
-| A3 | No wheels, no release: every user pays the 75-minute vcpkg bootstrap. | cibuildwheel for Linux, macOS, Windows on CPython 3.11 to 3.13 (Blender 4.x ships 3.11, 5.x ships 3.13). Our workflow: `.github/workflows/cesium-native-wheel.yml`. |
+| A3 | No wheels, no release: every user pays the 75-minute vcpkg bootstrap. | cibuildwheel for Linux, macOS, Windows on CPython 3.11 to 3.13 (Blender 4.x ships 3.11, 5.x ships 3.13). Upstream workflow: `.github/workflows/wheels.yml` (from #4). |
 
 ## B. Cannot be worked around from Python
 

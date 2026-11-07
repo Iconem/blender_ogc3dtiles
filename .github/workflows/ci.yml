@@ -9,7 +9,7 @@ on:
 jobs:
   # Pure-Python tests: traversal, coordinates, GLB payload reader. No Blender,
   # no cesium-native (its tests are marked "cesium" and skip when the binding
-  # is absent; the wheel is built by the manual cesium-native-wheel workflow).
+  # is absent; the wheel comes from the cesium-native-python wheels workflow).
   test:
     runs-on: ubuntu-latest
     strategy:

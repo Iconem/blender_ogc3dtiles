@@ -66,9 +66,9 @@ entries and point intensity. Section 4 lists what to do next.
 |---|---|---|
 | [#2 issue](https://github.com/calebbuffa/cesium-native-python/issues/2) | Meta issue: A1-A3 (build), B1-B4 (partial workarounds), C1-C12 (full workarounds). | Open. Caleb (2026-10-21) takes all of it and welcomes PRs. Our status reply (2026-10-22) and the v0.65 bump / orthographic note (posted by Jonathan, late October) have no answer yet. |
 | [#3](https://github.com/calebbuffa/cesium-native-python/pull/3) | A1 + A2: `pip install .` on Windows, Linux, macOS. | Merged (`521956e`). |
-| [#4](https://github.com/calebbuffa/cesium-native-python/pull/4) | A3: cibuildwheel 3 OSes × CPython 3.11-3.13, Release + PyPI trusted-publishing jobs. | Open, waiting for Caleb (he must set up PyPI publishing). Branch `ci/wheels` (`1ffdf92`). |
-| [#7](https://github.com/calebbuffa/cesium-native-python/pull/7) | One cast so Python subclasses of `GltfModifier` can override `apply`. Branch `fix/gltf-modifier-subclass`, on `main`. | Open, waiting for Caleb. |
-| [#5](https://github.com/calebbuffa/cesium-native-python/pull/5) | C1, C2, C3, C4+C7 (docs), C8, C9. Stacked on #4. | Open, waiting for Caleb. Branch `bindings/c-items` (`775d220`). After #4 merges, rebase if needed, `--force-with-lease` to the fork. |
+| [#4](https://github.com/calebbuffa/cesium-native-python/pull/4) | A3: cibuildwheel 3 OSes × CPython 3.11-3.13, Release + PyPI trusted-publishing jobs. | Merged (`0832a75`, 2026-11-05). No tag, release, workflow run or PyPI project upstream yet (checked 2026-11-07). |
+| [#7](https://github.com/calebbuffa/cesium-native-python/pull/7) | One cast so Python subclasses of `GltfModifier` can override `apply`. | Merged (`4b55c1a`, 2026-11-05). |
+| [#5](https://github.com/calebbuffa/cesium-native-python/pull/5) | C1, C2, C3, C4+C7 (docs), C8, C9. | Merged (`a8d3974`, 2026-11-05). |
 
 - Waiting on Caleb: C6, C10, C11 (API shape, or need cesium-native changes),
   C12 (his), and his pick on the GIL (B3).
@@ -77,8 +77,12 @@ entries and point intensity. Section 4 lists what to do next.
 - The fork's release `v0.1.0-wheels.1` holds wheels from #3 + #4 only. The
   add-on keeps its own workarounds so it runs on either build. The add-on's
   preferences have an "Install wheel from GitHub Release" button.
-- On 2026-11-04, #4, #5 and #7 have only a bot's review and no answer from Caleb.
-  Check again before starting binding work.
+- 2026-11-05: Caleb merged #4, #5 and #7 and said contributions are welcome
+  (issue #2). Upstream `main` is `4b55c1a`; it contains our Windows patch, so
+  `third_party/` and the add-on's `cesium-native-wheel.yml` were deleted on
+  2026-11-07. The fork's release `v0.1.0-wheels.1` predates #5 and #7: a wheel
+  with them needs a run of the fork's `wheels.yml` on upstream `main` (or an
+  upstream `v*` tag, which Caleb has not pushed).
 - A local binding checkout with its build is in `C:\tmp\cnp` (1.4 GB, on
   `fix/gltf-modifier-subclass`), with a venv in `C:\tmp\cnpvenv` and a cp313 wheel
   in `C:\tmp\cnpwheel`. The vcpkg tree is in `C:\Users\jonathan\.ezvcpkg` (a cold
@@ -191,8 +195,9 @@ entries and point intensity. Section 4 lists what to do next.
 - Which camera drives tile selection (picker) — Jonathan: "could be good".
 - Origin shifting / one origin per sub-level (zoom out to the globe and back)
   — later.
-- Install wheels from PyPI or bundle them once #4 ships; drop the workarounds
-  #5 makes redundant (keep a version check).
+- Install wheels from the upstream release or PyPI once Caleb tags one (the
+  *Wheel release repo* preference already takes any `owner/name`); drop the
+  workarounds #5 makes redundant (keep a version check).
 - COPC / Potree loader as a Python content loader.
 
 ### Coming in cesium-native: 3D Tiles 2.0

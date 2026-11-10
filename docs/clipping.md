@@ -105,7 +105,9 @@ Manifold booleans, which need closed meshes;
 [cesium-native#1307](https://github.com/CesiumGS/cesium-native/pull/1307) (open)
 fixes `GltfModifier` with raster overlays;
 [cesium-native#1486](https://github.com/CesiumGS/cesium-native/issues/1486) asks for
-geometry clipping by box or polygon.
+geometry clipping by box or polygon; Cesium agreed it belongs in cesium-native
+([our reply on libraries and licences](https://github.com/CesiumGS/cesium-native/issues/1486#issuecomment-6769509999),
+summed up in `docs/cesium-native-clipping-request.md`).
 
 ## Mesh tiles: one shared group
 
@@ -185,9 +187,10 @@ are **all** cut. No tile is fetched again.
 
 Faces crossing the boundary stay whole, so the edge in Solid view and in exports
 follows the mesh's triangles. Material and Rendered views stay exact, because
-the shader still trims those faces. An exact mesh edge would need a boolean per
-tile, which is much slower and fails on the non-manifold meshes tiles usually
-are.
+the shader still trims those faces. An exact mesh edge doesn't need a boolean,
+which would fail on the non-manifold meshes tiles usually are: clipping each
+triangle against the volume's planes (or the polygon, in 2D) is enough. The
+add-on doesn't do it: it's left to a native modifier (cesium-native#1486).
 
 Measured on Google 3D Tiles over the Vatican (about 1400 visible tiles, 3.2 M
 faces, one clip-polygon and one box, while tiles were still streaming, so the numbers

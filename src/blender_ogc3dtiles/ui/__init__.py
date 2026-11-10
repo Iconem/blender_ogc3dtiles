@@ -817,6 +817,11 @@ class OGC3D_OT_StartStream(Operator):
             _set_relationship_lines(context, False)
         if bpy.app.background:
             props.is_streaming = True      # drive with ui.stream_tick() yourself
+        elif MODAL_RUNNING[0]:
+            # Stop then Start inside one script leaves the previous modal alive (it
+            # only exits on its next event): reuse it instead of stacking another
+            props.is_streaming = True
+            props.status_text = "Streaming…"
         else:
             bpy.ops.ogc3dtiles.modal_stream("INVOKE_DEFAULT")
         return {"FINISHED"}
@@ -1640,6 +1645,11 @@ def _build_native_tile(scene, props, st, rt) -> bool:
     from ..tileset.native_backend import blender_matrix_for_tile
 
     root_obj, coll = _root_and_coll(scene, st)
+    old = st["tiles"].pop(rt.key, None)
+    if old is not None:
+        # same content loaded a second time: without this the first object is
+        # orphaned and stays visible over the finer tiles
+        remove_tiles([(old.holder, old.data)])
     m = blender_matrix_for_tile(rt.transform_ecef, *_frame(props, st), rt.rtc, rt.up_axis)
     t_imp = time.perf_counter()
     if rt.mesh_payload is not None:
@@ -1654,6 +1664,8 @@ def _build_native_tile(scene, props, st, rt) -> bool:
     st["import_s"] = st.get("import_s", 0.0) + (time.perf_counter() - t_imp)
     st["import_n"] = st.get("import_n", 0) + 1
     if r:
+        live = st.setdefault("live", {})
+        live[rt.key] = live.get(rt.key, 0) + 1
         st["tiles"][rt.key] = _Rec(r[0], r[1])
         st["dirty"] = True
         info = getattr(st["backend"], "tile_info", {}).get(rt.key)
@@ -1709,7 +1721,16 @@ def _tick_native(scene, props, st, now) -> bool:
                 fit_clip_range(r)
 
     batch = []
+    live = st.setdefault("live", {})
     for key in backend.pop_freed():
+        # a tile freed and loaded again in the same update is rebuilt (inside
+        # backend.tick) before we get here: this free is for the object that
+        # _build_native_tile already replaced, the record is the new one
+        n = live.get(key, 0) - 1
+        if n > 0:
+            live[key] = n
+            continue
+        live.pop(key, None)
         rec = tiles.pop(key, None)
         if rec is not None:
             batch.append((rec.holder, rec.data))

@@ -1,0 +1,38 @@
+[
+ [
+  1.0,
+  "shared shader nodes"
+ ],
+ [
+  3.95,
+  "albedo to clay"
+ ],
+ [
+  9.93,
+  "albedo back"
+ ],
+ [
+  13.25,
+  "scroll sidebar"
+ ],
+ [
+  15.08,
+  "atmosphere preset"
+ ],
+ [
+  16.51,
+  "rendered"
+ ],
+ [
+  20.44,
+  "select sun"
+ ],
+ [
+  24.38,
+  "rotate sun"
+ ],
+ [
+  37.02,
+  "cycles"
+ ]
+]

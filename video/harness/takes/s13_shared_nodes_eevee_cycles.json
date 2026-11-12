@@ -1,0 +1,50 @@
+[
+ [
+  0.8,
+  "shift+b cathedral"
+ ],
+ [
+  5.3,
+  "material panel"
+ ],
+ [
+  11.57,
+  "shared shader nodes"
+ ],
+ [
+  14.66,
+  "atmosphere preset"
+ ],
+ [
+  29.11,
+  "rendered"
+ ],
+ [
+  34.43,
+  "albedo to clay"
+ ],
+ [
+  39.72,
+  "albedo back"
+ ],
+ [
+  42.95,
+  "demo graphs: suzanne on points"
+ ],
+ [
+  57.78,
+  "beauty compositor"
+ ],
+ [
+  70.82,
+  "edges: normal creases"
+ ],
+ [
+  81.75,
+  "cycles"
+ ],
+ [
+  114.4,
+  "back to eevee"
+ ]
+]

@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "tilesets": [
+    {
+      "name": "Vysehrad Basilica & parks, Prague (D. Dworschak, 83M splats)",
+      "kind": "TILESET",
+      "url": "%3DTILED%/stream/tileset.json?format=sog&url=https://d28zzqy0iyovbz.cloudfront.net/1b7afbf6/v1/lod-meta.json",
+      "group": "Streamed SOG via 3dtiled",
+      "content": "SPLATS",
+      "notes": "SuperSplat scene superspl.at/scene/1b7afbf6, splat-transform streamed SOG (7 LOD levels), served as 3D Tiles by 3dtiled /stream?format=sog"
+    },
+    {
+      "name": "Sacre-Coeur splat (Iconem)",
+      "kind": "TILESET",
+      "url": "%OGC_SCRATCH%\\dl\\sacre_coeur\\3dtiles\\tileset.json",
+      "group": "Paris",
+      "content": "SPLATS",
+      "notes": "Iconem .splat tiled with splat-transform + 3dtiled"
+    },
+    {
+      "name": "IGN LiDAR HD - Eiffel tile (COPC)",
+      "kind": "TILESET",
+      "url": "%OGC_SCRATCH%\\dl\\eiffel\\3dtiles\\tileset.json",
+      "group": "Paris",
+      "content": "POINTS",
+      "notes": "IGN LiDAR HD classified point cloud, 3dtiled"
+    },
+    {
+      "name": "Clermont-Ferrand mesh (CRAIG)",
+      "kind": "TILESET",
+      "url": "https://3d.craig.fr/datasets/Clermont/3dtiles/tileset.json",
+      "group": "France",
+      "content": "MESH"
+    },
+    {
+      "name": "Strasbourg photomesh 2022 (Od@CiT)",
+      "kind": "TILESET",
+      "url": "https://s3.eu-west-2.wasabisys.com/ems-sgct-photomaillage/ODACIT/EMS_PM2022/tileset.json",
+      "group": "France",
+      "content": "MESH"
+    },
+    {
+      "name": "Elevator splats (William Liu)",
+      "kind": "TILESET",
+      "url": "https://raw.githubusercontent.com/WilliamLiu-1997/3D-Tiles-RendererJS-3DGS-Plugin/main/data/Elevator-3dtiles/tileset.json",
+      "group": "Samples",
+      "content": "SPLATS"
+    },
+    {
+      "name": "Dingo Gap mesh (NASA AMMOS)",
+      "kind": "TILESET",
+      "url": "https://raw.githubusercontent.com/NASA-AMMOS/3DTilesSampleData/master/msl-dingo-gap/0528_0260184_to_s64o256_colorize/0528_0260184_to_s64o256_colorize/0528_0260184_to_s64o256_colorize_tileset.json",
+      "group": "Samples",
+      "content": "MESH"
+    },
+    {
+      "name": "Clermont-Ferrand mesh",
+      "kind": "TILESET",
+      "url": "https://3d.craig.fr/datasets/Clermont/3dtiles/tileset.json",
+      "ion_asset_id": 0,
+      "ion_token": "",
+      "use_own_sse": false,
+      "max_sse": 8.0,
+      "use_overlays": false,
+      "overlays": [],
+      "group": "Demo"
+    }
+  ]
+}

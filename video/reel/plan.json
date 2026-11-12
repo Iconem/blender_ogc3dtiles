@@ -1,0 +1,180 @@
+{
+ "s1d_sacre_coeur_full.mp4": {
+  "src": "C:/Users/cnj/Videos/blender_ogc3dtiles_screencasts/s1d_sacre_coeur_full.mp4",
+  "activity": "%OGC_SCRATCH%/reel/idle/s1d_sacre_coeur_full.activity.json",
+  "keep": [
+   [
+    8.5,
+    null
+   ]
+  ]
+ },
+ "s3a_clermont_place.mp4": {
+  "src": "C:/Users/cnj/Videos/blender_ogc3dtiles_screencasts/s3a_clermont_place.mp4",
+  "activity": "%OGC_SCRATCH%/reel/idle/s3a_clermont_place.activity.json",
+  "keep": [
+   [
+    8.8,
+    null
+   ]
+  ]
+ },
+ "s3c_clermont_shader_sun_cycles.mp4": {
+  "src": "C:/Users/cnj/Videos/blender_ogc3dtiles_screencasts/s3c_clermont_shader_sun_cycles.mp4",
+  "activity": "%OGC_SCRATCH%/reel/idle/s3c_clermont_shader_sun_cycles.activity.json",
+  "keep": [
+   [
+    0,
+    null
+   ]
+  ]
+ },
+ "s4a_eiffel_points.mp4": {
+  "src": "C:/Users/cnj/Videos/blender_ogc3dtiles_screencasts/s4a_eiffel_points.mp4",
+  "activity": "%OGC_SCRATCH%/reel/idle/s4a_eiffel_points.activity.json",
+  "keep": [
+   [
+    10.8,
+    null
+   ]
+  ]
+ },
+ "s4b_eiffel_classes_overlay.mp4": {
+  "src": "C:/Users/cnj/Videos/blender_ogc3dtiles_screencasts/s4b_eiffel_classes_overlay.mp4",
+  "activity": "%OGC_SCRATCH%/reel/idle/s4b_eiffel_classes_overlay.activity.json",
+  "keep": [
+   [
+    2.5,
+    null
+   ]
+  ]
+ },
+ "s5b_camera_stream.mp4": {
+  "src": "C:/Users/cnj/Videos/blender_ogc3dtiles_screencasts/s5b_camera_stream.mp4",
+  "activity": "%OGC_SCRATCH%/reel/idle/s5b_camera_stream.activity.json",
+  "keep": [
+   [
+    2.5,
+    null
+   ]
+  ]
+ },
+ "s6b_clermont_suzanne_compositor.mp4": {
+  "src": "C:/Users/cnj/Videos/blender_ogc3dtiles_screencasts/s6b_clermont_suzanne_compositor.mp4",
+  "activity": "%OGC_SCRATCH%/reel/idle/s6b_clermont_suzanne_compositor.activity.json",
+  "keep": [
+   [
+    0,
+    null
+   ]
+  ]
+ },
+ "s7b_clipping_london.mp4": {
+  "src": "C:/Users/cnj/Videos/blender_ogc3dtiles_screencasts/s7b_clipping_london.mp4",
+  "activity": "%OGC_SCRATCH%/reel/idle/s7b_clipping_london.activity.json",
+  "keep": [
+   [
+    0,
+    null
+   ]
+  ]
+ },
+ "s9_library_strasbourg.mp4": {
+  "src": "C:/Users/cnj/Videos/blender_ogc3dtiles_screencasts/s9_library_strasbourg.mp4",
+  "activity": "%OGC_SCRATCH%/reel/idle/s9_library_strasbourg.activity.json",
+  "keep": [
+   [
+    2.5,
+    19.5
+   ]
+  ]
+ },
+ "s12c_google_bing_solid.mp4": {
+  "src": "%OGC_SCRATCH%/reel/src_takes/s12c_google_bing_solid.mp4",
+  "activity": "%OGC_SCRATCH%/reel/idle_src/s12c_google_bing_solid.activity.json",
+  "keep": [
+   [
+    0,
+    9.0
+   ],
+   [
+    23.4,
+    75.5
+   ],
+   [
+    88.3,
+    null
+   ]
+  ]
+ },
+ "s11b_google_split_camera.mp4": {
+  "src": "C:/Users/cnj/Videos/blender_ogc3dtiles_screencasts/s11b_google_split_camera.mp4",
+  "activity": "%OGC_SCRATCH%/reel/idle/s11b_google_split_camera.activity.json",
+  "keep": [
+   [
+    0,
+    null
+   ]
+  ]
+ },
+ "s4d_eiffel_points.mp4": {
+  "src": "C:/Users/cnj/Videos/blender_ogc3dtiles_screencasts/s4d_eiffel_points.mp4",
+  "activity": "%OGC_SCRATCH%/reel/idle/s4d_eiffel_points.activity.json",
+  "keep": [
+   [
+    0,
+    null
+   ]
+  ]
+ },
+ "s4e_eiffel_classes.mp4": {
+  "src": "C:/Users/cnj/Videos/blender_ogc3dtiles_screencasts/s4e_eiffel_classes.mp4",
+  "activity": "%OGC_SCRATCH%/reel/idle/s4e_eiffel_classes.activity.json",
+  "keep": [
+   [
+    0,
+    null
+   ]
+  ]
+ },
+ "s4f_clermont_overlay.mp4": {
+  "src": "C:/Users/cnj/Videos/blender_ogc3dtiles_screencasts/s4f_clermont_overlay.mp4",
+  "activity": "%OGC_SCRATCH%/reel/idle/s4f_clermont_overlay.activity.json",
+  "keep": [
+   [
+    0,
+    null
+   ]
+  ]
+ },
+ "s13_shared_nodes_eevee_cycles.mp4": {
+  "src": "C:/Users/cnj/Videos/blender_ogc3dtiles_screencasts/s13_shared_nodes_eevee_cycles.mp4",
+  "activity": "%OGC_SCRATCH%/reel/idle/s13_shared_nodes_eevee_cycles.activity.json",
+  "keep": [
+   [
+    0,
+    null
+   ]
+  ]
+ },
+ "s14_san_pietro.mp4": {
+  "src": "C:/Users/cnj/Videos/blender_ogc3dtiles_screencasts/s14_san_pietro.mp4",
+  "activity": "%OGC_SCRATCH%/reel/idle/s14_san_pietro.activity.json",
+  "keep": [
+   [
+    0,
+    null
+   ]
+  ]
+ },
+ "s15_shramko_lublin.mp4": {
+  "src": "C:/Users/cnj/Videos/blender_ogc3dtiles_screencasts/s15_shramko_lublin.mp4",
+  "activity": "%OGC_SCRATCH%/reel/idle/s15_shramko_lublin.activity.json",
+  "keep": [
+   [
+    0,
+    null
+   ]
+  ]
+ }
+}

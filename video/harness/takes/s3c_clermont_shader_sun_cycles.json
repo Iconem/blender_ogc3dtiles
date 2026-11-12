@@ -1,0 +1,42 @@
+[
+ [
+  1.0,
+  "material panel"
+ ],
+ [
+  7.04,
+  "shared shader nodes"
+ ],
+ [
+  10.64,
+  "scroll sidebar"
+ ],
+ [
+  14.3,
+  "atmosphere preset"
+ ],
+ [
+  21.74,
+  "rendered"
+ ],
+ [
+  28.47,
+  "albedo to clay"
+ ],
+ [
+  35.37,
+  "albedo back"
+ ],
+ [
+  39.43,
+  "select sun"
+ ],
+ [
+  41.86,
+  "rotate sun about Z"
+ ],
+ [
+  55.37,
+  "cycles"
+ ]
+]

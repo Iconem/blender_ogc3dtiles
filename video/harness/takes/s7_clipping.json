@@ -1,0 +1,38 @@
+[
+ [
+  1.0,
+  "add cube"
+ ],
+ [
+  7.97,
+  "scale cube"
+ ],
+ [
+  10.87,
+  "display as bounds"
+ ],
+ [
+  12.57,
+  "clipping on"
+ ],
+ [
+  16.36,
+  "add cube as clipping box"
+ ],
+ [
+  25.84,
+  "grab cube"
+ ],
+ [
+  38.42,
+  "rotate cube"
+ ],
+ [
+  50.8,
+  "add circle polygon"
+ ],
+ [
+  61.34,
+  "add circle as clip polygon"
+ ]
+]

@@ -45,6 +45,7 @@ from ..io import (
 from ..tileset.backend import PythonBackend, make_backend, probe_cesium
 from ..tileset.budget import cap_factor
 from ..tileset.native_backend import GLOBE_URL
+from ..tileset.origin import origin_lla, set_origin
 from ..tileset.traversal import (
     Tile,
     TileState,
@@ -131,7 +132,7 @@ def _frame(props, st=None):
     origin, or the stream's own frame (a non-georeferenced tileset streamed
     once the origin was fixed sits at the Blender origin in its own axes)."""
     own = st.get("frame") if st else None
-    return own or (props.origin_lat, props.origin_lon, props.origin_height)
+    return own or origin_lla(props)
 
 
 def _enu_from_ecef(props, st=None):
@@ -963,7 +964,7 @@ def _decide_origin(props, center_ecef, radius_m=None):
             other["last_sig"] = None
         return None
     if props.origin_mode == "AUTO" and props.origin_valid:
-        ox, oy, oz = geodetic_to_ecef(props.origin_lat, props.origin_lon, props.origin_height)
+        ox, oy, oz = geodetic_to_ecef(*origin_lla(props))
         d_km = math.dist((cx, cy, cz), (ox, oy, oz)) / 1000.0
         if d_km <= props.origin_reuse_km:
             print(f"[3DTiles] Scene origin kept (tileset centre {d_km:.1f} km away)")
@@ -1085,7 +1086,7 @@ class OGC3D_OT_PlacePick(Operator):
             bpy.ops.ogc3dtiles.stop_stream()       # the old tiles go at the next Start
         # latitude / longitude at once (a Start pressed meanwhile lands at the
         # place); the height follows and restarts a stream started meanwhile
-        props.origin_lat, props.origin_lon = p["lat"], p["lon"]
+        set_origin(props, p["lat"], p["lon"], props.origin_height)
         props.origin_valid = True
         props.origin_place = p["label"]
         props.place_status = "Fetching the ground height..."
@@ -1105,7 +1106,7 @@ class OGC3D_OT_PlacePick(Operator):
                 return None
             pr = scene.ogc3dtiles
             h, msl, n, notes = box["r"]
-            pr.origin_lat, pr.origin_lon, pr.origin_height = p["lat"], p["lon"], h
+            set_origin(pr, p["lat"], p["lon"], h)
             pr.origin_valid = True
             pr.place_status = (f"Ground {msl:.0f} m + geoid {n:+.0f} m = {h:.0f} m (ellipsoid)"
                                + ("; " + "; ".join(notes) if notes else ""))
@@ -1909,7 +1910,7 @@ def _local_frame(cz):
 
 
 def _set_origin_local(props, cz):
-    props.origin_lat, props.origin_lon, props.origin_height = _local_frame(cz)
+    set_origin(props, *_local_frame(cz))
     print("[3DTiles] Scene origin: local (tileset is not georeferenced), identity frame")
 
 
@@ -1918,14 +1919,12 @@ def _frame_is_local(frame) -> bool:
 
 
 def is_local_origin(props) -> bool:
-    return _frame_is_local((props.origin_lat, props.origin_lon, props.origin_height))
+    return _frame_is_local(origin_lla(props))
 
 
 def _set_origin_from_ecef(props, ex, ey, ez):
     lat, lon, h = ecef_to_geodetic(ex, ey, ez)
-    props.origin_lat = lat
-    props.origin_lon = lon
-    props.origin_height = h
+    set_origin(props, lat, lon, h)
     print(f"[3DTiles] Scene origin: lat={lat:.5f} lon={lon:.5f} h={h:.1f}m")
 
 
@@ -2183,6 +2182,9 @@ class OGC3D_PT_OriginPanel(_OGC3DSidebar, Panel):
         col.prop(props, "origin_lat", text="Latitude °")
         col.prop(props, "origin_lon", text="Longitude °")
         col.prop(props, "origin_height", text="Height m")
+        col.prop(props, "origin_text", text="", placeholder="Paste lat, lon, height (exact)")
+        if props.origin_text_status:
+            col.label(text=props.origin_text_status, icon="INFO")
         row = layout.row()
         if props.origin_valid and is_local_origin(props):
             row.label(text="Local tileset (not georeferenced)", icon="CHECKMARK")
@@ -2714,7 +2716,7 @@ class OGC3D_PT_CoordPanel(_OGC3DSidebar, Panel):
         cursor = scene.cursor.location
         try:
             from ..tileset.traversal import blender_to_ecef
-            lat, lon, h = props.origin_lat, props.origin_lon, props.origin_height
+            lat, lon, h = origin_lla(props)
             x, y, z = blender_to_ecef(tuple(cursor), lat, lon, h)
             clat, clon, ch = ecef_to_geodetic(x, y, z)
             layout.separator()

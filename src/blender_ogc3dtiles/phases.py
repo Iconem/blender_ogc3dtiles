@@ -116,7 +116,8 @@ def build(folder, scene, pad=2.0):
     cell = float(np.cbrt(np.prod(hi - lo) / MAX_CELLS))
     grid = np.zeros(tuple(int(n) for n in np.ceil((hi - lo) / cell)), np.uint8)
     skipped = [o.name for o in objs if _fill(grid, o, lo, cell) < 0]
-    frame = np.linalg.inv(enu_from_ecef_matrix(props.origin_lat, props.origin_lon, props.origin_height))
+    from .tileset.origin import origin_lla
+    frame = np.linalg.inv(enu_from_ecef_matrix(*origin_lla(props)))
     center = lo + np.array(grid.shape) * cell / 2.0
     return voxels.write_class_tileset(folder, grid, frame, center, cell, COLUMN), skipped
 

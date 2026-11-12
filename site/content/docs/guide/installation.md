@@ -32,14 +32,14 @@ No compiler is needed: the button downloads the build that matches your Blender 
 Install a zip from a terminal:
 
 ```text
-blender --command extension install-file -r user_default -e ogc_3dtiles_streaming-0.6.1.zip
+blender --command extension install-file -r user_default -e ogc_3dtiles_streaming-0.6.2.zip
 ```
 
 Build the zip from a checkout with Blender's own packager:
 
 ```text
 blender --command extension build --source-dir src/blender_ogc3dtiles --output-dir dist
-blender --command extension validate dist/ogc_3dtiles_streaming-0.6.1.zip
+blender --command extension validate dist/ogc_3dtiles_streaming-0.6.2.zip
 ```
 
 ## Details

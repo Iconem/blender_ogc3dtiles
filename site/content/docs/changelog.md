@@ -6,6 +6,15 @@ description: "What changed, newest first"
 Dates are those of the commits. Versions are the tags on the Releases page; *Unreleased* is on the
 main branch and not in a release zip yet.
 
+## 0.6.2 (2026-11-12)
+
+- **Scene origin in double precision** (issue 7). The latitude, longitude and height fields are
+  single precision in Blender, which moved tiles by up to 0.7 m at longitude 150 and kept the
+  local-frame height to 0.5 m. The add-on now keeps the exact values in a scene property, set
+  whenever it picks an origin or a field is edited, and places tiles and cameras from it. A new
+  *Paste* field under the three takes `latitude, longitude[, height]` with full precision, since a
+  value typed in a float field is rounded before the add-on sees it.
+
 ## 0.6.1 (2026-11-12)
 
 - **Orthographic views** select tiles through cesium-native's orthographic view state: the frame

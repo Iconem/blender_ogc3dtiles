@@ -16,6 +16,20 @@ the east, Y to the north, Z up, in metres.
 
 The origin is saved in the .blend. *Reset Origin* forgets it.
 
+## Precision
+
+Blender keeps the three fields in single precision: at longitude 150 the step between two
+representable values is about 1.5 x 10^-5 degrees, up to 0.7 m on the ground. The add-on
+therefore keeps the exact origin in a scene property (`ogc3dtiles_origin`, three doubles) and
+places tiles and cameras from it. It is written whenever the add-on picks an origin (Auto, Search
+place, a local tileset) and whenever you edit a field.
+
+A value typed in a float field is rounded before the add-on sees it. To set an exact origin, use
+the **Paste** field under the three: `latitude, longitude[, height]`, any separator, full
+precision. The three fields then show the rounded values and the scene property holds the exact
+ones. The scene property only counts while it rounds to the fields, so a .blend saved by an older
+version, or a field changed by a driver, falls back to the fields.
+
 ## Search a place
 
 ![Search place: origin on the Basilica di San Pietro (ground 62 m + geoid 48 m), WGS84 globe with OpenStreetMap](/img/place_search.jpg)

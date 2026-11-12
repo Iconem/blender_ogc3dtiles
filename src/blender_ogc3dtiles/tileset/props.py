@@ -223,6 +223,25 @@ def _on_place_query(self, context):
     cb(self, context)
 
 
+def _on_origin_edit(self, context):
+    from .origin import on_origin_edit
+    on_origin_edit(self, context)
+
+
+def _on_origin_text(self, context):
+    from .origin import parse_origin_text, set_origin
+    if not self.origin_text:
+        self.origin_text_status = ""
+        return
+    lla = parse_origin_text(self.origin_text)
+    if lla is None:
+        self.origin_text_status = "Expected: latitude, longitude[, height]"
+        return
+    set_origin(self, *lla)
+    self.origin_valid = True
+    self.origin_text_status = f"Origin set: {lla[0]:.8f}, {lla[1]:.8f}, {lla[2]:.3f} m"
+
+
 class OverlayItem(PropertyGroup):
     """A raster overlay draped on one tileset (cesium-native backend)."""
     name: StringProperty(name="Name", default="overlay")
@@ -410,19 +429,25 @@ class TilesSceneProps(PropertyGroup):
         name="Origin Latitude",
         description="WGS84 latitude of the Blender scene origin (degrees)",
         default=0.0, min=-90.0, max=90.0,
-        precision=8,
+        precision=8, update=_on_origin_edit,
     )
     origin_lon: FloatProperty(
         name="Origin Longitude",
         description="WGS84 longitude of the Blender scene origin (degrees)",
         default=0.0, min=-180.0, max=180.0,
-        precision=8,
+        precision=8, update=_on_origin_edit,
     )
     origin_height: FloatProperty(
         name="Origin Height",
         description="Height above WGS84 ellipsoid at scene origin (metres)",
-        default=0.0,
+        default=0.0, update=_on_origin_edit,
     )
+    origin_text: StringProperty(
+        name="Paste",
+        description="Paste 'latitude, longitude[, height]' with full precision: the three fields "
+                    "above are single precision (up to 0.7 m at longitude 150), this is not",
+        default="", update=_on_origin_text)
+    origin_text_status: StringProperty(default="", options={'SKIP_SAVE'})
     origin_mode: EnumProperty(
         name="Origin",
         description="How the scene origin (ENU anchor) is chosen when streaming starts",

@@ -15,6 +15,7 @@ import math
 import bpy
 from typing import NamedTuple
 
+from ..tileset.origin import origin_lla
 from ..tileset.traversal import (
     ViewState,
     blender_to_ecef,
@@ -68,7 +69,7 @@ class CesiumCameraAdapter:
         if src is None:
             return None
         view, win, w, hpx, is_persp, src_sig = src
-        lat, lon, h = frame or (props.origin_lat, props.origin_lon, props.origin_height)
+        lat, lon, h = frame or origin_lla(props)
         root_sig = ()
         root_scale = 1.0
         if root_obj is not None:

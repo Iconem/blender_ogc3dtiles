@@ -30,6 +30,7 @@ from typing import Dict, List, Optional, Tuple
 
 import bpy
 
+from ..tileset.origin import origin_lla
 from ..tileset.traversal import Tile, TileState, mat_mul, mat_translation
 
 USER_AGENT = "blender-ogc3dtiles/0.3"
@@ -1747,7 +1748,7 @@ def import_gltf_bytes(glb_data: bytes, tile: Tile, scene: bpy.types.Scene,
     tmp.close()
     try:
         root = ensure_root_empty(scene, "3D Tiles Root")
-        enu = build_ecef_to_enu_matrix(props.origin_lat, props.origin_lon, props.origin_height)
+        enu = build_ecef_to_enu_matrix(*origin_lla(props))
         m = tile_world_matrix(tile.transform, None, enu)
         r = import_glb_file(tmp.name, tile.content_uri or "tile", scene, root, m, hidden=False)
         return r[0] if r else None

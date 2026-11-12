@@ -399,7 +399,8 @@ def _extent_from_object(obj, props, root):
     if half.z * m.to_3x3().col[2].length < 1.0:
         # a flat outline (plane, drawn polygon): its footprint, any height
         half.z = 5000.0 / max(m.to_3x3().col[2].length, 1e-9)
-    lat, lon, h = props.origin_lat, props.origin_lon, props.origin_height
+    from ..tileset.origin import origin_lla
+    lat, lon, h = origin_lla(props)
     axes = [rotate_enu_to_ecef(tuple(m.to_3x3().col[i] * max(half[i], 1e-3)), lat, lon)
             for i in range(3)]
     return {"center": blender_to_ecef(tuple(c), lat, lon, h), "half_axes": axes}

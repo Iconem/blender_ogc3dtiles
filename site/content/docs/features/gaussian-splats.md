@@ -35,6 +35,21 @@ panel reads "Local tileset".
 When the scene origin is already set (Custom, Keep, a place, or an earlier tileset with a location),
 such a tileset lands at the Blender origin. Move its root Empty to place it.
 
+## glTF extensions: honoured and ignored
+
+What the add-on reads from a splat tile, through cesium-native, and what it leaves aside.
+
+| Extension or attribute | Status | Notes |
+|---|---|---|
+| `KHR_gaussian_splatting` attributes `POSITION`, `COLOR_0`, `KHR_gaussian_splatting:ROTATION`, `KHR_gaussian_splatting:SCALE` | Honoured | Colour and opacity come from `COLOR_0`; the node transform rotates and scales the splats; the older `_ROTATION` / `_SCALE` names are accepted too. |
+| `KHR_gaussian_splatting:SH_DEGREE_n_COEF_m` | Honoured | Degrees 1 to 3, in spec order, as `radiance:sh_n`. Degree 0 is the base colour. |
+| `KHR_gaussian_splatting` primitive fields `kernel`, `colorSpace`, `projection`, `sortingMethod` | Ignored | Blender draws its own kernel and sorts within each object. |
+| `KHR_gaussian_splatting_compression_spz_2` | Honoured | cesium-native decodes the SPZ payload as stored, with no axis conversion: the converter's node matrix is what places the splats, as in the 3D-Tiles-RendererJS plugin. |
+| `EXT_splat_opacity` version 2 | Honoured | Draft extension of the 3DGS-PLY-3DTiles converter (William Liu). The converter merges splats into their coarse parents, which gives source opacities above 1; it then grows ("coverage boosts") the scales of those splats and clamps the opacity before writing SPZ, and records the source opacity and the pre-boost shape in this extension so a reader can undo the growth. The add-on removes the boost (the splats get their pre-boost scales back) and draws the source opacity, clamped to 1. Readers that ignore the extension, among them CesiumJS and the SPZ payload's own fallback, draw the grown splats, which look like soft blobs at coarse levels. The fraction of boost kept is `SPLAT_COVERAGE_BOOST_KEPT` in `tileset/native_mesh.py`, 0 by default. |
+| `EXT_splat_opacity` version 1 | Ignored | Legacy form with a display-ready float accessor; the SPZ values are used. |
+| `KHR_materials_unlit` | Not applicable | Splats carry no material. |
+| `EXT_mesh_features`, `EXT_structural_metadata` on splat tiles | Ignored | Read on mesh and point tiles only. |
+
 ## Known limits
 
 Blender sorts splats inside one object, not between objects. Where a coarse tile and the finer ones

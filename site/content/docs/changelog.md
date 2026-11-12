@@ -6,6 +6,14 @@ description: "What changed, newest first"
 Dates are those of the commits. Versions are the tags on the Releases page; *Unreleased* is on the
 main branch and not in a release zip yet.
 
+## Unreleased
+
+- **`EXT_splat_opacity` honoured.** Tilesets from the 3DGS-PLY-3DTiles converter (William Liu)
+  looked like soft blobs at coarse levels: the converter grows the splats it merged ("coverage
+  boost") before writing SPZ and keeps the source opacity and pre-boost shape in this extension.
+  The add-on now undoes the growth and draws the source opacity, see
+  [Gaussian splats](/features/gaussian-splats#gltf-extensions-honoured-and-ignored).
+
 ## 0.6.2 (2026-11-12)
 
 - **Scene origin in double precision** (issue 7). The latitude, longitude and height fields are

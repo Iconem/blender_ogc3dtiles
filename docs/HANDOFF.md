@@ -206,6 +206,36 @@ entries and point intensity. Section 4 lists what to do next.
 - The cesium-native-python issue 9 reply carries an appended line saying 0.6.1
   ships the certifi bundle.
 
+### Night of 2026-11-12: fork sync, wheels.2, EXT_splat_opacity
+
+- **jo-chemla/cesium-native-python `main` reset onto upstream `main`**
+  (`4b55c1a`, Jonathan's four PRs all merged there); the fork's ten
+  pre-squash commits are gone. Branches `bindings/c-items`, `ci/wheels`,
+  `fix/gltf-modifier-subclass` still exist on the fork and can be deleted.
+- **Wheel release `v0.1.0-wheels.2`** built from that commit by the fork's
+  `wheels` workflow (`workflow_dispatch`, `release_tag`). GitHub retired the
+  `macos-14` runner ("configuration not supported"), so the run was launched
+  with `os=["ubuntu-24.04", "windows-2022", "macos-15"]`; the workflow
+  file's default still says `macos-14` and needs a one-line PR upstream
+  (in Jonathan's name) before a `v*` tag there builds. The add-on's *Install
+  wheel* takes `releases/latest` of `jo-chemla/cesium-native-python`, so
+  wheels.2 is what new users get. The three laptop Blenders (5.1, 5.2, 5.3,
+  all CPython 3.13) get the Windows wheel pip-installed by hand.
+- **William Liu tiles looked like blobs because of `EXT_splat_opacity`**,
+  not axes (checked numerically: cesium-native decodes SPZ with no axis
+  conversion, positions and scales match the raw payload). The converter
+  merges splats into coarse parents (source opacity up to 40 at the root),
+  grows their scales up to 5x ("coverage boost", `opacity_anisotropic_v1`,
+  c = 0.75) and clamps the SPZ opacity; the extension keeps the source
+  opacity (binary16 bits in an UNSIGNED_SHORT accessor) and the pre-boost
+  mid/max ratio. `native_mesh.splat_unboost` undoes the growth (fraction
+  kept `SPLAT_COVERAGE_BOOST_KEPT`, 0) and the source opacity, clamped to 1,
+  replaces the baked alpha. Tests in `tests/test_splat_math.py`. The
+  extension text is in the converter's npm package (`EXT_splat_opacity.md`).
+- **Issue 6 is a later todo**: pyproj-optional first, BlenderGIS's own
+  reprojection as the fallback, plain ENU otherwise (see the issue reply).
+  Ben Dyson (rusty-tiles) answered on the issue with throughput figures.
+
 ## 0. Ground rules (from Jonathan, still in force)
 
 - **Credentials.** Bearer credentials:

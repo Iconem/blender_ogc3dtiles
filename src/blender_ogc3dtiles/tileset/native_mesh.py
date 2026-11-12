@@ -259,6 +259,89 @@ OVERLAY_UV_PREFIX = "_CESIUMOVERLAY_"    # RasterOverlayUtilities default base n
 _SPLAT_ROTATION = ("KHR_gaussian_splatting:ROTATION", "_ROTATION")
 _SPLAT_SCALE = ("KHR_gaussian_splatting:SCALE", "_SCALE")
 _SPLAT_SH = "SH_DEGREE_"
+# EXT_splat_opacity (3dgs-ply-3dtiles-converter, draft): the merged source
+# opacity of each splat, which may exceed 1 where several splats were merged
+# into one, and the shape ratio the converter used to grow ("coverage boost")
+# the scales of those splats before writing SPZ.  Readers that ignore it draw
+# the grown splats, which look like blobs from afar.
+_SPLAT_OPACITY_EXT = "EXT_splat_opacity"
+_UNSIGNED_SHORT = 5123
+# fraction of the recorded coverage boost kept when the extension is present:
+# 0 restores the converter's unboosted scales (crisp, like the source splats),
+# 1 keeps the SPZ payload as written
+SPLAT_COVERAGE_BOOST_KEPT = 0.0
+
+
+def splat_unboost(alpha, ratio, c_file, kept=SPLAT_COVERAGE_BOOST_KEPT):
+    """Factors that take the SPZ-decoded scales of boosted splats back towards
+    their pre-boost size, following the ``opacity_anisotropic_v1`` model of
+    EXT_splat_opacity version 2.  ``alpha``: source opacity per splat,
+    ``ratio``: pre-boost mid / max scale axis, ``c_file``: boost strength the
+    converter applied, ``kept``: the fraction of it to retain (0 removes it).
+    Returns ``(f, g, display)``: divide the largest scale axis by ``g`` and the
+    two others by ``f``; ``display`` is the opacity to draw (clamped to 1) or
+    NaN where the splat keeps its SPZ values (source opacity <= 1 or invalid).
+    """
+    alpha = np.asarray(alpha, np.float64)
+    ratio = np.clip(np.asarray(ratio, np.float64), 0.0, 1.0)
+    boosted = np.isfinite(alpha) & (alpha > 1.0)
+    a = np.minimum(np.where(boosted, alpha, 1.0), 1000.0)
+
+    def F(c):
+        return np.where(boosted, 1.0 + c * (np.sqrt(a) - 1.0), 1.0)
+
+    def G(c):
+        d = 1.0 - ratio + ratio * ratio
+        return 1.0 + (F(c) - 1.0) * ratio / d
+
+    c_target = float(np.clip(kept, 0.0, 1.0)) * c_file
+    f = F(c_file) / F(c_target)
+    g = G(c_file) / G(c_target)
+    display = np.where(boosted, np.minimum(alpha / F(c_target) ** 2, 1.0), np.nan)
+    ok = np.isfinite(f) & np.isfinite(g) & (f > 0) & (g > 0)
+    f = np.where(ok, f, 1.0)
+    g = np.where(ok, g, 1.0)
+    display = np.where(ok, display, np.nan)
+    return f.astype(np.float32), g.astype(np.float32), display.astype(np.float32)
+
+
+def _splat_source_opacity(model, prim, n):
+    """``(alpha, ratio, c_file)`` from EXT_splat_opacity version 2 on the
+    primitive's KHR_gaussian_splatting extension, or None when it is absent
+    or does not validate (the SPZ payload is then the intended fallback)."""
+    gs = getattr(prim, "ext_khr_gaussian_splatting", None)
+    if gs is None:
+        return None
+    try:
+        ext = gs.get_generic_extension(_SPLAT_OPACITY_EXT)
+    except Exception:
+        return None
+    if not isinstance(ext, dict) or ext.get("version") != 2:
+        return None
+    if (ext.get("sourceOpacityEncoding") != "float16"
+            or ext.get("coverageBoostMethod") != "opacity_anisotropic_v1"):
+        return None
+    c = ext.get("coverageBoostScale")
+    ai, ri = ext.get("sourceOpacityAccessor"), ext.get("coverageBoostRatioAccessor")
+    if (not isinstance(c, (int, float)) or isinstance(c, bool) or not np.isfinite(c) or c < 0
+            or not isinstance(ai, int) or not isinstance(ri, int) or ai < 0 or ri < 0):
+        return None
+    try:
+        a_acc, r_acc = model.accessors[ai], model.accessors[ri]
+        if (_enum_int(a_acc.component_type) != _UNSIGNED_SHORT
+                or _enum_int(r_acc.component_type) != _UNSIGNED_SHORT or a_acc.normalized):
+            return None
+        bits = _raw_accessor(model, ai, keep_integers=True)
+        ratio = _raw_accessor(model, ri)
+    except Exception:
+        return None
+    if bits is None or ratio is None or len(bits) != n or len(ratio) != n:
+        return None
+    if bits.shape[1] != 1 or ratio.shape[1] != 1:
+        return None
+    alpha = bits[:, 0].astype(np.uint16).view(np.float16).astype(np.float32)
+    ratio = ratio[:, 0] if r_acc.normalized else ratio[:, 0] / 65535.0
+    return alpha, ratio, float(c)
 
 
 def _first_attr(prim, names):
@@ -319,6 +402,15 @@ def _splat_arrays(cs, model, prim, T, n):
     scl = _splat_attr(cs, model, si, cs.gltf.AccessorViewVec3, np.float64)
     if rot is None or scl is None or len(rot) != n or len(scl) != n:
         return None
+    alpha = None
+    src = _splat_source_opacity(model, prim, n)
+    if src is not None and SPLAT_COVERAGE_BOOST_KEPT < 1.0:
+        f, g, alpha = splat_unboost(*src)
+        scl = scl.copy()
+        rows = np.arange(n)
+        big = np.argmax(scl, axis=1)          # the grown axis stays the largest
+        scl /= f[:, None]
+        scl[rows, big] *= f / g
     # node transform: rotation composes, a uniform scale scales the splats
     R = T[:3, :3]
     sT = np.linalg.norm(R, axis=0)
@@ -353,7 +445,7 @@ def _splat_arrays(cs, model, prim, T, n):
             sh = []
             break
         sh.append(arr)
-    return rot_wxyz, scl.astype(np.float32), sh
+    return rot_wxyz, scl.astype(np.float32), sh, alpha
 
 
 def extract_mesh_payload(cs, model, read_metadata=False):
@@ -423,6 +515,9 @@ def extract_mesh_payload(cs, model, read_metadata=False):
                 splat_rot.append(sp[0])
                 splat_scale.append(sp[1])
                 splat_sh.append(sp[2])
+                if sp[3] is not None and col is not None and len(col) == n:
+                    keep = np.isfinite(sp[3])     # source opacity over the baked SPZ one
+                    colors[-1][keep, 3] = sp[3][keep]
             else:
                 all_splats = False
             n_point_prims += 1

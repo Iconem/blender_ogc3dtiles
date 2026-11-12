@@ -47,3 +47,47 @@ def test_yup_to_zup_conjugation_preserves_covariance():
         R2 = _rot_from_quat_xyzw(q2)
         cov2 = R2 @ np.diag(s2 ** 2) @ R2.T
         assert np.allclose(cov2, M @ cov @ M.T, atol=1e-9)
+
+
+def test_splat_unboost_restores_pre_boost_scales():
+    """Apply the converter's opacity_anisotropic_v1 boost to known scales, then
+    check splat_unboost brings them back and reports the source opacity."""
+    rng = np.random.default_rng(4)
+    n, c = 200, 0.75
+    s = np.sort(rng.uniform(0.05, 2.0, size=(n, 3)), axis=1)          # s_min, s_mid, s_max
+    alpha = rng.uniform(1.01, 60.0, size=n)
+    alpha[:40] = rng.uniform(0.2, 1.0, size=40)                         # not boosted
+    ratio = s[:, 1] / s[:, 2]
+    F = np.where(alpha > 1, 1 + c * (np.sqrt(np.minimum(alpha, 1000)) - 1), 1.0)
+    D = 1 - ratio + ratio ** 2
+    G = 1 + (F - 1) * ratio / D
+    boosted = s.copy()
+    boosted[:, 2] *= G
+    boosted[:, :2] *= F[:, None]
+    assert (np.argmax(boosted, axis=1) == 2).all()                      # the largest axis stays largest
+    f, g, display = nm.splat_unboost(alpha, ratio, c, kept=0.0)
+    back = boosted.copy()
+    back[:, 2] /= g
+    back[:, :2] /= f[:, None]
+    assert np.allclose(back, s, rtol=1e-5)
+    assert np.isnan(display[:40]).all()                                 # alpha <= 1: keep SPZ opacity
+    assert np.allclose(display[40:], 1.0)                               # alpha > 1 clamps to 1
+
+
+def test_splat_unboost_kept_one_is_identity_and_invalid_values_fall_back():
+    alpha = np.array([5.0, np.nan, -1.0, np.inf, 0.5])
+    ratio = np.array([0.5, 0.5, 0.5, 0.5, 0.5])
+    f, g, display = nm.splat_unboost(alpha, ratio, 0.75, kept=1.0)
+    assert np.allclose(f, 1.0) and np.allclose(g, 1.0)
+    f, g, display = nm.splat_unboost(alpha, ratio, 0.75, kept=0.0)
+    assert f[0] > 1.0 and g[0] > 1.0 and display[0] == 1.0
+    assert np.allclose(f[1:], 1.0) and np.allclose(g[1:], 1.0) and np.isnan(display[1:]).all()
+
+
+def test_splat_unboost_partial_keep_is_between():
+    alpha, ratio = np.array([25.0]), np.array([0.3])
+    f0, g0, _ = nm.splat_unboost(alpha, ratio, 0.75, kept=0.0)
+    f5, g5, d5 = nm.splat_unboost(alpha, ratio, 0.75, kept=0.5)
+    f1, g1, _ = nm.splat_unboost(alpha, ratio, 0.75, kept=1.0)
+    assert f1[0] < f5[0] < f0[0] and g1[0] < g5[0] < g0[0]
+    assert 0.0 < d5[0] <= 1.0

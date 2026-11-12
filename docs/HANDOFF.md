@@ -94,6 +94,31 @@ tree clean. Written from the cnj machine (the Blender 5.3 beta there is under
 - Drafts for issue 9 and for the issue 2 follow-up ("item 3 done") were shown to
   Jonathan; not posted by the agent.
 
+### Lublin and the 3dtiled branch, 2026-11-12 (Jonathan's laptop)
+
+- **Branch `sog-splat-budget` is superseded**: jo-chemla `main` (`fe7f705`) holds the same
+  commit as `7cd5821` plus `6c658f7` (collapse moved to `lodMeta.js`, shared with the
+  live route, `test/collapse.test.js`, docs; Lublin 259 M and Itaka Stadium from
+  SuperSplat's CDN in the viewer library). Delete the branch rather than merge it.
+  The root transform question: neither path ever wrote an ENU transform; the offline
+  converter writes RX(-90°) with zero translation on both paths, and only the
+  tile-server's `applyPlacement` (`&lon=&lat=`) composes a globe placement.
+- **Lublin live**: `3dtiled.iconem.com/stream/tileset.json?format=sog&url=<CDN lod-meta>`
+  answers in 3 s with 7,169 tiles (2.3 MB); streams in Blender 5.3 (private library
+  entry "Lublin 259M, Poland (Shramko, 3dtiled SOG live)").
+- **Reproduced offline** in `C:\Users\jonathan\work\lublin\` (`pipeline.sh`, `pipeline.log`):
+  103 M PLY from Drive; splat-transform 3.11.1: Morton 46 s, LOD1 14.5 min, LOD2
+  16 min, LOD3 16 min, LOD build 6.5 min (106.4 M + 26.5 M + 6.36 M + 1.59 M, 271
+  chunks); 3dtiled main `--format sog --verify counts`: 1.8 min, 2,568 tiles, 2.1 GB,
+  141 M points, 0 missing; draws in Blender (library entry "Lublin 106M merged").
+- **William Liu's converter 0.6.5** on the same PLY: 7.9 min end to end (scan 1.5 min,
+  tree 12 levels / 4,657 leaves, build 6.2 min), 9,313 nodes, 3.8 GB; draws in Blender
+  (library entry "Lublin 103M (Shramko, William Liu converter, local)"). The 15-hour
+  run on cnj was the exception. This laptop had also run it on 2026-11-05 on the
+  259 M `Lublin-Poland.ply` (178 M kept): 17 min, 22,904 nodes, 6.3 GB, which is the
+  "Lublin 178M (local)" library entry.
+- The 3dtiled clone used for this is `C:\Users\jonathan\work\3dtiled-sog-budget` (on main).
+
 ### Next steps, in order
 
 1. Done: certifi fix (see above); the issue 9 reply waits for Jonathan to post it.
@@ -113,11 +138,8 @@ tree clean. Written from the cnj machine (the Blender 5.3 beta there is under
    OpenGL matrix must get row 1 negated or the SSE comes out negative. Then follow
    up on item 3 of the issue 2 comment with "done".
 3. Done: B numbering realigned.
-4. Ask Jonathan whether to push 3dtiled `5964eeb`, and where (the worktree branch
-   or main of that repo).
-5. Report the William Liu result when `convert.log` ends with `WL-DONE` and a
-   `tileset.json` exists; load it in Blender for a comparison with the 3dtiled
-   tiling.
+4. Done: `5964eeb` was pushed as branch `sog-splat-budget`, and main already has it (see above); delete the branch.
+5. Done: William Liu result above.
 6. Publish or copy the `videos-2026-11` release (Iconem too) when Jonathan says.
 7. Strasbourg re-take if he still wants it (`video/harness/scene9.py`; the origin
    must actually move to Strasbourg).

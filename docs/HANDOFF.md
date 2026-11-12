@@ -5,14 +5,14 @@ the 2026-11-04 handoff and still hold except where section 6 says otherwise.**
 
 ## 6. Handoff 2026-11-12
 
-State: `main` is `a47256b` on both remotes (`origin` = jo-chemla, `iconem`),
+State: `main` is `7abb165` plus this note on both remotes (`origin` = jo-chemla, `iconem`),
 tree clean. Written from the cnj machine (the Blender 5.3 beta there is under
 `%LOCALAPPDATA%\Blender Launcher\experimental\`, not the path in section 0).
 
 ### Done since 2026-11-07
 
 - `2c40e12` Streaming: Start reuses the live modal, orphaned tile objects dropped.
-- `a47256b` `video/`: the screencast harness, per-take prep and scene scripts, mark
+- `7abb165` `video/`: the screencast harness, per-take prep and scene scripts, mark
   files, the activity-based cutter and the Remotion reel. `video/PROCESS.md`
   explains the pipeline, the pitfalls and lists every take.
 - **Videos**: the 6:17 reel (Google and Bing, Sacré-Coeur splat, clipping, shared

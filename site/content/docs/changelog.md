@@ -6,7 +6,7 @@ description: "What changed, newest first"
 Dates are those of the commits. Versions are the tags on the Releases page; *Unreleased* is on the
 main branch and not in a release zip yet.
 
-## Unreleased
+## 0.6.1 (2026-11-12)
 
 - **Orthographic views** select tiles through cesium-native's orthographic view state: the frame
   extents are passed as they are, the eye stays on the pivot, and tiles behind the pivot are

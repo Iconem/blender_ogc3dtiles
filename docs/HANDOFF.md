@@ -1,5 +1,116 @@
 # Handoff: blender_ogc3dtiles + cesium-native-python
 
+**Newest first: section 6 (2026-11-12) is the current state. Sections 0 to 5 are
+the 2026-11-04 handoff and still hold except where section 6 says otherwise.**
+
+## 6. Handoff 2026-11-12
+
+State: `main` is `a47256b` on both remotes (`origin` = jo-chemla, `iconem`),
+tree clean. Written from the cnj machine (the Blender 5.3 beta there is under
+`%LOCALAPPDATA%\Blender Launcher\experimental\`, not the path in section 0).
+
+### Done since 2026-11-07
+
+- `2c40e12` Streaming: Start reuses the live modal, orphaned tile objects dropped.
+- `a47256b` `video/`: the screencast harness, per-take prep and scene scripts, mark
+  files, the activity-based cutter and the Remotion reel. `video/PROCESS.md`
+  explains the pipeline, the pitfalls and lists every take.
+- **Videos**: the 6:17 reel (Google and Bing, Sacré-Coeur splat, clipping, shared
+  nodes with EEVEE and Cycles, IGN points, classes, overlay on Clermont) and the
+  final takes are on the **draft** release `videos-2026-11` of
+  `jo-chemla/blender_ogc3dtiles` (hidden until Jonathan publishes it; nothing on
+  Iconem yet). Originals: `C:\Users\cnj\Videos\blender_ogc3dtiles_screencasts\`.
+  Not re-recorded: Strasbourg (library take, the origin never moved there).
+- **Shramko Lublin, 103 M splats**: streams now. Cause of the earlier empty
+  scene: splat-transform's lod-meta is a 15-deep k-d tree with 31,668 leaves and
+  3dtiled mapped each leaf to its own tile chain. Fix in the 3dtiled worktree
+  `C:\Dev\jonathan\3dtiled-to-3dtiles-wt` (branch `setup/worktree`), **local commit
+  `5964eeb`, not pushed**: `packages/sog-to-3dtiles/src/index.js` collapses the
+  tree per LOD level to the shallowest nodes whose splats fit `--splat-budget`
+  (default 100 k, `0` = old 1:1). Lublin: 126,672 tiles to 2,570, Blender draws it
+  in seconds. Another agent owns that repo: ask Jonathan before pushing.
+- **William Liu's converter** (npm `3dgs-ply-3dtiles-converter` 0.6.5; the
+  lzy-0618 GitHub copy is not his, and there is no jo-chemla fork) on the full
+  6 GB PLY: the first run died after 3 h in "building tiles bottom-up" with no
+  tileset (probably killed by a Blender restart); a second run started on
+  2026-11-12 around 07:00 at low priority and was at the same stage at 09:00.
+  Output `%OGC_SCRATCH%\dl\lublin\wl_tiles` (a Temp folder Windows may clean).
+  Its planned tree: 12 levels, 4,250 leaves, comparable to the 3dtiled fix.
+- **Raster overlay on COPC point tiles does not work** (and never did; the old
+  take's colours were the classification): cesium-native upsamples about a
+  thousand point tiles and attaches 1x1 to 3x3 px rasters, while the same WMTS
+  on the Clermont mesh gets 343x395 px images. Not fixed; the demo uses the mesh.
+
+### Upstream, posted on 2026-11-11 by Jonathan
+
+- [issue 2, comment 6802160907](https://github.com/calebbuffa/cesium-native-python/issues/2#issuecomment-6802160907):
+  status after the merges, closed table, six low-effort items (PyPI needs only
+  the trusted publisher, the `pypi` environment and a `v0.1.0` tag; rename to
+  `cesium-native-python` before the first tag; C5 and B2 already bound; GIL crash
+  in continuations; `CachingAssetAccessor` taking a `SqliteCache`; CI on PRs), and
+  the parked items B3, B4, C6, C10, C11, C12 in a details table.
+- [issue 8](https://github.com/calebbuffa/cesium-native-python/issues/8): the
+  v0.59 to v0.66 bump, what each version brings and costs, two-step proposal.
+- Verified against upstream `main` (4b55c1a) and the add-on on 2026-11-12:
+  - The package name `cesium-python` is Caleb's, from his initial commit e49c0ef
+    (2026-03-17); our PRs never touched it. On PyPI `cesium` is taken by
+    cesium-ml, a time-series feature-extraction library from Stefan van der
+    Walt's group at Berkeley, last release 0.12.4 in January 2025, unrelated to
+    Cesium; `cesium-python`, `cesium-native-python` and `cesium-native` are free.
+  - All six parked items are live workarounds in the add-on: minimal load-thread
+    preparer (B3), cache lock file in `native_backend.py` (B4), point radius from
+    point spacing (C6), `cachectl.py` byte-budget trim (C10), 12 `callable()`
+    checks (C11, the post says about 15), our own preparer (C12). The "about 8 ms
+    per tile" figure is our own note in `gltf_payload.py`.
+  - Issue 8's version table matches the upstream changelog line by line,
+    including the v0.65 error delegate and setter removal. v0.59 and v0.61 share
+    the same ezvcpkg commit; v0.62 moves it.
+  - Thread numbering is B1 b3dm, B2 ortho, B3 GIL, B4 sqlite, consistent with the
+    Oct 21 comment. **`docs/cesium-native-python-upstream-requests.md` numbers them
+    differently (B1 ortho, B2 GIL, B3 sqlite): realign it.**
+  - If Caleb accepts the rename, wheel filenames become `cesium_native_python-*`,
+    which touches the add-on's `pyproject.toml` source key and
+    `tests/test_wheel_pick.py`.
+- **New: [issue 9](https://github.com/calebbuffa/cesium-native-python/issues/9)**
+  (BenDyson-Arch, 2026-11-12): the Linux wheel from our fork fails every HTTPS
+  request on Arch, Debian and Ubuntu because the manylinux curl only knows the Red
+  Hat CA bundle path. Fixable in the add-on today: the binding exposes
+  `CurlAssetAccessorOptions.certificate_file` (curl `CAINFO`), and Blender's
+  Python ships `certifi`. Set it when building the accessor in
+  `tileset/native_backend.py` (next to `user_agent`). Then reply on issue 9 so
+  Caleb does not treat it as a binding bug.
+
+### Next steps, in order
+
+1. **certifi fix** in `native_backend.py` (three lines), test, push both remotes,
+   draft the issue 9 reply for Jonathan to post.
+2. **Real orthographic views**: the binding has
+   `ViewState(position, direction, up, viewport_size, left, right, bottom, top)`
+   since Caleb's first commit. On v0.59 it culls with the four side planes only
+   and its SSE is `ge * viewport_height / (top - bottom)`, distance independent.
+   The add-on today fakes ortho with a 1 degree camera pulled back
+   (`ortho_eye_offset`, `native_position` in `camera/__init__.py` and
+   `tileset/traversal.py`) and disables fog culling for it. Change: in
+   `camera.get_view_state` keep the eye on the pivot and carry the half extents
+   (`1/p00`, `1/p11`, root scale folded in); in `native_backend.update_view` build
+   the ortho overload when `is_persp` is false, else the fov overload; drop the
+   offset and the fog workaround. About 30 lines; test on the Clermont mesh in top
+   ortho view. Tiles behind the pivot are also selected, like Blender's own ortho
+   viewport. Matrix overload caveat: cesium-native's projection has Y flipped, an
+   OpenGL matrix must get row 1 negated or the SSE comes out negative. Then follow
+   up on item 3 of the issue 2 comment with "done".
+3. Realign the B numbering in `docs/cesium-native-python-upstream-requests.md`.
+4. Ask Jonathan whether to push 3dtiled `5964eeb`, and where (the worktree branch
+   or main of that repo).
+5. Report the William Liu result when `convert.log` ends with `WL-DONE` and a
+   `tileset.json` exists; load it in Blender for a comparison with the 3dtiled
+   tiling.
+6. Publish or copy the `videos-2026-11` release (Iconem too) when Jonathan says.
+7. Strasbourg re-take if he still wants it (`video/harness/scene9.py`; the origin
+   must actually move to Strasbourg).
+8. Waiting on Caleb: the tag and PyPI registration, the rename, his pick on B3,
+   and issue 8's one-step or two-step bump.
+
 State on 2026-11-04, at `bc872f7` plus this note. For the next agent picking
 this up. It holds no tokens or keys; the files that do are named below and stay
 out of git.

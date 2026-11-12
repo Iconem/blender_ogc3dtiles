@@ -158,10 +158,19 @@ entries and point intensity. Section 4 lists what to do next.
 
 - Deleted, to free the laptop's C: drive: the Lublin intermediates
   (`shramko_poland_103M.ply`, `morton.ply`, `lod1-3.ply`, 13 GB) and the
-  `C:\Users\jonathan\work\3dtiled-sog-budget` clone (clean, on main). Kept:
-  `C:\Users\jonathan\work\lublin\3dtiles_merged` (2.1 GB), `wl_tiles` (3.8 GB)
-  and `lod\` (1.6 GB, the 3dtiled input), which the three local library entries
-  need. `pipeline.sh` there rebuilds everything from the Google Drive file.
+  `C:\Users\jonathan\work\3dtiled-sog-budget` clone (clean, on main), then on
+  Jonathan's word the William Liu tiles (`wl_tiles`, 3.8 GB, library entry removed)
+  and the 3dtiled input (`lod\`, 1.6 GB). Kept: only
+  `C:\Users\jonathan\work\lublin\3dtiles_merged` (2.1 GB, the 3dtiled SOG
+  tiles). `pipeline.sh` there rebuilds everything from the Google Drive file in
+  about 10 min of download plus 40 min of splat-transform.
+- Why Blender crawled after three or four takes on cnj's machine (10 GB): memfile
+  undo. Every click on a property pushes an undo step, and each step keeps a copy
+  of every tile mesh created since the previous one, for 32 steps. Measured on the
+  Clermont mesh at 2 px SSE with one undo-pushing operator per second: working set
+  6.2 GB at 310 tiles with undo on, 3.4 GB at 345 tiles with undo off. Stop and
+  Clear free the meshes themselves (0 orphans). For long takes set
+  Preferences > System > Undo Steps to 0, or restart between take chains.
 - The frame-stepped screencast scripts are in `video/evsim/` with a README that
   compares them with `video/harness/`. Their 14 clips are on the `videos-2026-11`
   draft release with workflow prefixes (`evsim_`, `drawnptr_`, `scripted_`).

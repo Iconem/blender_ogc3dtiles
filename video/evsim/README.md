@@ -66,7 +66,38 @@ repo:
 
 A layout-independent way to press buttons is the F3 search (`keytap("F3")`, type
 the operator name, Enter): no coordinates at all, but the video then shows the
-search box instead of the sidebar.
+search box instead of the sidebar, and it only reaches operators, not properties.
+For properties the region rectangles are the useful part of the API: the sidebar
+region gives the x range and the top, and the add-on's panels lay rows out from
+the top at a known row height, so a row's y can be computed from the panel order
+and the collapse state instead of read off a screenshot.
+
+## Whole window, not only the 3D view
+
+`bpy.ops.screen.screenshot(filepath=...)` saves the full Blender window (every
+editor, header and sidebar); `screenshot_area` saves one area. Both work from a
+timer; checked on 5.3, the window shot is 1920 x 1137 for the test window. Use
+the window shot when the take shows the node editor or the preferences.
+
+## Why Blender crawled after three or four takes (the other workflow)
+
+Memfile undo. Every click on a property pushes an undo step, and each step keeps
+a copy of every tile mesh created since the previous step, for 32 steps by
+default. Tiles keep streaming between clicks, so the steps fill with meshes.
+Measured here on the Clermont mesh at 2 px SSE with one undo-pushing operator per
+second for 90 s:
+
+| Undo steps | Tiles | Working set |
+|---|---|---|
+| 32 | 310 | 6.2 GB |
+| 0 | 345 | 3.4 GB |
+
+Stop and Clear free the meshes themselves (0 orphan meshes after a purge), so it
+is not a leak in the add-on. For a take chain, set Preferences > System > Undo
+Steps to 0 (`bpy.context.preferences.edit.undo_steps = 0`) or restart Blender
+between chains. The scripts here never push undo steps for view changes made
+through `region_3d`, and `event_simulate` clicks push the same steps a user's
+clicks do.
 
 ## Pitfalls
 

@@ -58,7 +58,8 @@ def slide(pos,dx,setter,v0,v1,n=12,after=8):
         t=i/n; CUR["xy"]=[pos[0]+dx*t,pos[1]]; setter(lerp(v0,v1,t)); yield
     CUR["down"]=False; CUR["key"]=""
     yield from wait(after)
-def capture2(name, story, interval=0.12):
+def capture2(name, story, interval=0.12, animate=True, fps=12):
+    sc=bpy.context.scene; saved=_take_begin(sc, animate, fps)
     bpy.context.preferences.view.smooth_view=0
     bpy.context.scene.render.image_settings.file_format="PNG"; bpy.context.scene.render.image_settings.compression=0
     out=os.path.join(R9,"cap_"+name); os.makedirs(out,exist_ok=True)
@@ -66,9 +67,10 @@ def capture2(name, story, interval=0.12):
     st={"i":0,"t0":time.time(),"meta":[]}; g=story(); w,a,sp,r=v3d()
     def fin(msg):
         json.dump(st["meta"],open(os.path.join(out,"meta.json"),"w"))
-        open(os.path.join(out,"done.txt"),"w").write(msg)
+        open(os.path.join(out,"done.txt"),"w").write(msg); _take_end(sc, saved)
     def tick():
         try:
+            _take_frame(sc, animate, st["i"])
             try: next(g)
             except StopIteration:
                 fin("%d frames in %.1f s"%(st["i"],time.time()-st["t0"])); return None

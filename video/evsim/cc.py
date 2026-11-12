@@ -13,4 +13,4 @@ def fn(i,n):
         setview(lerp(1700,1100,smooth(t)),(0,0,0),lerp(50,62,t),lerp(-20,70,t))
         sc.frame_set(int(round(lerp(120,1,smooth(min(1,t*1.15))))))
 sc.frame_set(1)
-capture("camera",N,fn)
+capture("camera",N,fn,animate=False)

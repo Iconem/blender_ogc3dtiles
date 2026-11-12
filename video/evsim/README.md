@@ -1,7 +1,9 @@
 # Screencasts, second workflow: frame-stepped capture inside Blender
 
 These scripts made the `evsim_*`, `drawnptr_*` and `scripted_*` videos on the
-`videos-2026-11` release (2026-11-06, Blender 5.3, laptop). They are the
+`videos-2026-11` release (2026-11-06, Blender 5.3, laptop). The docs page
+*Development > Screencasts* (`site/content/docs/dev/screencasts.md`) is the
+summary of both workflows. They are the
 alternative to `video/harness/`, which drives Blender from outside with real
 Windows input and records the screen in real time. Read `video/PROCESS.md` for
 that one; this file explains the difference and when each one is the right tool.
@@ -35,6 +37,14 @@ Three ways to move the scene, from least to most faithful:
 | `evsim_` | `capx3.py` `capture3(name, story)` | real Blender events through `window.event_simulate`: `MOUSEMOVE`, wheel, middle drag, `Shift+B` drag, clicks and slider drags on the sidebar. Blender's own handlers do the work (`u_rome3.py`) | drawn (the simulated events do not move the OS cursor, and `screenshot_area` has no cursor) |
 
 `event_simulate` needs Blender started with `--enable-event-simulate`.
+
+All three capture functions take `animate=True, fps=12`: the scene frame is
+stepped once per tick with the scene fps set to the clip fps for the take, so
+*Scene Time* nodes (the noise and reveal geometry demos) move one clip frame per
+tick instead of standing still. Camera takes that set the frame themselves
+(`camtake.py`, `cc.py`) pass `animate=False`. They also set *Undo Steps* to 0 for
+the take (see below) and restore undo steps, fps and frame when the take ends
+or fails.
 
 ## Why it is fast, and what that costs
 
@@ -93,11 +103,13 @@ second for 90 s:
 | 0 | 345 | 3.4 GB |
 
 Stop and Clear free the meshes themselves (0 orphan meshes after a purge), so it
-is not a leak in the add-on. For a take chain, set Preferences > System > Undo
-Steps to 0 (`bpy.context.preferences.edit.undo_steps = 0`) or restart Blender
-between chains. The scripts here never push undo steps for view changes made
-through `region_3d`, and `event_simulate` clicks push the same steps a user's
-clicks do.
+is not a leak in the add-on. The capture functions here set Undo Steps to 0 for
+the take and put the preference back afterwards (`_take_begin` / `_take_end` in
+`capx.py`). For a chain of real-time takes, set Preferences > System > Undo
+Steps to 0 before the chain (`bpy.context.preferences.edit.undo_steps = 0`) and
+restore it, or restart Blender between chains. View changes made through
+`region_3d` push no undo step; `event_simulate` clicks push the same steps a
+user's clicks do.
 
 ## Pitfalls
 

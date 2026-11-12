@@ -31,4 +31,4 @@ def fn(i,n):
         j=i-A
         sc.frame_set(int(round(lerp(1,120,min(1,max(0,(j-12)/(B-30)))))))
 sc.frame_set(1)
-capture("cam_"+mode,N,fn,interval=0.25)
+capture("cam_"+mode,N,fn,interval=0.25,animate=False)

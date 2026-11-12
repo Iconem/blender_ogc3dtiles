@@ -181,6 +181,31 @@ entries and point intensity. Section 4 lists what to do next.
   is 8.1 GB, mostly from the test sessions. Not deleted: it is also Jonathan's
   working cache. Clearing it is his call.
 
+### Evening of 2026-11-12: 0.6.2, exact origin, William Liu tiles back
+
+- **Issue 7 (origin precision) fixed and released as 0.6.2** on both repos:
+  `tileset/origin.py` keeps the exact doubles in the scene ID property
+  `ogc3dtiles_origin`; every reader goes through `origin_lla(props)`, every
+  writer through `set_origin()`; the three fields' update callback copies an
+  edited field into the store; a *Paste* field (`origin_text`) takes
+  `lat, lon[, h]` exactly. Checked live on 5.3 (paste, edit, junk input, a
+  Clermont stream). `tests/test_origin.py` covers the fallbacks.
+- **Issue 6 (BlenderGIS georeference)** is not started: the reply posted on the
+  issue describes the plan (one fitted root transform per tileset when `SRID`,
+  `crs x`, `crs y` exist; pyproj, else BlenderGIS's parser, else no sync).
+- Jonathan wanted the **William Liu** Lublin tiles kept, not the 3dtiled output:
+  `work/lublin/regen_wl.sh` re-downloads the PLY and rebuilds `wl_tiles`
+  (log `regen_wl.log`), then deletes the PLY; the library entry is restored
+  (`tilesets_library.json.before-wl-restore.bak` is the state before).
+  `3dtiles_merged` (3dtiled output) and the live 3dtiled entry are still there
+  for him to drop.
+- Screencast notes now live on the docs page *Development > Screencasts*
+  (`site/content/docs/dev/screencasts.md`): both workflows, finding buttons,
+  animated demos, the undo cause. The `evsim/` capture functions step the scene
+  frame (`animate=True`) so Scene Time demos move, and run with Undo Steps 0.
+- The cesium-native-python issue 9 reply carries an appended line saying 0.6.1
+  ships the certifi bundle.
+
 ## 0. Ground rules (from Jonathan, still in force)
 
 - **Credentials.** Bearer credentials:
@@ -219,7 +244,7 @@ entries and point intensity. Section 4 lists what to do next.
   - Extension id: `bl_ext.user_default.ogc_3dtiles_streaming`.
   - Build: `blender -b --command extension build --source-dir src/blender_ogc3dtiles --output-dir dist`
     (create `dist/` first).
-  - Install: `blender -b --command extension install-file -r user_default -e dist/ogc_3dtiles_streaming-0.6.1.zip`.
+  - Install: `blender -b --command extension install-file -r user_default -e dist/ogc_3dtiles_streaming-0.6.2.zip`.
   - Driving a GUI session from a shell: start Blender with a small script that
     polls a `cmd.py` file on a timer, `exec`s it and writes the output next to
     it; screenshots via `bpy.ops.screen.screenshot_area` under

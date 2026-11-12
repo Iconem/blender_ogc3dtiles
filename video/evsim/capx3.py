@@ -43,7 +43,8 @@ def lclick(key="click"):
 def keytap(k,label,**mods):
     CUR["key"]=label; ev(k,"PRESS",**mods); yield
     ev(k,"RELEASE",**mods); yield
-def capture3(name, story, interval=0.1):
+def capture3(name, story, interval=0.1, animate=True, fps=12):
+    sc=bpy.context.scene; saved=_take_begin(sc, animate, fps)
     bpy.context.preferences.view.smooth_view=200
     bpy.context.scene.render.image_settings.file_format="PNG"; bpy.context.scene.render.image_settings.compression=0
     out=os.path.join(R9,"cap_"+name); os.makedirs(out,exist_ok=True)
@@ -51,9 +52,10 @@ def capture3(name, story, interval=0.1):
     st={"i":0,"t0":time.time(),"meta":[]}; g=story(); w,a,sp,r=v3d()
     def fin(msg):
         json.dump(st["meta"],open(os.path.join(out,"meta.json"),"w"))
-        open(os.path.join(out,"done.txt"),"w").write(msg)
+        open(os.path.join(out,"done.txt"),"w").write(msg); _take_end(sc, saved)
     def tick():
         try:
+            _take_frame(sc, animate, st["i"])
             with bpy.context.temp_override(window=w,area=a,region=r):
                 bpy.ops.screen.screenshot_area(filepath=os.path.join(out,"f_%04d.png"%st["i"]))
             st["meta"].append(dict(xy=list(CUR["xy"]),down=CUR["down"],rect=None,key=CUR["key"]))

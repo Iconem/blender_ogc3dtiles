@@ -11,6 +11,11 @@ Paths that pointed into the recording session's scratchpad are written
 were read from files outside the repo and are not included; see `docs/HANDOFF.md`
 section 0 for where they live.
 
+A second, frame-stepped workflow lives in `evsim/` (capture inside Blender,
+events through `window.event_simulate`, pointer drawn in post). Its README says
+when to prefer which. On the release, its clips carry the prefixes `evsim_`,
+`drawnptr_` and `scripted_`; the `s*_` takes below are from `harness/`.
+
 ## 1. Recording a take (`harness/`)
 
 Real input, real Blender 5.3, no fake cursor:

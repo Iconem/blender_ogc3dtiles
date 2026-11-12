@@ -154,6 +154,24 @@ out of git.
 remotes. `main` is ahead of the last release, v0.5.0, by quantized-mesh terrain
 entries and point intensity. Section 4 lists what to do next.
 
+### Later on 2026-11-12: disk cleanup and the second video workflow
+
+- Deleted, to free the laptop's C: drive: the Lublin intermediates
+  (`shramko_poland_103M.ply`, `morton.ply`, `lod1-3.ply`, 13 GB) and the
+  `C:\Users\jonathan\work\3dtiled-sog-budget` clone (clean, on main). Kept:
+  `C:\Users\jonathan\work\lublin\3dtiles_merged` (2.1 GB), `wl_tiles` (3.8 GB)
+  and `lod\` (1.6 GB, the 3dtiled input), which the three local library entries
+  need. `pipeline.sh` there rebuilds everything from the Google Drive file.
+- The frame-stepped screencast scripts are in `video/evsim/` with a README that
+  compares them with `video/harness/`. Their 14 clips are on the `videos-2026-11`
+  draft release with workflow prefixes (`evsim_`, `drawnptr_`, `scripted_`).
+  Three of them show private-library datasets (Geghard, Hayravank, Bayon): Jonathan
+  decides whether they stay when the release is published. The Google URL field is
+  blurred in every Rome clip.
+- The add-on's HTTP cache, `%LOCALAPPDATA%\blender_ogc3dtiles\cache\http-cache.sqlite`,
+  is 8.1 GB, mostly from the test sessions. Not deleted: it is also Jonathan's
+  working cache. Clearing it is his call.
+
 ## 0. Ground rules (from Jonathan, still in force)
 
 - **Credentials.** Bearer credentials:

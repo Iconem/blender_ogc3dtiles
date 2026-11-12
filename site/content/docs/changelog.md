@@ -6,6 +6,17 @@ description: "What changed, newest first"
 Dates are those of the commits. Versions are the tags on the Releases page; *Unreleased* is on the
 main branch and not in a release zip yet.
 
+## Unreleased
+
+- **Orthographic views** select tiles through cesium-native's orthographic view state: the frame
+  extents are passed as they are, the eye stays on the pivot, and tiles behind the pivot are
+  selected. The 1 degree camera emulation and its pull-back are gone.
+- **Linux**: HTTPS works on every distribution. The curl backend reads certifi's CA bundle instead
+  of the Red Hat path built into the manylinux wheel (cesium-native-python issue 9).
+- **Start** reuses the live modal instead of stacking a second one, so menus and keys are no longer
+  dropped after Stop then Start in a script. Tiles freed and loaded again under the same key no
+  longer leave an orphaned object behind.
+
 ## 0.6.0 (2026-11-06)
 
 **Streaming and cameras**

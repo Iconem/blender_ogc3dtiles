@@ -67,7 +67,7 @@ class CesiumCameraAdapter:
         src = self._source(props)
         if src is None:
             return None
-        view, win, w, hpx, is_persp, pull_back, src_sig = src
+        view, win, w, hpx, is_persp, src_sig = src
         lat, lon, h = frame or (props.origin_lat, props.origin_lon, props.origin_height)
         root_sig = ()
         root_scale = 1.0
@@ -81,18 +81,9 @@ class CesiumCameraAdapter:
         pos_enu = inv.translation
         fwd_enu = inv.to_3x3() @ _V((0.0, 0.0, -1.0))
         up_enu = inv.to_3x3() @ _V((0.0, 1.0, 0.0))
-        ortho_offset = 0.0
-        if not is_persp:
-            # orthographic viewport: Blender's view matrix puts the eye on the
-            # pivot; pull it back by the view distance so distances stay
-            # meaningful (a camera object is already at its eye: pull_back 0)
-            pos_enu = pos_enu - fwd_enu * pull_back
-            # cesium-native only knows perspective cameras: a narrow camera
-            # far enough back that its frame at the pivot equals the ortho
-            # frame (height 2 / win[1][1] world units) gives the same SSE
-            p11_w = float(win[1][1]) if abs(win[1][1]) > 1e-9 else 1.0
-            far = (1.0 / p11_w) / math.tan(ViewState.ORTHO_FOV / 2.0)
-            ortho_offset = max(far - float(pull_back), 0.0)
+        # orthographic: the eye stays on the pivot (Blender's view matrix puts
+        # it there); the backend gets the frame's half extents instead of a fov,
+        # so tiles behind the pivot are selected too, as Blender draws them
 
         # frustum planes: clip = win @ view (ENU) → ECEF
         clip = win @ view
@@ -117,12 +108,11 @@ class CesiumCameraAdapter:
         return ViewState(position=pos, direction=direction, up=up,
                          viewport_width=w, viewport_height=hpx,
                          p11=p11, p00=p00, is_persp=is_persp,
-                         frustum_planes=planes, signature=sig,
-                         ortho_eye_offset=ortho_offset)
+                         frustum_planes=planes, signature=sig)
 
     def _source(self, props):
         """(view_matrix, window_matrix, width_px, height_px, is_persp,
-        ortho_pull_back, signature) from the 3D viewport, or at the render
+        signature) from the 3D viewport, or at the render
         resolution from the scene camera (``view_source`` CAMERA) or from the
         camera the user chose (OBJECT)."""
         scene = self.scene
@@ -140,14 +130,13 @@ class CesiumCameraAdapter:
             except Exception:                 # noqa: BLE001 — no context in some handlers
                 return None
             view = cam.matrix_world.inverted()
-            return (view, win, w, hpx, cam.data.type != "ORTHO", 0.0,
+            return (view, win, w, hpx, cam.data.type != "ORTHO",
                     ("CAM", cam.name, scene.frame_current))
         r3d, region = find_view3d()
         if r3d is None:
             return None
         return (r3d.view_matrix, r3d.window_matrix, max(int(region.width), 1),
-                max(int(region.height), 1), bool(r3d.is_perspective),
-                float(r3d.view_distance), ("VIEW",))
+                max(int(region.height), 1), bool(r3d.is_perspective), ("VIEW",))
 
     # ── legacy helpers (kept for callers/tests) ──────────────────────────────
 

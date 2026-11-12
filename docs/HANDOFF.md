@@ -80,11 +80,24 @@ tree clean. Written from the cnj machine (the Blender 5.3 beta there is under
   `tileset/native_backend.py` (next to `user_agent`). Then reply on issue 9 so
   Caleb does not treat it as a binding bug.
 
+### Done 2026-11-12 (later the same day, from Jonathan's machine)
+
+- certifi CA bundle set on `CurlAssetAccessorOptions.certificate_file` (issue 9).
+- Real orthographic views: `camera.get_view_state` keeps the eye on the pivot and
+  exposes `ViewState.ortho_extents`; `native_backend.update_view(..., ortho=)`
+  builds the binding's orthographic `ViewState`. The 1-degree pulled-back camera
+  is gone. Checked on the Clermont mesh, top view at 600, 300 and 150 m: full-detail
+  tiles across the frame (at 300 m: 117 visited, 61 culled, 61 rendered). Fog
+  culling stays off: a wide orthographic frame has far tiles near its edges.
+- `docs/cesium-native-python-upstream-requests.md` renumbered B1 b3dm, B2 ortho,
+  B3 GIL, B4 sqlite, as in the thread.
+- Drafts for issue 9 and for the issue 2 follow-up ("item 3 done") were shown to
+  Jonathan; not posted by the agent.
+
 ### Next steps, in order
 
-1. **certifi fix** in `native_backend.py` (three lines), test, push both remotes,
-   draft the issue 9 reply for Jonathan to post.
-2. **Real orthographic views**: the binding has
+1. Done: certifi fix (see above); the issue 9 reply waits for Jonathan to post it.
+2. Done: real orthographic views (see above). Original recipe kept for reference: **Real orthographic views**: the binding has
    `ViewState(position, direction, up, viewport_size, left, right, bottom, top)`
    since Caleb's first commit. On v0.59 it culls with the four side planes only
    and its SSE is `ge * viewport_height / (top - bottom)`, distance independent.
@@ -99,7 +112,7 @@ tree clean. Written from the cnj machine (the Blender 5.3 beta there is under
    viewport. Matrix overload caveat: cesium-native's projection has Y flipped, an
    OpenGL matrix must get row 1 negated or the SSE comes out negative. Then follow
    up on item 3 of the issue 2 comment with "done".
-3. Realign the B numbering in `docs/cesium-native-python-upstream-requests.md`.
+3. Done: B numbering realigned.
 4. Ask Jonathan whether to push 3dtiled `5964eeb`, and where (the worktree branch
    or main of that repo).
 5. Report the William Liu result when `convert.log` ends with `WL-DONE` and a

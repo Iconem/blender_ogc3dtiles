@@ -1764,9 +1764,10 @@ def _tick_native(scene, props, st, now) -> bool:
     need = (view.signature != st["last_sig"] or changed
             or now - st["last_sel_t"] > SELECTION_MAX_AGE_S)
     if need:
-        res = backend.update_view(view.native_position, view.direction, view.up,
+        res = backend.update_view(view.position, view.direction, view.up,
                                   view.viewport_width, view.viewport_height,
-                                  view.fov_x, view.fov_y, dt=now - st["last_sel_t"])
+                                  view.fov_x, view.fov_y, dt=now - st["last_sel_t"],
+                                  ortho=view.ortho_extents)
         changed |= _apply_visibility(st, set(res.to_render), set(), now)
         st["stats"] = res.stats
         st["last_sig"] = view.signature

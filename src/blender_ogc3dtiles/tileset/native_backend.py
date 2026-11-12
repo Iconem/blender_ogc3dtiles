@@ -502,6 +502,13 @@ def _shared_externals(cs, cache_dir, max_loads):
     asys = cs.async_.AsyncSystem(tp)
     copts = cs.curl.CurlAssetAccessorOptions()
     copts.user_agent = "blender-ogc3dtiles/0.3 cesium-native-python"
+    try:
+        # the manylinux curl only knows Red Hat's CA bundle path; on other Linux
+        # distributions every HTTPS request fails without a CA file (issue 9)
+        import certifi
+        copts.certificate_file = certifi.where()
+    except Exception as e:                  # noqa: BLE001
+        print(f"[3DTiles] no certifi CA bundle: {e}")
     inner = cs.curl.CurlAssetAccessor(copts)
     # some hosts serve pre-gzipped .json/.b3dm without Content-Encoding
     inner = cs.async_.GunzipAssetAccessor(inner)
@@ -597,7 +604,7 @@ class CesiumNativeBackend:
         opts.maximum_cached_bytes = self._max_cached_bytes
         opts.maximum_simultaneous_tile_loads = self._max_loads
         opts.enable_occlusion_culling = False
-        opts.enable_fog_culling = False    # height-based fog would cull the far ortho eye's view
+        opts.enable_fog_culling = False    # fog would cull the far side of wide orthographic frames
         opts.preload_siblings = False      # fewer speculative imports on the main thread
         opts.forbid_holes = True           # keep parents until children are in
         # budget for prepare_in_main_thread work per update (ms); our mesh
@@ -691,15 +698,23 @@ class CesiumNativeBackend:
                 pass
 
     def update_view(self, position_ecef, direction_ecef, up_ecef,
-                    viewport_w, viewport_h, hfov, vfov, dt=0.0):
+                    viewport_w, viewport_h, hfov, vfov, dt=0.0, ortho=None):
+        """``ortho`` = (half_width, half_height) of an orthographic frame in
+        metres, centred on ``position_ecef``: the binding's orthographic
+        ViewState then culls with the four side planes and uses
+        SSE = error * viewport_h / frame_height, independent of distance."""
         if self._tileset is None:
             return NativeViewResult([], [], {})
         sel = self._cs.tiles.selection
-        view = sel.ViewState(np.asarray(position_ecef, np.float64),
-                             np.asarray(direction_ecef, np.float64),
-                             np.asarray(up_ecef, np.float64),
-                             np.asarray([viewport_w, viewport_h], np.float64),
-                             float(hfov), float(vfov))
+        args = (np.asarray(position_ecef, np.float64),
+                np.asarray(direction_ecef, np.float64),
+                np.asarray(up_ecef, np.float64),
+                np.asarray([viewport_w, viewport_h], np.float64))
+        if ortho is not None:
+            hw, hh = float(ortho[0]), float(ortho[1])
+            view = sel.ViewState(*args, -hw, hw, -hh, hh)
+        else:
+            view = sel.ViewState(*args, float(hfov), float(vfov))
         vg = self._tileset.default_view_group
         res = self._tileset.update_view_group(vg, [view], float(dt))
         self._tileset.load_tiles()

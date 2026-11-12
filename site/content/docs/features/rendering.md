@@ -70,10 +70,9 @@ theirs is smaller, since Blender's 100 m default would render a site as empty.
 
 ## How it works
 
-- cesium-native only knows perspective cameras. For an orthographic view the add-on hands it a
-  1-degree camera pulled back far enough that its frame at the view's pivot matches the orthographic
-  one: same screen-space error, same tiles. cesium-native's fog culling is off, as it would cull that
-  far-away eye's view. The pure Python backend reads the orthographic projection directly.
+- The add-on hands cesium-native an orthographic view: the eye on the pivot and the frame's width
+  and height. Tiles are kept by the four sides of the frame, so tiles behind the pivot are selected
+  too, as Blender draws them. The pure Python backend reads the orthographic projection directly.
 - Clip start is raised to clip end / 1,000,000. With a very large range, orthographic depth loses
   precision, and Blender computes the Alt+B planes in single precision.
 - The clipping region only affects drawing, not which tiles stream.

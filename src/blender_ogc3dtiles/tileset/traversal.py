@@ -204,11 +204,9 @@ class ViewState:
     is_persp: bool = True
     frustum_planes: Optional[List[Tuple[float, float, float, float]]] = None  # (nx,ny,nz,d) in ECEF
     signature: tuple = ()
-    # orthographic views for perspective-only consumers (cesium-native): a
-    # narrow ORTHO_FOV camera pulled back by this many metres along
-    # -direction sees the same screen-space error and the same frame
-    ortho_eye_offset: float = 0.0
-
+    # perspective-only consumers (the pure Python backend's SSE) see an
+    # orthographic view as this narrow camera; cesium-native gets the real
+    # orthographic frame through ``ortho_extents``
     ORTHO_FOV = math.radians(1.0)
 
     @property
@@ -222,14 +220,12 @@ class ViewState:
         return 2.0 * math.atan(math.tan(self.ORTHO_FOV / 2.0) * self.p11 / self.p00)
 
     @property
-    def native_position(self) -> Tuple[float, float, float]:
-        """Eye for a perspective-only backend (see ``ortho_eye_offset``)."""
-        if self.is_persp or self.ortho_eye_offset <= 0.0:
-            return self.position
-        dx, dy, dz = self.direction
-        n = math.sqrt(dx * dx + dy * dy + dz * dz) or 1.0
-        o = self.ortho_eye_offset / n
-        return (self.position[0] - dx * o, self.position[1] - dy * o, self.position[2] - dz * o)
+    def ortho_extents(self) -> Optional[Tuple[float, float]]:
+        """(half width, half height) of an orthographic frame at ``position``,
+        in the tileset's units; None for a perspective view."""
+        if self.is_persp:
+            return None
+        return (1.0 / self.p00, 1.0 / self.p11)
 
     @classmethod
     def from_simple(cls, position, screen_height_px: int, fov_y_rad: float) -> "ViewState":

@@ -1,7 +1,77 @@
 # Handoff: blender_ogc3dtiles + cesium-native-python
 
-**Newest first: section 6 (2026-11-12) is the current state. Sections 0 to 5 are
-the 2026-11-04 handoff and still hold except where section 6 says otherwise.**
+**Newest first: section 7 (2026-11-13) is the current state, then section 6
+(2026-11-12). Sections 0 to 5 are the 2026-11-04 handoff and still hold except
+where sections 6 and 7 say otherwise.**
+
+## 7. Handoff 2026-11-13
+
+### Done
+
+- **0.6.3** released on both repos (`EXT_splat_opacity` for William Liu's splat tiles).
+- Stale fork branches `bindings/c-items`, `ci/wheels`, `fix/gltf-modifier-subclass`
+  deleted (their PRs #5, #4, #7 are merged).
+- **Upstream batch drafted and posted.** Two branches of `jo-chemla/cesium-native-python`,
+  based on upstream `4b55c1a`, described in Jonathan's reply on issue 2 (2026-11-13). No
+  PR yet: Jonathan waits for Caleb's answer (he took about two weeks last time).
+  - `batch/bindings`: `GilSafeCallable` for Python callbacks captured by cesium-native
+    continuations (item 4), `CachingAssetAccessor(accessor, cache)` (item 5), the flipped
+    Y row docstring on the matrix `ViewState` (item 3), the Linux CA bundle default
+    (issue 9), `examples/minimal_preparer.py` (C12), tests.
+  - `ci/release-partial`: `ci.yml` builds one wheel and runs pytest on PRs (item 6);
+    `wheels.yml` releases whatever built under `always()`, lists missing runners in the
+    notes and stays a pre-release until "Re-run failed jobs" completes it; `macos-15`.
+    Tested with a throwaway tag: GitHub gives up on a macOS arm64 runner after 15 min
+    ("job was not acquired by Runner of type hosted") and marks the job *cancelled*; a
+    retired label (`macos-13`) queues forever until the run is cancelled.
+  - Item numbers are those of Jonathan's 2026-11-11 comment on issue 2.
+- **Stop errors fixed**: teardown dropped the Python preparer while cesium-native still
+  had loads in flight, so pybind11 found no override ("Tried to call pure virtual
+  function ..."). `native_backend._RETIRED` keeps the last preparers alive, marked
+  retired so they return at once. 13 to 19 errors per stop before, 0 after.
+- **Metadata after reopening a .blend fixed**: the column registry lived in memory only,
+  so the panel lost its legend and ramp and the next edit set "Is Number" to 0.
+  `materials.restore_metadata` rebuilds it on load from `meta_columns` (which now store
+  `lo` / `hi`) and `meta_classes`; older files get the active column's range from the
+  node group. Opening another file clears it. Checked on 5.3 with Cesium's
+  PropertyAttributesPointCloud sample and the Clermont mesh, across save, quit and reopen.
+- **B3 measured.** The issue 2 comment said the load thread only serialises the model;
+  wrong: `extract_mesh_payload` runs in `prepare_in_load_thread` under the GIL. On the
+  Clermont mesh it costs about 2 ms per tile; loading is network-bound; doing it in
+  `prepare_in_main_thread` instead gives the same load time and longer main-loop stalls
+  (up to 9 ms against 2 to 4 ms). A load-thread `Model` must not be kept: it is moved
+  into the tile after the call (read it from `tile.content.render_content.model`). The
+  example on `batch/bindings` was fixed for this. A correction for Caleb is drafted.
+
+### After the upstream batch lands and Caleb tags
+
+1. **Installer**: point *Wheel release repo* at `calebbuffa/cesium-native-python` (the
+   fork name is the default in `addon_prefs.py`, twice), or install from PyPI if he
+   publishes there, which simplifies the installer.
+2. **Package rename** `cesium-python` to `cesium-native-python`: the installer matches
+   wheels by platform tags and keeps working; `tests/test_wheel_pick.py` uses
+   `cesium_python-*` file names and needs updating.
+3. **Item 5**: build our own `SqliteCache` with a larger item cap than the default 4096,
+   passed to `CachingAssetAccessor`. The byte-budget trim in `cachectl.py` stays.
+4. **Item 4**: the plain Python thread in `asset_fixes.py` could go back to cesium-native's
+   worker thread. Optional, the thread works.
+5. **The v0.66 bump** (issue 8, v0.61 then v0.66): retest the `asset_fixes.py`
+   workarounds (`data:` URIs, subtree JSON without `byteLength`, empty tiles shown as
+   holes). It unblocks tiles with several contents, `VEC3` metadata columns, a
+   `GltfModifier` with raster overlays (cesium-native#1307) and 3D Tiles 2.0. Checklist
+   also on the site page *Development > cesium-native*.
+6. **Waiting on Caleb's design calls**: B3 (extraction off the GIL; small gain on meshes,
+   see above), B4 (busy timeout, would let us drop the lock file), C11 (12
+   property-or-method shims).
+
+### Open, add-on side
+
+- Panoramic cameras (Jonathan would like them): a cube-map union of six views works on
+  v0.59, exact after the bump. Not started.
+- `file:` reads into the HTTP cache; splat sorting between objects (check first whether
+  it shows in practice). Issue 6 (BlenderGIS) is deferred by Jonathan.
+- Set aside by Jonathan: the Python backend's orthographic emulation, the Vestibule
+  column, voxels.
 
 ## 6. Handoff 2026-11-12
 
@@ -36,10 +106,12 @@ tree clean. Written from the cnj machine (the Blender 5.3 beta there is under
   2026-11-12 around 07:00 at low priority and was at the same stage at 09:00.
   Output `%OGC_SCRATCH%\dl\lublin\wl_tiles` (a Temp folder Windows may clean).
   Its planned tree: 12 levels, 4,250 leaves, comparable to the 3dtiled fix.
-- **Raster overlay on COPC point tiles does not work** (and never did; the old
-  take's colours were the classification): cesium-native upsamples about a
-  thousand point tiles and attaches 1x1 to 3x3 px rasters, while the same WMTS
-  on the Clermont mesh gets 343x395 px images. Not fixed; the demo uses the mesh.
+- **Raster overlay on the local Eiffel point tiles used for the video takes**
+  (`%OGC_SCRATCH%\dl\eiffel\3dtiles`) did not work: cesium-native upsampled about a
+  thousand point tiles and attached 1x1 to 3x3 px rasters, while the same WMTS on the
+  Clermont mesh got 343x395 px images. Jonathan reports (2026-11-13) that overlays work
+  on the same LiDAR HD Eiffel tile streamed live through 3dtiled, so this was that
+  conversion, not point tiles in general. Not investigated further.
 
 ### Upstream, posted on 2026-11-11 by Jonathan
 
@@ -61,7 +133,8 @@ tree clean. Written from the cnj machine (the Blender 5.3 beta there is under
     preparer (B3), cache lock file in `native_backend.py` (B4), point radius from
     point spacing (C6), `cachectl.py` byte-budget trim (C10), 12 `callable()`
     checks (C11, the post says about 15), our own preparer (C12). The "about 8 ms
-    per tile" figure is our own note in `gltf_payload.py`.
+    per tile" figure is our own note in `gltf_payload.py`. Corrected 2026-11-13:
+    B3 has no workaround, the extraction does run in the load thread (section 7).
   - Issue 8's version table matches the upstream changelog line by line,
     including the v0.65 error delegate and setter removal. v0.59 and v0.61 share
     the same ezvcpkg commit; v0.62 moves it.
@@ -211,7 +284,7 @@ entries and point intensity. Section 4 lists what to do next.
 - **jo-chemla/cesium-native-python `main` reset onto upstream `main`**
   (`4b55c1a`, Jonathan's four PRs all merged there); the fork's ten
   pre-squash commits are gone. Branches `bindings/c-items`, `ci/wheels`,
-  `fix/gltf-modifier-subclass` still exist on the fork and can be deleted.
+  `fix/gltf-modifier-subclass` were deleted on 2026-11-13.
 - **Wheel release `v0.1.0-wheels.2`** built from that commit by the fork's
   `wheels` workflow (`workflow_dispatch`, `release_tag`). GitHub retired the
   `macos-14` runner ("configuration not supported"), so the run was launched
@@ -371,7 +444,7 @@ entries and point intensity. Section 4 lists what to do next.
 - **Feature metadata** (`tileset/feature_meta.py`, Metadata panel) is checked in a GUI
   session on 5.3 only: swissBUILDINGS3D, with an OSM overlay, and Cesium's point cloud
   samples. Texture metadata is checked on Cesium's three samples, 8-bit channels and UV
-  set 0 only. Reopening a saved .blend is untested. `VEC3` table columns raise in the
+  set 0 only. Reopening a saved .blend works since 2026-11-13 (section 7). `VEC3` table columns raise in the
   binding, and `contents` (several per tile) loads nothing on v0.59, so tiles of that
   kind give no metadata either.
 - **Voxels** (`tileset/voxels.py`, see `docs/voxels.md`) are also checked on 5.3 only.
@@ -409,12 +482,9 @@ entries and point intensity. Section 4 lists what to do next.
   georeferenced one. Checked on 5.3 with a Custom origin in Rome and with the CDN
   splats first. The Vestibule splats render as a tall column, about twice as
   high as wide: likely the converter's axes, not the add-on; not investigated.
-- **Preparer errors at stop**: stopping a stream with loads in flight logs a
-  burst of "Tried to call pure virtual function
-  IPrepareRendererResources.prepare_in_load_thread" from cesium-native (the
-  Python preparer is gone before the worker continuations run). Harmless so far.
-- **Orthographic viewports** use a far, narrow perspective emulation, exact
-  only on the pivot plane, until the v0.65 bump.
+- **Preparer errors at stop**: fixed 2026-11-13, see section 7.
+- **Orthographic viewports**: exact since 0.6.1 on the native backend (section 6).
+  The Python backend keeps the 1 degree emulation.
 - **Panoramic cameras**: not supported; a six-view cube-map union would work.
 - `file:` reads (local / NAS tilesets) never enter the sqlite HTTP cache.
 
@@ -471,7 +541,7 @@ Read on 2026-11-02, nothing merged. v0.66 only reads and writes the glTF 2.1 and
 
 3. ~~Bugs in section 2~~ (fixed 2026-11-04, see Known limitations): content-less
    tiles rendered as holes, and non-georeferenced tilesets with a fixed origin.
-4. **Reopening a saved .blend** with metadata is untested.
+4. ~~Reopening a saved .blend with metadata~~: tested and fixed 2026-11-13 (section 7).
 5. **Beta items from the README roadmap:** Grease Pencil phases (first version done
    2026-11-05: `phase_strokes.py` for the geometry, `phases.OGC3D_OT_PhaseFromStrokes`,
    pref `beta_phase_strokes`; painted areas (brush radius around the strokes) and outlines (prisms); the panel is in

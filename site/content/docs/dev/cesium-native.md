@@ -55,8 +55,8 @@ terrain, implicit tiling.
 | v0.61.0 (2026-06) | vector overlays | `VectorTilesRasterOverlay` (a 3D Tiles vector tileset rasterised with a style and draped like imagery), overlays draw points, `3DTILES_content_conditional`, `EXT_mesh_primitive_edge_visibility`, MAXAR feature ids. Breaking: `GeoJsonDocumentRasterOverlay` moved to `CesiumVectorOverlays`. |
 | v0.62.0 (2026-07) | **binding work** | Breaking: vcpkg baseline upgrade, image types moved to a new `CesiumImage` library, position / normal / accessor APIs changed (variant types, `normalized` argument). Adds accessor visitors (position, normal, quaternion, colour), primitive-mode retopologising, `KHR_billboard`, `KHR_mesh_quantization` texcoord types, GeoJSON properties as structural metadata. |
 | v0.63.0 (2026-08) | — | `KHR_lights_punctual`, Bentley line / point style materials, GeoJSON point rasterising fix, MAXAR string offsets fix. |
-| v0.64.0 (2026-09) | **orthographic views** | `ViewState` accepts general culling volumes (not only a perspective frustum), intersection tests on `BoundingVolume`, area paging for fixed-LOD terrain regions. |
-| v0.65.0 (2026-10) | **orthographic views**, robustness | Breaking: `ViewState` takes a delegate computing the tile screen-space error (replaces the fixed geometric-error setter). Fixes: Draco out-of-bounds read, PNTS section length check. `GS_3DT` iTwin reality data, styling provider for `VectorTilesRasterOverlay`. |
+| v0.64.0 (2026-09) | general culling volumes | `ViewState` accepts general culling volumes (not only a perspective frustum), intersection tests on `BoundingVolume`, area paging for fixed-LOD terrain regions. |
+| v0.65.0 (2026-10) | robustness | Breaking: `ViewState` takes a delegate computing the tile screen-space error (replaces the fixed geometric-error setter). Fixes: Draco out-of-bounds read, PNTS section length check. `GS_3DT` iTwin reality data, styling provider for `VectorTilesRasterOverlay`. |
 | v0.66.0 (2026-11) | security fix | Integer overflow / out-of-bounds write when decoding `EXT_meshopt_compression`; experimental glTF 2.1 and 3D Tiles 2.0; `CESIUM_DISABLE_SPZ` build option; `KHR_implicit_shapes` classes renamed. |
 
 Reading: the meshopt fix is a reason to bump even without new features;
@@ -65,15 +65,36 @@ and accessor API changes touch most of the binding); v0.64 / v0.65 are the
 ones the add-on would use first.  Source:
 [cesium-native CHANGES.md](https://github.com/CesiumGS/cesium-native/blob/main/CHANGES.md).
 
+### After the bump: what to recheck in the add-on
+
+The binding plans the bump in two steps, v0.61 then v0.66
+([issue 8](https://github.com/calebbuffa/cesium-native-python/issues/8)). Once a wheel
+with v0.66 exists, check which add-on workarounds cesium-native makes unnecessary,
+and what it unblocks:
+
+- **Workarounds to retest**, all in `tileset/asset_fixes.py`: `data:` URIs, subtree
+  JSON without `byteLength`, and content-less tiles whose error is below their
+  parent's (rendered as holes).
+- **Unblocked**: tiles with several `contents` (load nothing on v0.59, so they give
+  no metadata either), `VEC3` metadata table columns (raise in the binding today),
+  a `GltfModifier` combined with raster overlays (cesium-native#1307), and 3D Tiles
+  2.0 (`*.tileset.gltf`, see the handoff notes).
+- **Binding API changes to absorb**: `CesiumImage` (v0.62), accessor and position
+  APIs (v0.62), the screen-space-error delegate replacing the geometric-error
+  setter (v0.65).
+
 ## Non-perspective cameras (orthographic, panoramic)
 
-cesium-native v0.59 selects tiles for perspective views only: a frustum for
-culling and the perspective screen-space error formula.  The add-on emulates
-an orthographic viewport with a far, narrow perspective eye.  With v0.64's
-culling volumes and v0.65's screen-space-error delegate, a renderer defines
-both itself, so a real orthographic view becomes possible (an oriented box
-for culling, error = geometric error / ortho scale × pixels).  The same
-applies to Blender's panoramic cameras: an equirectangular camera sees all
+Orthographic views are exact already on v0.59: the binding has had an
+orthographic `ViewState(position, direction, up, viewport, left, right,
+bottom, top)` since its first commit. It culls with the four side planes and
+uses error = geometric error × viewport height / frame height, independent of
+distance. The add-on builds it for orthographic viewports and cameras since
+0.6.1 (eye on the pivot, half extents from the projection matrix).
+
+Panoramic cameras are not supported yet. With v0.64's culling volumes and
+v0.65's screen-space-error delegate, a renderer defines both culling and
+error itself, which suits Blender's panoramic cameras: an equirectangular camera sees all
 directions (cull nothing but distance) and has a constant angular
 resolution, so its error is geometric error / distance × width / 2π; a
 cylindrical camera mixes the two.  Until then, a panorama can already be

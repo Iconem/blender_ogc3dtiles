@@ -6,6 +6,17 @@ description: "What changed, newest first"
 Dates are those of the commits. Versions are the tags on the Releases page; *Unreleased* is on the
 main branch and not in a release zip yet.
 
+## Unreleased
+
+- **Metadata colours survive reopening a .blend.** The columns, class codes and number ranges the
+  workers collect lived in memory only: after reopening a saved file the Metadata panel hid its
+  legend and ramp, and the next edit coloured a number column with the class palette. They are
+  now rebuilt from the file on load, and number ranges are saved with it. Opening another file
+  no longer carries the previous file's columns over.
+- **No more errors when stopping a stream.** Stopping while tiles were still loading logged a
+  burst of "Tried to call pure virtual function IPrepareRendererResources..." messages: the
+  add-on dropped its tile preparer before cesium-native had finished with it.
+
 ## 0.6.3 (2026-11-13)
 
 - **`EXT_splat_opacity` honoured.** Tilesets from the 3DGS-PLY-3DTiles converter (William Liu)

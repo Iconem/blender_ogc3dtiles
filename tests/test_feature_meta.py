@@ -262,3 +262,23 @@ class TestTexels:
     def test_values_from_a_property_texture(self):
         grid = np.array([[1.0]], np.float32)
         assert fm.texel_values({"columns": {"t": grid}, "ids": None, "table": None}, "t") is grid
+
+
+def test_registry_restore_from_saved_columns():
+    """A reopened .blend rebuilds the registry from the panel's columns and classes."""
+    from blender_ogc3dtiles.tileset.feature_meta import Registry
+    reg = Registry()
+    reg.restore([("intensity", "number", 0.0, 0.63), ("classification", "class", 0.0, -1.0),
+                 ("old", "number", 0.0, -1.0)],
+                [("classification", "Buildings", 1), ("classification", "Trees", 2)])
+    col = reg.get("intensity")
+    assert col.kind == "number" and (col.lo, col.hi) == (0.0, 0.63)
+    assert reg.classes("classification") == [("Buildings", 1), ("Trees", 2)]
+    assert reg.get("old").hi < reg.get("old").lo          # no range stored: none invented
+    # new tiles extend what was restored, and keep the saved codes
+    assert list(reg.codes_for("classification", ["Trees", "Water"])) == [2, 3]
+    reg.note_range("intensity", __import__("numpy").array([0.9]))
+    assert reg.get("intensity").hi == 0.9
+    # a column already seen is not overwritten
+    reg.restore([("intensity", "number", 5.0, 6.0)], [])
+    assert reg.get("intensity").lo == 0.0

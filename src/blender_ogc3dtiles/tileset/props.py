@@ -347,6 +347,10 @@ def _on_item_use_overlays(self, context):
 
 class MetaColumnItem(PropertyGroup):
     kind: StringProperty()         # "number" or "class"
+    # range of a number column, kept in the file so a reopened .blend still
+    # knows it (the registry the workers fill lives in memory only)
+    lo: FloatProperty()
+    hi: FloatProperty(default=-1.0)   # hi < lo: no range stored
 
 
 class MetaClassItem(PropertyGroup):

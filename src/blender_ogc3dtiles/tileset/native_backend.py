@@ -29,6 +29,7 @@ import os
 import struct
 import tempfile
 import threading
+from collections import deque
 from typing import NamedTuple
 
 import numpy as np
@@ -135,15 +136,28 @@ def _val(x):
     return x() if callable(x) else x
 
 
+# Preparers of stopped streams. cesium-native keeps calling a tileset's
+# preparer for the loads still in flight after the Tileset is dropped; if the
+# Python object is gone by then, pybind11 finds no override and every such load
+# logs "Tried to call pure virtual function IPrepareRendererResources...".
+# Keeping the last few alive (marked retired, so they return at once) covers
+# the seconds those loads take.
+_RETIRED = deque(maxlen=8)
+
+
 class _GlbPreparer:
     """IPrepareRendererResources implementation (mixed into the cesium base
     class at runtime, see CesiumNativeBackend._make_preparer)."""
+
+    _retired = False
 
     def _init_owner(self, owner):
         self._owner = owner
 
     # worker thread -------------------------------------------------------
     def prepare_in_load_thread(self, async_system, tlr, transform):
+        if self._retired:
+            return None
         cs = self._owner._cs
         model = tlr.model
         if model is None:
@@ -236,7 +250,7 @@ class _GlbPreparer:
         ``on_main_thread_ready`` we build the Blender object right here, so
         cesium-native only considers the tile renderable once it really is on
         screen (no holes while our import queue catches up). Otherwise queue."""
-        if load_result is None:
+        if load_result is None or self._retired:
             return None
         payload = load_result.mesh_payload
         if payload is not None and "unit_verts" in payload:
@@ -284,6 +298,8 @@ class _GlbPreparer:
     def prepare_raster_in_load_thread(self, image):
         """Worker thread: decoded raster → float RGBA rows bottom-up (Blender
         image layout), no bpy here."""
+        if self._retired:
+            return None
         try:
             w, h, c = int(image.width), int(image.height), int(image.channels)
             if w <= 0 or h <= 0 or int(image.bytes_per_channel) != 1 or c not in (1, 2, 3, 4):
@@ -308,7 +324,7 @@ class _GlbPreparer:
 
     def prepare_raster_in_main_thread(self, raster_tile, load_result):
         """Main thread (inside tick): the raster becomes a bpy Image."""
-        if not load_result:
+        if not load_result or self._retired:
             return None
         try:
             import bpy  # noqa: PLC0415
@@ -874,6 +890,10 @@ class CesiumNativeBackend:
         self._asys = None
         self._tp = None
         self._accessor = None
+        if self._prr is not None:
+            # loads in flight still call it, see _RETIRED
+            self._prr._retired = True
+            _RETIRED.append(self._prr)
         self._prr = None
 
 

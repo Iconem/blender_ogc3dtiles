@@ -862,6 +862,11 @@ def sync_metadata(scene, force=False):
         for name, kind, *_rest in columns:
             item = props.meta_columns.add()
             item.name, item.kind = name, kind
+    ranges = {name: (lo, hi) for name, kind, lo, hi, _n in columns if kind == "number"}
+    for item in props.meta_columns:              # kept in the file, see restore_metadata
+        lo, hi = ranges.get(item.name, (0.0, -1.0))
+        if hi >= lo and (item.lo != lo or item.hi != hi):
+            item.lo, item.hi = lo, hi
     have = {(c.column, c.code) for c in props.meta_classes}
     for name, kind, *_rest in columns:
         if kind != "class":
@@ -876,6 +881,32 @@ def sync_metadata(scene, force=False):
         from .io import refresh_feature_attributes
         refresh_feature_attributes(scene)
     update_metadata_group(scene)
+    return True
+
+
+def restore_metadata(scene):
+    """A reopened .blend: the registry the workers fill is empty, while the panel's
+    columns, classes and the node group are in the file. Without the registry the
+    panel hides the legend and ramp, and the next edit treats every column as
+    classes. Rebuild it from what the file kept."""
+    props = scene.ogc3dtiles
+    REGISTRY.clear()                           # columns of the file opened before
+    _meta_seen[0] = REGISTRY.version
+    if not props.meta_columns:
+        return False
+    group = bpy.data.node_groups.get(META_GROUP)
+    columns = []
+    for item in props.meta_columns:
+        lo, hi = item.lo, item.hi
+        if item.kind == "number" and hi < lo and item.name == props.meta_column                 and group is not None and not props.meta_range_custom:
+            try:                       # files saved before the range was stored
+                lo = group.nodes["Min"].outputs[0].default_value
+                hi = group.nodes["Max"].outputs[0].default_value
+            except KeyError:
+                pass
+        columns.append((item.name, item.kind, lo, hi))
+    REGISTRY.restore(columns, [(c.column, c.name, c.code) for c in props.meta_classes])
+    _meta_seen[0] = REGISTRY.version           # nothing new to mirror into the panel
     return True
 
 
@@ -1217,6 +1248,7 @@ def _upgrade_group_on_load(_dummy=None):
                 continue
             if props.clip_materials:
                 set_clip_materials(True)
+            restore_metadata(scene)      # the column registry is not saved
             if props.meta_classes:
                 write_palette(scene)     # a generated image's pixels need a refresh
             set_backface_mode(props.backface_mode)

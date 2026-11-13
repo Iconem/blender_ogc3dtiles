@@ -153,6 +153,23 @@ class Registry:
         with self._lock:
             return self._columns.get(name)
 
+    def restore(self, columns, classes):
+        """Columns saved in a .blend, back into an empty registry.
+        ``columns``: [(name, kind, lo, hi)], hi < lo when no range is known;
+        ``classes``: [(column, text, code)]. Columns already seen are kept."""
+        with self._lock:
+            for name, kind, lo, hi in columns:
+                if name in self._columns or kind not in ("number", "class"):
+                    continue
+                col = self._columns[name] = Column(name, kind)
+                if kind == "number" and hi >= lo:
+                    col.lo, col.hi = float(lo), float(hi)
+            for column, text, code in classes:
+                col = self._columns.get(column)
+                if col is not None and col.kind == "class" and code > 0:
+                    col.codes.setdefault(text, int(code))
+            self.version += 1
+
 
 REGISTRY = Registry()
 

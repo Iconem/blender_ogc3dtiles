@@ -11,11 +11,13 @@ Flow
   (tileset.json / implicit tiling / external tilesets, b3dm / i3dm / pnts /
   cmpt / glb unwrapping, Draco / meshopt / KTX2 decoding, SSE selection,
   LRU tile cache, sqlite HTTP cache).
-* ``_GlbPreparer.prepare_in_load_thread`` (worker thread) serialises the Model
-  back to a GLB with ``GltfWriter`` (textures re-encoded to PNG only when they
-  were KTX2) and records the tile ECEF transform.
-* ``prepare_in_main_thread`` hands the GLB to a queue that the modal operator
-  drains and imports with ``bpy.ops.import_scene.gltf``.
+* ``_GlbPreparer.prepare_in_load_thread`` (worker thread, GIL held) extracts
+  numpy arrays from the Model (``native_mesh.extract_mesh_payload``) and records
+  the tile ECEF transform. With *Direct mesh* off, or when extraction fails, it
+  serialises the Model back to a GLB with ``GltfWriter`` instead (textures
+  re-encoded to PNG only when they were KTX2).
+* ``prepare_in_main_thread`` builds the Blender object at once through the UI
+  callback, or queues the ``ReadyTile`` for the modal operator.
 * ``update_view`` returns the keys of the tiles cesium-native wants rendered,
   the modal operator toggles visibility, ``free_tile`` reports evictions.
 
@@ -517,7 +519,7 @@ def _shared_externals(cs, cache_dir, max_loads):
     tp = cs.async_.NativeTaskProcessor()
     asys = cs.async_.AsyncSystem(tp)
     copts = cs.curl.CurlAssetAccessorOptions()
-    copts.user_agent = "blender-ogc3dtiles/0.3 cesium-native-python"
+    copts.user_agent = "blender-ogc3dtiles/0.6.3 cesium-native-python"   # manifest version
     try:
         # the manylinux curl only knows Red Hat's CA bundle path; on other Linux
         # distributions every HTTPS request fails without a CA file (issue 9)
@@ -526,6 +528,9 @@ def _shared_externals(cs, cache_dir, max_loads):
     except Exception as e:                  # noqa: BLE001
         print(f"[3DTiles] no certifi CA bundle: {e}")
     inner = cs.curl.CurlAssetAccessor(copts)
+    if cache_dir:
+        # tilesets on a NAS: served with an ETag so the cache below keeps them
+        inner = asset_fixes.make_network_file_accessor(cs, inner)
     # some hosts serve pre-gzipped .json/.b3dm without Content-Encoding
     inner = cs.async_.GunzipAssetAccessor(inner)
     if cache_dir:

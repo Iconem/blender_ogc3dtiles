@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import base64
 import json
+import os
+import re
 import threading
 from urllib.parse import unquote_to_bytes
 
@@ -143,3 +145,121 @@ def make_accessor(cs, inner):
             inner.tick()
 
     return FixingAccessor()
+
+
+# ── network files through the HTTP cache ─────────────────────────────────────
+# curl's file:// responses carry no Cache-Control, ETag or Last-Modified, so
+# cesium-native's CachingAssetAccessor never stores them and a tileset on a NAS
+# is read over the network every time it streams. Below the cache, this
+# accessor serves network file: URLs itself with an ETag made of the file's
+# modification time and size, and "max-age=0": the cache stores every read and
+# asks again with If-None-Match each time; a stat then answers 304 (served from
+# the cache) or 200 (the file changed, e.g. a re-exported tileset). Files on a
+# local disk keep going through curl: a cache copy would not be faster.
+
+_DRIVE_REMOTE = 4
+_CONTENT_TYPES = {".json": "application/json", ".glb": "model/gltf-binary",
+                  ".gltf": "model/gltf+json", ".png": "image/png", ".jpg": "image/jpeg",
+                  ".jpeg": "image/jpeg", ".ktx2": "image/ktx2", ".webp": "image/webp"}
+_POOL = []
+_POOL_LOCK = threading.Lock()
+_KEEP = []          # accessors handed to cesium-native, see make_network_file_accessor
+
+
+def _remote_drive(letter: str) -> bool:
+    if os.name != "nt":
+        return False
+    try:
+        import ctypes  # noqa: PLC0415
+        return ctypes.windll.kernel32.GetDriveTypeW(letter + ":\\") == _DRIVE_REMOTE
+    except Exception:          # noqa: BLE001
+        return False
+
+
+def is_network_file_url(url: str) -> bool:
+    """A ``file:`` URL on a network share: UNC (``file:////server/share``, which
+    is what the add-on writes for mapped drives too) or a mapped drive letter."""
+    if not url.startswith("file:"):
+        return False
+    rest = url[5:]
+    if rest.startswith("////") or (rest.startswith("//") and not rest.startswith("///")
+                                   and not rest[2:].startswith("localhost/")):
+        return True
+    m = re.match(r"^///([A-Za-z]):", rest)
+    return bool(m) and _remote_drive(m.group(1).upper())
+
+
+def file_etag(st) -> str:
+    return '"%x-%x"' % (st.st_mtime_ns, st.st_size)
+
+
+def _header(headers, name):
+    items = headers.items() if isinstance(headers, dict) else headers or ()
+    for k, v in items:
+        if k.lower() == name:
+            return v
+    return None
+
+
+def serve_file(path: str, if_none_match):
+    """(status, content type, headers, data) of a local read, HTTP style."""
+    try:
+        st = os.stat(path)
+    except OSError:
+        return 404, "", {}, b""
+    etag = file_etag(st)
+    headers = {"ETag": etag, "Cache-Control": "max-age=0"}
+    if if_none_match == etag:
+        return 304, "", headers, b""
+    try:
+        with open(path, "rb") as fh:
+            data = fh.read()
+    except OSError:
+        return 404, "", {}, b""
+    ext = os.path.splitext(path)[1].lower()
+    return 200, _CONTENT_TYPES.get(ext, "application/octet-stream"), headers, data
+
+
+def _pool():
+    with _POOL_LOCK:
+        if not _POOL:
+            from concurrent.futures import ThreadPoolExecutor  # noqa: PLC0415
+            _POOL.append(ThreadPoolExecutor(max_workers=8, thread_name_prefix="ogc3d-nas"))
+        return _POOL[0]
+
+
+def make_network_file_accessor(cs, inner):
+    """An IAssetAccessor that answers network ``file:`` URLs itself (see above)
+    and forwards everything else to ``inner``."""
+    aio = cs.async_
+    from ..paths import url_to_path  # noqa: PLC0415
+
+    def finish(url, if_none_match, promise):
+        try:
+            status, ctype, headers, data = serve_file(url_to_path(url.split("?", 1)[0]), if_none_match)
+            promise.resolve(aio.AssetRequest("GET", url, {}, aio.AssetResponse(status, ctype, headers, data)))
+        except Exception as exc:      # noqa: BLE001
+            promise.reject(str(exc))
+
+    class NetworkFileAccessor(aio.IAssetAccessor):
+        def get(self, async_system, url, headers):
+            if not is_network_file_url(url):
+                return inner.get(async_system, url, headers)
+            # off the calling thread (often Blender's main thread): a NAS read
+            # can take a while
+            promise = async_system.create_promise_asset_request()
+            _pool().submit(finish, url, _header(headers, "if-none-match"), promise)
+            return promise.future
+
+        def request(self, async_system, verb, url, headers, payload):
+            return inner.request(async_system, verb, url, headers, payload)
+
+        def tick(self):
+            inner.tick()
+
+    accessor = NetworkFileAccessor()
+    # cesium-native holds it through the C++ accessors wrapping it; without a
+    # Python reference the object is collected and every get() fails with
+    # "Pure virtual IAssetAccessor.get() not implemented"
+    _KEEP.append(accessor)
+    return accessor

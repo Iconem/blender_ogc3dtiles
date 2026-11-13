@@ -47,3 +47,29 @@ def test_empty_leaves_and_larger_errors_are_left_alone():
 def test_non_tileset_json_passes_through():
     for raw in (b'{"tileAvailability": {"constant": 1}}', b"not json", b'{"root": 3}'):
         assert asset_fixes.refine_through_empty_tiles(raw) is raw
+
+
+def test_network_file_urls():
+    from blender_ogc3dtiles.tileset.asset_fixes import is_network_file_url
+    assert is_network_file_url("file:////nas/share/tiles/tileset.json")
+    assert is_network_file_url("file://nas/share/tiles/tileset.json")
+    assert not is_network_file_url("file:///C:/tiles/tileset.json")   # a local drive
+    assert not is_network_file_url("file://localhost/C:/tiles/tileset.json")
+    assert not is_network_file_url("https://example.com/tileset.json")
+
+
+def test_serve_file_etag_and_304(tmp_path):
+    import os
+    from blender_ogc3dtiles.tileset.asset_fixes import serve_file
+    f = tmp_path / "tile.b3dm"
+    f.write_bytes(b"b3dm" + bytes(24))
+    status, ctype, headers, data = serve_file(str(f), None)
+    assert status == 200 and data.startswith(b"b3dm") and ctype == "application/octet-stream"
+    assert headers["Cache-Control"] == "max-age=0" and headers["ETag"].startswith('"')
+    # unchanged: 304 without reading; changed: 200 with a new ETag
+    assert serve_file(str(f), headers["ETag"])[0] == 304
+    st = os.stat(f)
+    os.utime(f, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000_000))
+    status2, _c, headers2, _d = serve_file(str(f), headers["ETag"])
+    assert status2 == 200 and headers2["ETag"] != headers["ETag"]
+    assert serve_file(str(tmp_path / "missing.json"), None)[0] == 404

@@ -5,9 +5,11 @@ Measured with the binding (curl's file:// on Windows):
   ``file://nas/share/...``                                     → "could not read"
   ``file:///C:/x/tileset.json``                               → works
   ``file:////nas/share/x/tileset.json`` (four slashes, UNC)   → works
-Relative content URIs resolve against both working forms. ``file:`` reads
-never enter the sqlite HTTP cache (no Cache-Control / ETag), so a tileset on
-a NAS is read over the network every time it streams.
+Relative content URIs resolve against both working forms. curl's ``file:``
+responses carry no Cache-Control or ETag, so they never entered the sqlite HTTP
+cache; reads from network shares now go through
+``asset_fixes.make_network_file_accessor``, which adds an ETag so the cache keeps
+them. Files on a local disk still bypass it.
 """
 from __future__ import annotations
 

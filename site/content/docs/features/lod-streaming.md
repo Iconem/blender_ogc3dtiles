@@ -27,6 +27,15 @@ camera, or scrub the timeline when it is animated, and the tiles follow.
   check a shot before a long render, or to understand why a view is heavy.
 - To freeze what is loaded while you look around, untick the tileset's checkbox in the list.
 
+## Panoramic cameras
+
+A panoramic camera (Cycles: equirectangular, fisheye, central cylindrical, cube map face) works as
+*Scene camera* or *Chosen camera*. Tiles are selected all around it, as six 90° views of a cube, and
+each view gets the panorama's own resolution: an equirectangular render 4096 px wide over 360° has
+1024 px per quarter turn, so tiles are as fine as the render needs at the horizon. Fisheye cameras
+skip the cube faces outside their field of view. EEVEE does not render panoramic cameras; Cycles
+does.
+
 ## Max SSE: how fine
 
 A tileset is a pyramid: a few coarse tiles at the top, and under each tile finer ones that replace

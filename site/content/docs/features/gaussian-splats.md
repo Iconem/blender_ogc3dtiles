@@ -55,6 +55,13 @@ What the add-on reads from a splat tile, through cesium-native, and what it leav
 Blender sorts splats inside one object, not between objects. Where a coarse tile and the finer ones
 replacing it overlap for a moment, the blending between them can be wrong during that moment.
 
+Not built, a possible way out without changing Blender: one splat object, a Geometry Nodes object
+that gathers every splat tile through a Collection Info node and Realize Instances, with the tile
+objects hidden, so Blender sorts all splats together. Re-realizing millions of splats whenever the
+tile set changes is too heavy while streaming, so it would be an opt-in for loaded tiles once
+streaming is stopped, or for a tileset copied to disk, and only if an artifact shows: most overlap
+lasts the moment a parent is swapped for its children.
+
 ## How it works
 
 - cesium-native decodes the SPZ payload; position, colour, opacity, rotation, scale and the

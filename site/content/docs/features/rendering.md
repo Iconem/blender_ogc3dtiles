@@ -14,6 +14,9 @@ how fine.
 | **Scene camera** | The active scene camera, at the render resolution. Scrubbing the timeline re-selects tiles along the camera path. |
 | **Chosen camera** | A camera object you pick. |
 
+A panoramic camera selects tiles all around it, see
+[Panoramic cameras](/features/lod-streaming#panoramic-cameras).
+
 With *Scene camera* or *Chosen camera* you keep navigating the viewport freely while another camera
 does the selecting: step back and see exactly which tiles a shot pulls in, and how detailed they are.
 Move or animate that camera and the tiles follow. [LOD / Streaming](/features/lod-streaming) has

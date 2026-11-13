@@ -92,15 +92,23 @@ uses error = geometric error × viewport height / frame height, independent of
 distance. The add-on builds it for orthographic viewports and cameras since
 0.6.1 (eye on the pivot, half extents from the projection matrix).
 
-Panoramic cameras are not supported yet. With v0.64's culling volumes and
-v0.65's screen-space-error delegate, a renderer defines both culling and
-error itself, which suits Blender's panoramic cameras: an equirectangular camera sees all
-directions (cull nothing but distance) and has a constant angular
-resolution, so its error is geometric error / distance × width / 2π; a
-cylindrical camera mixes the two.  Until then, a panorama can already be
-approximated with today's API, since `update_view_group` accepts several
-view states: six 90° perspective views of a cube map, whose union is the
-selection.
+Panoramic cameras, two ways:
+
+- **v0.59, what the add-on does:** `update_view_group` takes several view
+  states and selects for their union, so a panoramic camera becomes six 90°
+  perspective views of a cube at its position (`camera.panorama_faces`).
+  Each face gets the panorama's angular resolution at its centre: an
+  equirectangular image W px wide over 360° gives W / 4 px per face. Fisheye
+  cameras drop the faces outside their field of view.
+- **v0.65 / v0.66, an alternative:** `ViewState(boundingVolume,
+  measureDelegate)` takes a culling volume and a function computing each
+  tile's error. It is meant for selecting a geographic area, so it puts its
+  position at the area's centre on the ground, not at an eye. A panorama can
+  still use it: a sphere around the eye does the culling, and the error
+  function computes the distance from the real eye itself (an equirectangular
+  error is geometric error / distance × width / 2π). Loading priority then
+  follows the wrong point, and a Python error function would run once per
+  visited tile, so the binding would rather offer built-in ones in C++.
 
 ## Tiled formats cesium-native reads, and what needs a converter
 

@@ -66,10 +66,12 @@ where sections 6 and 7 say otherwise.**
 
 ### Open, add-on side
 
-- Panoramic cameras (Jonathan would like them): a cube-map union of six views works on
-  v0.59, exact after the bump. Not started.
-- Splat sorting between objects (check first whether it shows in practice). Issue 6
-  (BlenderGIS) is deferred by Jonathan.
+- ~~Panoramic cameras~~: done 2026-11-14, see below.
+- Splat sorting between objects: only if an artifact shows, and then on loaded tiles with
+  streaming stopped or on a tileset copied to disk (notes on the Gaussian splats page).
+  Issue 6 (BlenderGIS) is deferred by Jonathan.
+- Feature request for cesium-native (panoramic / arbitrary projection view states, also
+  for Unreal nDisplay): drafted for Jonathan 2026-11-14, not posted.
 - Set aside by Jonathan: the Vestibule column, voxels.
 
 ### Later on 2026-11-13
@@ -91,6 +93,16 @@ where sections 6 and 7 say otherwise.**
 - **Correction to the section above:** the Python backend has no orthographic
   emulation. Its SSE (`traversal._sse`) and culling planes are exact for orthographic
   views; `ViewState.ORTHO_FOV` only fills the unused fov arguments.
+- **Panoramic cameras (2026-11-14).** `camera.panorama_faces` turns a PANO camera into
+  six 90 degree cube faces (face px = the panorama's px per radian x pi/2; fisheye drops
+  faces outside its field); `ViewState.faces` carries them and
+  `native_backend.update_view(faces=)` passes one cesium-native ViewState per face to
+  `update_view_group`. The Python backend gets no frustum and the per-face SSE. Checked on
+  5.3 with Clermont, a camera 80 m up: perspective showed 227 of 231 tiles in front,
+  equirectangular 44 / 52 / 44 / 54 per quarter, 0 culled; a Cycles equirectangular render
+  covers 360 degrees.
+- **Network share cache is a preference** (*Cache files on network shares*, default on):
+  `asset_fixes.NETWORK_FILE_CACHE`, read per request, so a change applies at once.
 - **Eiffel overlay measured** on the live 3dtiled stream with the IGN orthophoto WMTS:
   about 640 px rasters on every tile at 600, 150 and 40 m (5 to 13 tiles). The 1 to
   3 px rasters were specific to the local conversion used for the video takes.

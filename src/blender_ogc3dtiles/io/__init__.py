@@ -7,8 +7,10 @@ Design (mirrors what makes CesiumForBlender feel fast):
     (Blender's importer rejects GLBs whose header length != file size),
     extracts RTC_CENTER / CESIUM_RTC, and writes the GLB(s) into a disk cache;
   * on a cache hit nothing is downloaded at all;
-  * the main thread only ever runs ``bpy.ops.import_scene.gltf`` on a file,
-    and the caller budgets how many imports happen per tick;
+  * workers also turn GLBs into numpy payloads (``tileset.gltf_payload``); the
+    main thread builds meshes from them with ``foreach_set``, or runs
+    ``bpy.ops.import_scene.gltf`` on a file as the fallback, and the caller
+    budgets how many tiles are built per tick;
   * imports never touch the user's selection / active object, and every tile
     is parented to one root Empty per tileset inside a "3D Tiles" collection,
     so the whole dataset can be moved, hidden or folded as one.
@@ -33,7 +35,7 @@ import bpy
 from ..tileset.origin import origin_lla
 from ..tileset.traversal import Tile, TileState, mat_mul, mat_translation
 
-USER_AGENT = "blender-ogc3dtiles/0.3"
+USER_AGENT = "blender-ogc3dtiles/0.6.3"     # keep in step with blender_manifest.toml
 TIMEOUT_S = 30
 COLLECTION_NAME = "3D Tiles"
 

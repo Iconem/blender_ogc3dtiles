@@ -204,9 +204,10 @@ class ViewState:
     is_persp: bool = True
     frustum_planes: Optional[List[Tuple[float, float, float, float]]] = None  # (nx,ny,nz,d) in ECEF
     signature: tuple = ()
-    # perspective-only consumers (the pure Python backend's SSE) see an
-    # orthographic view as this narrow camera; cesium-native gets the real
-    # orthographic frame through ``ortho_extents``
+    # placeholder fov of an orthographic view: both backends use the real
+    # frame (the Python SSE and culling read p11 and the clip planes,
+    # cesium-native gets ``ortho_extents``), so it only fills the fov
+    # arguments of ``update_view``, which ignores them then
     ORTHO_FOV = math.radians(1.0)
 
     @property

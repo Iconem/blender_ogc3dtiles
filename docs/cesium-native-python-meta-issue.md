@@ -1,5 +1,11 @@
 # Meta issue draft: feedback from a Blender renderer integration
 
+> **Historical.** Posted as calebbuffa/cesium-native-python issue 2 in October 2026.
+> A1 to A3 were merged as #3 and #4, C1 to C4 and C7 to C9 as #5. Orthographic views
+> (B1 below, B2 in the thread's numbering) need no change: the binding's orthographic
+> `ViewState` overload is used since 0.6.1. Current state and numbering:
+> `cesium-native-python-upstream-requests.md` and section 7 of `HANDOFF.md`.
+
 Paste as one GitHub issue on calebbuffa/cesium-native-python. Each line can
 be split into its own issue if wanted; the long form with symptoms,
 workarounds and asks is `cesium-native-python-upstream-requests.md`.

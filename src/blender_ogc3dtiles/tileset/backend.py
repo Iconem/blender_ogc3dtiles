@@ -14,8 +14,9 @@ Pluggable traversal backend.  Addon preferences expose a dropdown:
   AUTO     → Try CESIUM first, silently fall back to PYTHON.
 
 Both backends are driven by ui/__init__.py; the Python one returns Tile
-objects from ``select(view, is_ready)``, the native one returns ready GLBs
-through ``pop_ready()`` and render keys through ``update_view(...)``.
+objects from ``select(view, is_ready)``, the native one returns ``ReadyTile``s
+(numpy payload, or a GLB file) through ``pop_ready()`` and render keys through
+``update_view(...)``.
 """
 from __future__ import annotations
 

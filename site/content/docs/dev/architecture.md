@@ -10,16 +10,23 @@ backends: pure Python (always available) or cesium-native via
 
 ```
 blender_ogc3dtiles/
-├── __init__.py              # bl_info, register/unregister
-├── addon_prefs.py           # backend choice (AUTO / CESIUM / PYTHON), dev options
+├── __init__.py              # register / unregister (metadata in blender_manifest.toml)
+├── addon_prefs.py           # backend choice, wheel installer, cache, libraries, dev options
 ├── tileset/
-│   ├── traversal.py         # Tile tree, transforms, SSE, culling, select()  (no bpy)
+│   ├── traversal.py         # Tile tree, transforms, SSE, culling, select()      (no bpy)
 │   ├── backend.py           # PythonBackend + factory / probe
-│   ├── native_backend.py    # cesium-native backend (real binding API)      (no bpy)
+│   ├── native_backend.py    # cesium-native backend, tile preparer, overlays    (no bpy)
+│   ├── native_mesh.py       # cesium-native Model → numpy payload               (no bpy)
+│   ├── gltf_payload.py      # GLB → numpy payload for the Python backend        (no bpy)
+│   ├── asset_fixes.py       # accessor fixes: data: URIs, subtree JSON, empty tiles, NAS files
+│   ├── feature_meta.py      # metadata columns and class codes                  (no bpy)
+│   ├── voxels.py, origin.py, budget.py
 │   └── props.py             # bpy.types.Scene.ogc3dtiles PropertyGroup
-├── camera/__init__.py       # viewport → ViewState (ECEF pos/dir/up, p00/p11, frustum)
-├── io/__init__.py           # thread pool fetch + unwrap + disk cache, GLB import
-└── ui/__init__.py           # sidebar panel + modal operator (stream_tick)
+├── camera/__init__.py       # viewport or camera → ViewState (ECEF, p00/p11, frustum, ortho)
+├── io/__init__.py           # Python-backend downloads, disk cache, tile objects from payloads
+├── ui/                      # sidebar panels + modal operator (stream_tick)
+├── materials.py, compositor.py, clipping.py, overlays.py, ...  # shared node groups, features
+└── paths.py, library.py, cachectl.py                            # URLs, libraries, cache size
 ```
 
 ## Pipeline at a glance
@@ -51,8 +58,8 @@ flowchart LR
 
     subgraph UI["ui/ (per stream)"]
         TICK["stream_tick → _sync_streams<br/>_tick_python / _tick_native"]:::addon
-        VIS["_apply_visibility / _evict<br/>hide_set, remove_tile"]:::addon
-        PROXY["_update_view_proxy / _eye_tick<br/>→ 'OGC3D View' Empty + Value nodes"]:::addon
+        VIS["_apply_visibility / _evict<br/>set_tile_visible, remove_tile"]:::addon
+        PROXY["io.update_view_proxy / _eye_tick<br/>→ 'OGC3D View' Empty + Value nodes"]:::addon
     end
 
     subgraph PY["Python backend (tileset/)"]
@@ -80,7 +87,7 @@ flowchart LR
     VP --> EYE --> PROXY --> OBJ
     PROPS --> TICK
     TICK -- "ViewState" --> TRAV
-    TICK -- "ViewState (pos, dir, up, fov)" --> CNB
+    TICK -- "ViewState (pos, dir, up, fov or ortho extents)" --> CNB
     TRAV -- "load list" --> DLM --> NET
     DLM --> GPL -- "payload" --> B1
     DLM -- "glb file" --> B2
@@ -101,10 +108,10 @@ What each stage needs and produces:
 | `camera.CesiumCameraAdapter` | viewport matrices, scene origin (lat/lon/h), root Empty transform | `ViewState` in the tileset's ECEF frame | main |
 | `traversal.select` (Python) | `Tile` tree (parsed `tileset.json`, external tilesets grafted on arrival), `ViewState`, Max SSE, foveation | render set, keep set, one priority-sorted load list | main |
 | `io.TileDownloadManager` | load list, token, disk cache | `FetchResult`: GLB parts (+ RTC) or external tileset JSON, numpy payloads when *Direct mesh* | worker threads |
-| `CesiumNativeBackend.update_view` | `ViewState` as position / direction / up / fov | tiles to render, newly ready / freed tiles, stats | main (cesium-native pool for loads) |
+| `CesiumNativeBackend.update_view` | `ViewState` as position / direction / up / fov, or orthographic half extents | tiles to render, newly ready / freed tiles, stats | main (cesium-native pool for loads) |
 | `_GlbPreparer.prepare_in_load_thread` | `Model` from cesium-native | numpy payload (`native_mesh.extract_mesh_payload`) or stripped GLB bytes | cesium-native workers |
 | `io.build_tile_from_payload` / `import_glb_file` | payload or GLB file, tile matrix (`tile_world_matrix`, `apply_payload_offset` in float64) | mesh object under the root Empty, hidden until selected | main |
-| `_apply_visibility` / `_evict` | render set, keep set, Max Tiles | `hide_set`, `remove_tile` | main |
+| `_apply_visibility` / `_evict` | render set, keep set, Max Tiles | `set_tile_visible` (`hide_viewport` / `hide_render`), `remove_tile` | main |
 | `materials` / `compositor` | tile objects, panel sliders | shared "OGC3D Relight" group, "OGC3D Beauty" compositor tree | main, on demand |
 
 One tick, in order:
@@ -134,9 +141,11 @@ sequenceDiagram
 Every 50 ms the modal operator runs `ui.stream_tick()`:
 
 1. drain worker results (external `tileset.json` are grafted into the tree,
-   ready GLBs are queued),
-2. import at most `Imports / tick` GLBs with `bpy.ops.import_scene.gltf`
-   (the only main-thread cost; 1 keeps the viewport smooth),
+   ready tiles are queued),
+2. build at most `Imports / tick` tiles: numpy payloads through
+   `io.build_tile_from_payload`, Blender's glTF importer as the fallback
+   (with cesium-native's selection, the main-thread cost; 1 keeps the
+   viewport smooth),
 3. re-run the selection only when the view changed, something arrived, or
    0.5 s passed,
 4. submit loads in priority order (largest screen-space error first) up to
@@ -190,8 +199,9 @@ Tiles* takes well under a second.
   some exporters (RealityCapture) add, extract `RTC_CENTER` / `CESIUM_RTC`,
   and write GLBs into `%LOCALAPPDATA%/blender_ogc3dtiles/cache`; a second
   session of the same tileset downloads nothing.
-- Placement: tile Empty = `ENU_from_ECEF · T_tile · Translate(RTC)`; Blender's
-  importer already converts glTF Y-up to Z-up.
+- Placement: tile Empty = `ENU_from_ECEF · T_tile · Translate(RTC)`. Payloads
+  arrive Z-up already; on the importer fallback, Blender's importer converts
+  glTF Y-up to Z-up.
 
 ## Direct mesh construction (cesium-native, default)
 
@@ -201,7 +211,7 @@ converted to Z-up, triangle indices, per-loop UVs, normals, COLOR_0, the
 original JPEG/PNG bytes of the textures or PNG re-encoded from decoded
 pixels for KTX2).  `io.build_tile_from_payload` then creates the mesh with
 `foreach_set`, packs the textures from bytes and builds a matte Principled
-material.  Point clouds become vertex-only meshes, see [Point clouds](#point-clouds).
+material.  Point clouds become vertex-only meshes, see [Point clouds](/features/point-clouds).
 Measured main-thread cost per tile: 8–9 ms direct vs 10–13 ms
 through `bpy.ops.import_scene.gltf`; the direct path also needs no temp files
 and works regardless of which glTF extensions Blender's importer knows.
@@ -220,16 +230,20 @@ handshake once per thread, not once per tile).
 
 ## cesium-native backend (`tileset/native_backend.py`)
 
-Needs the `cesium` module (built from cesium-native-python, Python ≥ 3.12,
-same minor version as Blender's interpreter). It constructs
+Needs the `cesium` module (a cesium-native-python wheel for Python 3.11 to
+3.13, the same minor version as Blender's interpreter). It constructs
 `Tileset(TilesetExternals(CachingAssetAccessor(CurlAssetAccessor), preparer, AsyncSystem), url)`
 and drives it with `update_view_group`. cesium-native does the traversal,
 implicit tiling, `b3dm/i3dm/pnts/cmpt` conversion, Draco / meshopt / KTX2
 decoding, the LRU tile cache (`maximum_cached_bytes`) and the sqlite HTTP
-cache. Our `IPrepareRendererResources` subclass serialises each decoded
-`Model` back to a GLB (`GltfUtilities.collapse_to_single_buffer` +
-`GltfWriter.write_glb`, KTX2 textures re-encoded to PNG) which the same
-import step consumes. Placement: Empty = `ENU_from_ECEF · T_tile · Zup→Yup`.
+cache. Our `IPrepareRendererResources` subclass extracts numpy arrays from
+each decoded `Model` in `prepare_in_load_thread`, on cesium-native's worker
+threads with the GIL held (`native_mesh.extract_mesh_payload`, about 2 ms per
+tile on a photogrammetry mesh); the main thread builds the Blender mesh from
+them. With *Direct mesh* off, or when extraction fails, it serialises the
+`Model` back to a GLB instead (`GltfUtilities.collapse_to_single_buffer` +
+`GltfWriter.write_glb`, KTX2 textures re-encoded to PNG) for Blender's
+importer. Placement: Empty = `ENU_from_ECEF · T_tile · Zup→Yup`.
 `tileset/asset_fixes.py` wraps the asset accessor: it answers `data:` URIs,
 completes subtree JSON, and raises the geometric error of content-less tiles
 to their parent's so cesium-native refines through them (see Gaussian splat

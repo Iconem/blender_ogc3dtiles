@@ -68,10 +68,32 @@ where sections 6 and 7 say otherwise.**
 
 - Panoramic cameras (Jonathan would like them): a cube-map union of six views works on
   v0.59, exact after the bump. Not started.
-- `file:` reads into the HTTP cache; splat sorting between objects (check first whether
-  it shows in practice). Issue 6 (BlenderGIS) is deferred by Jonathan.
-- Set aside by Jonathan: the Python backend's orthographic emulation, the Vestibule
-  column, voxels.
+- Splat sorting between objects (check first whether it shows in practice). Issue 6
+  (BlenderGIS) is deferred by Jonathan.
+- Set aside by Jonathan: the Vestibule column, voxels.
+
+### Later on 2026-11-13
+
+- **NAS tilesets now enter the HTTP cache.** curl's `file:` responses carry no
+  Cache-Control / ETag, so cesium-native never stored them.
+  `asset_fixes.make_network_file_accessor` (below Gunzip and the cache) serves UNC
+  and mapped-drive `file:` URLs itself, on a small thread pool, with
+  `ETag: "<mtime_ns>-<size>"` and `max-age=0`: the cache revalidates every time and a
+  stat answers 304 or 200. Local-disk files still go through curl. Checked through
+  `\\localhost\c$` (first stream 4 reads, second 4 x 304, a touched file re-read)
+  and in Blender 5.3. A Python accessor handed to cesium-native must be kept alive
+  from Python (`_KEEP`), or every `get()` fails with "Pure virtual".
+- **Docs pass** after an audit of every page and docstring: README and installation
+  (backend needs, tested versions), architecture page (module tree, payload path,
+  visibility names), cesium-native page (v0.66 as latest), clipping notes (#7 merged),
+  local-files page (NAS cache), meta-issue draft marked historical, `bl_info`,
+  `pyproject.toml` and user agents at 0.6.3.
+- **Correction to the section above:** the Python backend has no orthographic
+  emulation. Its SSE (`traversal._sse`) and culling planes are exact for orthographic
+  views; `ViewState.ORTHO_FOV` only fills the unused fov arguments.
+- **Eiffel overlay measured** on the live 3dtiled stream with the IGN orthophoto WMTS:
+  about 640 px rasters on every tile at 600, 150 and 40 m (5 to 13 tiles). The 1 to
+  3 px rasters were specific to the local conversion used for the video takes.
 
 ## 6. Handoff 2026-11-12
 
@@ -223,7 +245,7 @@ State on 2026-11-04, at `bc872f7` plus this note. For the next agent picking
 this up. It holds no tokens or keys; the files that do are named below and stay
 out of git.
 
-**Where things stand:** nothing is in progress. Everything is on `main` on both
+**Where things stood on 2026-11-04:** nothing was in progress. Everything is on `main` on both
 remotes. `main` is ahead of the last release, v0.5.0, by quantized-mesh terrain
 entries and point intensity. Section 4 lists what to do next.
 
@@ -347,7 +369,7 @@ entries and point intensity. Section 4 lists what to do next.
   - Extension id: `bl_ext.user_default.ogc_3dtiles_streaming`.
   - Build: `blender -b --command extension build --source-dir src/blender_ogc3dtiles --output-dir dist`
     (create `dist/` first).
-  - Install: `blender -b --command extension install-file -r user_default -e dist/ogc_3dtiles_streaming-0.6.2.zip`.
+  - Install: `blender -b --command extension install-file -r user_default -e dist/ogc_3dtiles_streaming-<version>.zip` (0.6.3 on 2026-11-13).
   - Driving a GUI session from a shell: start Blender with a small script that
     polls a `cmd.py` file on a timer, `exec`s it and writes the output next to
     it; screenshots via `bpy.ops.screen.screenshot_area` under
@@ -365,7 +387,7 @@ entries and point intensity. Section 4 lists what to do next.
 
 | PR / issue | content | state |
 |---|---|---|
-| [#2 issue](https://github.com/calebbuffa/cesium-native-python/issues/2) | Meta issue: A1-A3 (build), B1-B4 (partial workarounds), C1-C12 (full workarounds). | Open. Caleb (2026-10-21) takes all of it and welcomes PRs. Our status reply (2026-10-22) and the v0.65 bump / orthographic note (posted by Jonathan, late October) have no answer yet. |
+| [#2 issue](https://github.com/calebbuffa/cesium-native-python/issues/2) | Meta issue: A1-A3 (build), B1-B4 (partial workarounds), C1-C12 (full workarounds). | Open. Caleb (2026-10-21) takes all of it and welcomes PRs. Caleb answered on 2026-11-05 and merged #3, #4, #5, #7. Jonathan's status comment (2026-11-11) and batch reply (2026-11-13) await his answer. |
 | [#3](https://github.com/calebbuffa/cesium-native-python/pull/3) | A1 + A2: `pip install .` on Windows, Linux, macOS. | Merged (`521956e`). |
 | [#4](https://github.com/calebbuffa/cesium-native-python/pull/4) | A3: cibuildwheel 3 OSes × CPython 3.11-3.13, Release + PyPI trusted-publishing jobs. | Merged (`0832a75`, 2026-11-05). No tag, release, workflow run or PyPI project upstream yet (checked 2026-11-07). |
 | [#7](https://github.com/calebbuffa/cesium-native-python/pull/7) | One cast so Python subclasses of `GltfModifier` can override `apply`. | Merged (`4b55c1a`, 2026-11-05). |
@@ -403,11 +425,12 @@ entries and point intensity. Section 4 lists what to do next.
    worker threads take turns. Proposal: a C++ "batch extract" returning
    per-primitive numpy arrays with the GIL released. Wait for Caleb's pick,
    measure before / after (load-thread ms per tile, tiles/s on Google Rome).
-4. **Submodule bump v0.59 → v0.65** as its own PR, with exact orthographic
-   views on top (v0.64 culling volumes + v0.65 SSE delegate), and
-   `VectorTilesRasterOverlay` (v0.61). v0.62 is the expensive step (vcpkg
-   baseline, `CesiumImage`, accessor APIs). Full table in the README section
-   "cesium-native: versions and upgrade notes".
+   Measured 2026-11-13 on the Clermont mesh: about 2 ms per tile, small gain
+   (section 7).
+4. **Submodule bump** as its own PR: now v0.61 then v0.66 (issue 8).
+   Orthographic views need no bump (exact since 0.6.1). v0.62 is the expensive
+   step (vcpkg baseline, `CesiumImage`, accessor APIs). Full table on the site
+   page *Development > cesium-native*.
 5. **B4, SQLite across processes**: needs a cesium-native change
    (`sqlite3_busy_timeout`); the add-on's lock file covers it. Low priority.
 
@@ -434,7 +457,7 @@ entries and point intensity. Section 4 lists what to do next.
 - 3D Tiles of splats stream and clip, SPZ
   (`KHR_gaussian_splatting_compression_spz_2`) and uncompressed (normalised
   integer accessors read from the buffer; SH degree 0 is not a higher band).
-  `EXT_splat_opacity` is ignored.
+  `EXT_splat_opacity` is ignored (honoured since 0.6.3, section 6).
 - Blender 5.3 moved Geometry Nodes modifier inputs to
   `mod.properties.inputs.<id>.value`: point clouds had lost their material and
   radius on 5.3.
@@ -455,8 +478,8 @@ entries and point intensity. Section 4 lists what to do next.
   `EXT_primitive_voxels` accessor, voxel mode values above int32, and GeoTOP's flip,
   which may need raising with Bedrock.
 
-- **`GltfModifier` from Python fails** ("Tried to call pure virtual function
-  GltfModifier.apply", tiles don't load) until #7 merges. Jonathan wants the clip
+- **`GltfModifier` from Python failed** ("Tried to call pure virtual function
+  GltfModifier.apply", tiles didn't load) until #7, merged 2026-11-05. Jonathan wants the clip
   modifier in cesium-native C++ and bound, not done in Python.
   Requested upstream: cesium-native#1486.
 - **`is_job_running("SHADER_COMPILATION")`** stayed true for minutes on large
@@ -484,13 +507,13 @@ entries and point intensity. Section 4 lists what to do next.
   high as wide: likely the converter's axes, not the add-on; not investigated.
 - **Preparer errors at stop**: fixed 2026-11-13, see section 7.
 - **Orthographic viewports**: exact since 0.6.1 on the native backend (section 6).
-  The Python backend keeps the 1 degree emulation.
+  The Python backend's SSE and culling are exact in orthographic views too.
 - **Panoramic cameras**: not supported; a six-view cube-map union would work.
 - `file:` reads (local / NAS tilesets) never enter the sqlite HTTP cache.
 
 ### Ideas (ask Jonathan before big ones)
 
-- Which camera drives tile selection (picker) — Jonathan: "could be good".
+- ~~Which camera drives tile selection (picker)~~: done, *Stream for* > *Chosen camera*.
 - Origin shifting / one origin per sub-level (zoom out to the globe and back)
   — later.
 - Install wheels from the upstream release or PyPI once Caleb tags one (the
@@ -530,7 +553,7 @@ Read on 2026-11-02, nothing merged. v0.66 only reads and writes the glTF 2.1 and
 
 **Needs his answer first**
 
-1. **Tag v0.5.1** for terrain and intensity, once he has tried them. Bump the
+1. ~~**Tag v0.5.1**~~ (superseded: 0.6.3 is out) for terrain and intensity, once he has tried them. Bump the
    version in `blender_manifest.toml`. It also tests Iconem's tag trigger.
 2. **Adaptive point size in the add-on?** Not on the roadmap and not asked for,
    but the formula and the deepest-node lookup already exist in the test script
@@ -555,7 +578,7 @@ Read on 2026-11-02, nothing merged. v0.66 only reads and writes the glTF 2.1 and
 **Waiting on others**
 
 - **Caleb:** everything in section 1. Items 1 and 2 of the upstream list are small
-  and ready, but he hasn't answered since 2026-10-22, and Jonathan's rule is to
+  and ready, but he hadn't answered since 2026-10-22 (he did on 2026-11-05), and Jonathan's rule is to
   wait before opening more.
 - **3dtiled:** now sends intensity and classification, opt-in with
   `&attributes=intensity,classification` on the stream URL; checked on 2026-11-05

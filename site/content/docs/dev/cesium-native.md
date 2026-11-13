@@ -41,7 +41,7 @@ The Python binding vendors cesium-native as a git submodule.
 | | version | date |
 |---|---|---|
 | vendored by cesium-native-python (`extern/cesium-native`) | v0.59.0 | 2026-03-31 |
-| latest cesium-native release at the time of writing (2026-10-23) | v0.65.0 | 2026-10-01 |
+| latest cesium-native release at the time of writing (2026-11-13) | v0.66.0 | 2026-11 |
 
 Already in v0.59.0 and used by the add-on: `KHR_gaussian_splatting` with SPZ
 decoding (v0.56.0, release-candidate classes in v0.58.0), raster overlays

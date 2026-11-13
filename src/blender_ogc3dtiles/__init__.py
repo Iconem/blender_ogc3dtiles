@@ -1,14 +1,14 @@
 """
 OGC 3D Tiles Streaming — Blender Addon
 =======================================
-Requires: Blender 4.3+ (Python 3.12+)
+Requires: Blender 4.2+ (Python 3.11+). Version and metadata: blender_manifest.toml
 """
 
-bl_info = {
+bl_info = {             # legacy add-on loading only; the extension manifest is authoritative
     "name":     "OGC 3D Tiles Streaming",
     "author":   "Jonathan Chemla",
-    "version":  (0, 3, 0),
-    "blender":  (4, 3, 0),  # minimum; tested on 5.1,
+    "version":  (0, 6, 3),
+    "blender":  (4, 2, 0),
     "location": "View3D > Sidebar > 3D Tiles",
     "description": "Stream OGC 3D Tiles with cesium-native-python and Cesium-compatible LOD",
     "category": "Import-Export",

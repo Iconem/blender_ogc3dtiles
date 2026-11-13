@@ -58,8 +58,8 @@ The add-on is a Blender extension, for Blender 4.2 or newer (Gaussian splats nee
 
 1. Download `ogc_3dtiles_streaming-<version>.zip` from the [Releases](../../releases) page.
 2. In Blender: Preferences, Get Extensions, the drop-down arrow, *Install from Disk*.
-3. For the cesium-native backend (faster; raster overlays, point clouds and Cesium ion
-   entries need it): open the add-on preferences and press **Install wheel from GitHub
+3. For the cesium-native backend (faster; raster overlays, point clouds, splats, voxels,
+   Cesium ion, the globe and terrain need it): open the add-on preferences and press **Install wheel from GitHub
    Release**, then restart Blender. No compiler is needed. Without it, the pure Python
    backend streams mesh tilesets.
 

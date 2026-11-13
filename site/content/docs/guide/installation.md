@@ -3,8 +3,8 @@ title: "Installation"
 description: "Install the extension and the cesium-native backend"
 ---
 
-The add-on is a Blender extension, for Blender 4.2 or newer. It is tested on 4.5 LTS, 5.1 and
-5.2 LTS. Gaussian splats need 5.3.
+The add-on is a Blender extension, for Blender 4.2 or newer. It is tested on 5.3 and has been used
+on 4.5 LTS, 5.1 and 5.2 LTS. Gaussian splats need 5.3.
 
 ## Install the extension
 

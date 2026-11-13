@@ -2,7 +2,8 @@
 tileset/native_mesh.py — worker-side extraction of a cesium-native glTF Model
 into plain numpy arrays, so the main thread can build Blender meshes directly
 with ``foreach_set`` instead of re-serialising a GLB and running
-``bpy.ops.import_scene.gltf`` (which costs 50–150 ms per tile).
+``bpy.ops.import_scene.gltf`` (slower, and it needs a temp file; see the
+architecture page for measurements).
 
 No bpy here: this runs on cesium-native's worker threads.  The payload is
 consumed by ``io.build_tile_from_payload`` on the main thread.

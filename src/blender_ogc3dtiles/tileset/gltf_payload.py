@@ -3,7 +3,7 @@ tileset/gltf_payload.py — pure numpy GLB → mesh payload for the Python backe
 
 Same payload layout as ``native_mesh.extract_mesh_payload`` so the main
 thread builds the Blender mesh with ``io.build_tile_from_payload`` instead of
-running ``bpy.ops.import_scene.gltf`` (≈40 ms per tile vs ≈8 ms).  Runs on
+running ``bpy.ops.import_scene.gltf`` (slower; see the architecture page).  Runs on
 the download worker threads: no bpy here.
 
 Supported: glTF 2.0 GLB with a single BIN buffer (or data: URIs), any

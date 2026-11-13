@@ -8,6 +8,10 @@ main branch and not in a release zip yet.
 
 ## Unreleased
 
+- **Tilesets on a network share are cached.** Files read from a NAS (`\\server\share` paths and
+  mapped drives) now go through the disk cache: each file is read from the share again only when
+  its date or size changed, so coming back to a NAS tileset no longer reads it all over the network.
+  Files on a local disk are read directly, as before.
 - **Metadata colours survive reopening a .blend.** The columns, class codes and number ranges the
   workers collect lived in memory only: after reopening a saved file the Metadata panel hid its
   legend and ramp, and the next edit coloured a number column with the class palette. They are

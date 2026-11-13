@@ -7,8 +7,9 @@ root Empty and sub-collection ``3D Tiles / <name>``.  All streams share the
 scene origin (ENU anchor) and the viewport camera.
 
 Per tick (50 ms), per stream:
-  1. drain worker results (graft external tilesets, queue ready GLBs),
-  2. import at most ``imports_per_tick`` GLBs,
+  1. drain worker results (graft external tilesets, queue ready tiles),
+  2. build at most ``imports_per_tick`` tiles (numpy payloads, or GLBs
+     through Blender's importer as the fallback),
   3. re-run the selection only if the view (incl. the root Empty) changed,
      something arrived, or 0.5 s passed,
   4. submit loads in priority order,

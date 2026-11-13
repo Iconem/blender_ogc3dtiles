@@ -4,7 +4,7 @@ Each tileset entry lists Blender objects, used as **clip-polygons** (2D outlines
 tileset frame, extruded along its Z) or **boxes** (the object's bounding box with
 its full transform).
 This page explains how each kind of tile gets cut, and what comes from
-cesium-native. The README's "Clipping" section covers how to use it.
+cesium-native. The [Clipping](/features/clipping) page covers how to use it.
 
 ## Modes
 
@@ -88,10 +88,12 @@ binding vendors, it edits a tile's glTF in a worker thread, and `trigger()`
 re-applies it to loaded tiles without reloading them. A tileset has one, set on
 `TilesetExternals` before the tileset is created.
 
-- **From Python it fails today**, with "Tried to call pure virtual function
-  GltfModifier.apply", so tiles don't load. The trampoline looks the override up
+- **From Python it failed until 2026-11-05**, with "Tried to call pure virtual function
+  GltfModifier.apply", so tiles didn't load. Fixed by #7 (merged, in the fork's
+  `v0.1.0-wheels.2` wheel the add-on installs); not used by the add-on, which clips
+  in its own materials. The trampoline looks the override up
   through `GltfModifier`, a type pybind11 doesn't know; `PyGltfModifier` is the
-  registered one. Changing that one cast fixes it:
+  registered one. The fix was that one cast:
   [cesium-native-python#7](https://github.com/calebbuffa/cesium-native-python/pull/7).
 - **The real path is C++:** a clipping modifier in cesium-native, which the binding
   then exposes as a plain class, with no Python holding the GIL while it cuts. Draft

@@ -2,7 +2,8 @@
 Camera binding: Blender viewport → traversal ViewState (ECEF).
 
 Reads the largest 3D viewport's ``region_3d`` (view matrix + window matrix
-+ pixel size) and converts it into:
++ pixel size), or the scene camera or a chosen camera at the render resolution
+(``view_source``), and converts it into:
   - camera position / direction / up in ECEF,
   - the projection entries p00 / p11 (exact FOV, not a guess),
   - the six frustum planes in ECEF for culling,

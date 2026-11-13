@@ -14,8 +14,10 @@ The URL field of an entry takes any of:
 The folder button next to the field opens Blender's file browser; type `\\server\share` in its path
 field to reach a share. With *Relative Path* ticked it stores a path relative to the .blend.
 
-Files are read from disk every time and never cached, so a tileset on a network share is slow to
-revisit. For heavy use, copy it into the project (below).
+Files on a network share go through the [disk cache](#disk-cache): the add-on checks each file's
+date and size and reads it from the share again only when it changed, so revisiting a NAS tileset
+is fast. Files on a local disk are read directly. For heavy use, copy the tileset into the project
+(below).
 
 A drive letter mapped to a share (`Z:`) is stored as the share itself, so the entry also works on a
 computer that maps the share to another letter. *Mapped drives as UNC* in the preferences turns that
@@ -86,7 +88,10 @@ work too, but Google's terms forbid storing them offline: keep such copies to te
   `file:////nas/share/x/tileset.json` with four slashes for a share. Plain paths are converted when
   the stream starts.
 - The cache is cesium-native's sqlite cache of HTTP responses. A response is stored when it carries
-  `Cache-Control: max-age`, a future `Expires`, or an `ETag` / `Last-Modified`. The binding keeps at
+  `Cache-Control: max-age`, a future `Expires`, or an `ETag` / `Last-Modified`. curl's `file:`
+  responses carry none of these, so the add-on serves files on a share itself, with an `ETag` made of
+  the modification time and size; the cache asks again with it each time, and an unchanged file is
+  not read. The binding keeps at
   most 4096 responses. sqlite locking over SMB is unreliable, and the cache keys include share-link
   tokens: two more reasons to keep it local.
 - A library file is re-read just before *Save to library* writes it, and replaced atomically.

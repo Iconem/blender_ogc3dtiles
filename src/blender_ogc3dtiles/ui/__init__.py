@@ -864,7 +864,7 @@ def _start_stream(scene, props, st, choice, cache) -> None:
                            max_dist=props.load_distance,
                            cache_dir=cache.root if props.use_disk_cache else None,
                            direct_mesh=addon_pref("direct_mesh", True),
-                           cache_network_files=addon_pref("cache_network_files", True),
+                           cache_network_files=addon_pref("cache_network_files", False),
                            read_metadata=props.read_metadata,
                            voxel_grids=props.voxel_display != "FACES",
                            voxel_exaggeration=1.0 if props.voxel_display == "PROJECT" else props.voxel_exaggeration,

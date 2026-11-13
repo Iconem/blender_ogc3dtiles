@@ -100,8 +100,12 @@ where sections 6 and 7 say otherwise.**
   `update_view_group`. The Python backend gets no frustum and the per-face SSE. Checked on
   5.3 with Clermont, a camera 80 m up: perspective showed 227 of 231 tiles in front,
   equirectangular 44 / 52 / 44 / 54 per quarter, 0 culled; a Cycles equirectangular render
-  covers 360 degrees.
-- **Network share cache is a preference** (*Cache files on network shares*, default on):
+  covers 360 degrees. Square equirectangular images use their finer vertical resolution
+  (1920 x 1920: 960 px faces). Notre-Dame with Google tiles: tower tops missing in a
+  screenshot taken while tiles were still loading (main-thread queue in the hundreds);
+  complete in the viewport and in a Cycles render once loaded.
+- **Network share cache is a preference** (*Cache files on network shares*, default off since
+  Jonathan's call on 2026-11-14):
   `asset_fixes.NETWORK_FILE_CACHE`, read per request, so a change applies at once.
 - **Eiffel overlay measured** on the live 3dtiled stream with the IGN orthophoto WMTS:
   about 640 px rasters on every tile at 600, 150 and 40 m (5 to 13 tiles). The 1 to

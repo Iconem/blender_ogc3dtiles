@@ -549,7 +549,7 @@ class CesiumNativeBackend:
     def __init__(self, max_sse=16.0, cache_dir=None,
                  max_cached_mb=512, max_simultaneous_loads=20,
                  max_dist=float("inf"), detail_falloff=600.0, direct_mesh=True, read_metadata=False,
-                 cache_network_files=True,
+                 cache_network_files=False,
                  voxel_grids=False, voxel_exaggeration=1.0, **_ignored):
         self._max_sse = max_sse
         self.read_metadata = bool(read_metadata)

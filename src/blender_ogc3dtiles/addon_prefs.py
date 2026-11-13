@@ -129,9 +129,9 @@ class OGC3DTilesPreferences(AddonPreferences):
         name="Cache files on network shares",
         description="Keep tiles read from a NAS (\\\\server\\share paths, mapped drives) in the cache "
                     "folder, read again from the share only when a file's date or size changed. "
-                    "Turn off for a share as fast as the local disk. Files on a local disk are "
-                    "never cached",
-        default=True, update=_on_network_file_cache)
+                    "Worth it for a slow share; a fast one gains little. Files on a local disk "
+                    "are never cached",
+        default=False, update=_on_network_file_cache)
     cache_max_gb: FloatProperty(
         name="Cache size cap (GB)",
         description="Trimmed to this size, least recently used first, when the first stream of a "

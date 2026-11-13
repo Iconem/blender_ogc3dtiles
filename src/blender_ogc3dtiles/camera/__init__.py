@@ -191,12 +191,18 @@ def panorama_faces(cam_data, width_px, height_px):
     """(face_px, [(direction, up)]) of the 90 degree cube faces that cover a
     panoramic camera, in camera space. Each face gets the panorama's angular
     resolution at its centre (an equirectangular image W px wide over 360
-    degrees: W / 4 px per face), so tiles are as detailed as the render needs
+    degrees: W / 4 px per face, or more when its height is finer per degree), so tiles are as detailed as the render needs
     there. Fisheye cameras drop the faces entirely outside their field of view."""
     ptype = getattr(cam_data, "panorama_type", "EQUIRECTANGULAR")
     w, h = max(int(width_px), 1), max(int(height_px), 1)
     span = None                                  # field of view, radians
-    if ptype in ("EQUIRECTANGULAR", "CENTRAL_CYLINDRICAL"):
+    if ptype == "EQUIRECTANGULAR":
+        # the finer of the two axes: a 1:1 image over 360 x 180 degrees has
+        # twice the pixels per degree vertically
+        lon = float(cam_data.longitude_max) - float(cam_data.longitude_min)
+        lat = float(cam_data.latitude_max) - float(cam_data.latitude_min)
+        px_per_rad = max(w / max(lon, 1e-3), h / max(lat, 1e-3))
+    elif ptype == "CENTRAL_CYLINDRICAL":
         lon = float(cam_data.longitude_max) - float(cam_data.longitude_min)
         px_per_rad = w / max(lon, 1e-3)
     elif ptype in ("FISHEYE_EQUIDISTANT", "FISHEYE_EQUISOLID"):

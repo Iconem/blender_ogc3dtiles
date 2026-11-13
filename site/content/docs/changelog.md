@@ -9,14 +9,13 @@ main branch and not in a release zip yet.
 ## Unreleased
 
 - **Panoramic cameras.** A panoramic camera as *Scene camera* or *Chosen camera* selects tiles all
-  around it, at the panorama's resolution: six 90° views of a cube, which cesium-native selects for
-  together. See [Panoramic cameras](/features/lod-streaming#panoramic-cameras).
-- **Network share cache can be turned off**: *Cache files on network shares* in the add-on
-  preferences, for a share as fast as the local disk.
-- **Tilesets on a network share are cached.** Files read from a NAS (`\\server\share` paths and
-  mapped drives) now go through the disk cache: each file is read from the share again only when
-  its date or size changed, so coming back to a NAS tileset no longer reads it all over the network.
-  Files on a local disk are read directly, as before.
+  around it, at the panorama's resolution: six 90° views of a cube (five for a 180° fisheye), which
+  cesium-native selects for together. See [Panoramic cameras](/features/lod-streaming#panoramic-cameras).
+- **Tilesets on a network share can be cached**: *Cache files on network shares* in the add-on
+  preferences, off by default. Files read from a NAS (`\\server\share` paths and mapped drives) then
+  go through the disk cache: each file is read from the share again only when its date or size
+  changed, so coming back to a tileset on a slow NAS no longer reads it all over the network. Files
+  on a local disk are read directly, as before.
 - **Metadata colours survive reopening a .blend.** The columns, class codes and number ranges the
   workers collect lived in memory only: after reopening a saved file the Metadata panel hid its
   legend and ramp, and the next edit coloured a number column with the class palette. They are

@@ -13,13 +13,21 @@ def _cam(ptype, **kw):
 
 
 def test_equirectangular_quarter_width_per_face():
-    px, faces = panorama_faces(_cam("EQUIRECTANGULAR"), 4096, 2048)
+    px, faces = panorama_faces(_cam("EQUIRECTANGULAR", latitude_min=-math.pi / 2,
+                                    latitude_max=math.pi / 2), 4096, 2048)
     assert px == 1024 and len(faces) == 6
+
+
+def test_square_equirectangular_uses_its_finer_height():
+    px, _faces = panorama_faces(_cam("EQUIRECTANGULAR", latitude_min=-math.pi / 2,
+                                     latitude_max=math.pi / 2), 1920, 1920)
+    assert px == 960
 
 
 def test_partial_longitude_range_raises_the_resolution():
     px, _faces = panorama_faces(_cam("EQUIRECTANGULAR", longitude_min=-math.pi / 2,
-                                     longitude_max=math.pi / 2), 4096, 2048)
+                                     longitude_max=math.pi / 2, latitude_min=-math.pi / 2,
+                                     latitude_max=math.pi / 2), 4096, 2048)
     assert px == 2048
 
 

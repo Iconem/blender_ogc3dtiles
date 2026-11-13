@@ -98,8 +98,12 @@ Panoramic cameras, two ways:
   states and selects for their union, so a panoramic camera becomes six 90°
   perspective views of a cube at its position (`camera.panorama_faces`).
   Each face gets the panorama's angular resolution at its centre: an
-  equirectangular image W px wide over 360° gives W / 4 px per face. Fisheye
-  cameras drop the faces outside their field of view.
+  equirectangular image W px wide over 360° gives W / 4 px per face, more when
+  its height is finer per degree. Fisheye cameras drop the faces outside
+  their field of view. Four faces of a tetrahedron would need square fields
+  of view of about 127°, whose corners are 9 times finer than their centres
+  (3 times on a cube face), so the six cube frusta, cheap to test, stay the
+  better split.
 - **v0.65 / v0.66, an alternative:** `ViewState(boundingVolume,
   measureDelegate)` takes a culling volume and a function computing each
   tile's error. It is meant for selecting a geographic area, so it puts its

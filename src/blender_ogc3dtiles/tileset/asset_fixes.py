@@ -166,7 +166,7 @@ _POOL_LOCK = threading.Lock()
 _KEEP = []          # accessors handed to cesium-native, see make_network_file_accessor
 # add-on preference "Cache files on network shares", read on every request so a
 # change applies at once; off: network files go through curl, uncached
-NETWORK_FILE_CACHE = [True]
+NETWORK_FILE_CACHE = [False]
 
 
 def _remote_drive(letter: str) -> bool:

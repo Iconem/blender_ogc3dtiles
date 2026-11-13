@@ -14,10 +14,10 @@ The URL field of an entry takes any of:
 The folder button next to the field opens Blender's file browser; type `\\server\share` in its path
 field to reach a share. With *Relative Path* ticked it stores a path relative to the .blend.
 
-Files on a network share go through the [disk cache](#disk-cache): the add-on checks each file's
-date and size and reads it from the share again only when it changed, so revisiting a NAS tileset
-is fast. *Cache files on network shares* in the add-on preferences turns it off, for a share as
-fast as the local disk. Files on a local disk are read directly. For heavy use, copy the tileset into the project
+With *Cache files on network shares* ticked in the add-on preferences (off by default), files on a
+network share go through the [disk cache](#disk-cache): the add-on checks each file's date and size
+and reads it from the share again only when it changed, so revisiting a tileset on a slow NAS is
+fast. Files on a local disk are always read directly. For heavy use, copy the tileset into the project
 (below).
 
 A drive letter mapped to a share (`Z:`) is stored as the share itself, so the entry also works on a

@@ -69,7 +69,7 @@ class CesiumCameraAdapter:
         src = self._source(props)
         if src is None:
             return None
-        view, win, w, hpx, is_persp, src_sig = src
+        view, win, w, hpx, is_persp, src_sig, pano = src
         lat, lon, h = frame or origin_lla(props)
         root_sig = ()
         root_scale = 1.0
@@ -107,6 +107,16 @@ class CesiumCameraAdapter:
             p00 *= root_scale
         sig = (tuple(round(v, 1) for v in pos_enu), tuple(round(v, 3) for v in fwd_enu),
                w, hpx, round(p11, 4), is_persp, root_sig, src_sig)
+        if pano is not None:
+            face_px, face_dirs = pano
+            rot3 = inv.to_3x3()
+            faces = [(rotate_enu_to_ecef(tuple((rot3 @ _V(d)).normalized()), lat, lon),
+                      rotate_enu_to_ecef(tuple((rot3 @ _V(u)).normalized()), lat, lon))
+                     for d, u in face_dirs]
+            return ViewState(position=pos, direction=direction, up=up,
+                             viewport_width=face_px, viewport_height=face_px,
+                             p11=1.0, p00=1.0, is_persp=True,
+                             frustum_planes=None, signature=sig, faces=faces)
         return ViewState(position=pos, direction=direction, up=up,
                          viewport_width=w, viewport_height=hpx,
                          p11=p11, p00=p00, is_persp=is_persp,
@@ -132,13 +142,14 @@ class CesiumCameraAdapter:
             except Exception:                 # noqa: BLE001 — no context in some handlers
                 return None
             view = cam.matrix_world.inverted()
+            pano = panorama_faces(cam.data, w, hpx) if cam.data.type == "PANO" else None
             return (view, win, w, hpx, cam.data.type != "ORTHO",
-                    ("CAM", cam.name, scene.frame_current))
+                    ("CAM", cam.name, scene.frame_current, pano[0] if pano else 0), pano)
         r3d, region = find_view3d()
         if r3d is None:
             return None
         return (r3d.view_matrix, r3d.window_matrix, max(int(region.width), 1),
-                max(int(region.height), 1), bool(r3d.is_perspective), ("VIEW",))
+                max(int(region.height), 1), bool(r3d.is_perspective), ("VIEW",), None)
 
     # ── legacy helpers (kept for callers/tests) ──────────────────────────────
 
@@ -162,6 +173,46 @@ class CesiumCameraAdapter:
 def _V(t):
     import mathutils
     return mathutils.Vector(t)
+
+
+# cube faces in camera space (Blender cameras look down -Z, Y up): direction, up
+CUBE_FACES = (
+    ((0.0, 0.0, -1.0), (0.0, 1.0, 0.0)),    # front
+    ((0.0, 0.0, 1.0), (0.0, 1.0, 0.0)),     # back
+    ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0)),     # right
+    ((-1.0, 0.0, 0.0), (0.0, 1.0, 0.0)),    # left
+    ((0.0, 1.0, 0.0), (0.0, 0.0, 1.0)),     # up
+    ((0.0, -1.0, 0.0), (0.0, 0.0, -1.0)),   # down
+)
+_FACE_HALF_DIAGONAL = math.atan(math.sqrt(2.0))   # 54.7 deg: face centre to corner
+
+
+def panorama_faces(cam_data, width_px, height_px):
+    """(face_px, [(direction, up)]) of the 90 degree cube faces that cover a
+    panoramic camera, in camera space. Each face gets the panorama's angular
+    resolution at its centre (an equirectangular image W px wide over 360
+    degrees: W / 4 px per face), so tiles are as detailed as the render needs
+    there. Fisheye cameras drop the faces entirely outside their field of view."""
+    ptype = getattr(cam_data, "panorama_type", "EQUIRECTANGULAR")
+    w, h = max(int(width_px), 1), max(int(height_px), 1)
+    span = None                                  # field of view, radians
+    if ptype in ("EQUIRECTANGULAR", "CENTRAL_CYLINDRICAL"):
+        lon = float(cam_data.longitude_max) - float(cam_data.longitude_min)
+        px_per_rad = w / max(lon, 1e-3)
+    elif ptype in ("FISHEYE_EQUIDISTANT", "FISHEYE_EQUISOLID"):
+        span = float(cam_data.fisheye_fov)
+        px_per_rad = min(w, h) / max(span, 1e-3)
+    elif ptype == "EQUIANGULAR_CUBEMAP_FACE":
+        px_per_rad = w / (math.pi / 2.0)
+    else:                                        # mirror ball, polynomial fisheye
+        px_per_rad = w / (2.0 * math.pi)
+    face_px = max(int(round(px_per_rad * math.pi / 2.0)), 1)
+    faces = list(CUBE_FACES)
+    if span is not None and span < 2.0 * math.pi:
+        half = span / 2.0
+        faces = [f for f in faces
+                 if math.acos(max(-1.0, min(1.0, -f[0][2]))) - _FACE_HALF_DIAGONAL < half]
+    return face_px, faces
 
 
 def register():

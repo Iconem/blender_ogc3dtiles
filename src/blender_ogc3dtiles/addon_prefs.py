@@ -20,6 +20,15 @@ from .tileset.backend import get_available_backends, probe_cesium
 
 # ── Prefs class ───────────────────────────────────────────────────────────────
 
+def _set_network_file_cache(on):
+    from .tileset import asset_fixes  # noqa: PLC0415
+    asset_fixes.NETWORK_FILE_CACHE[0] = bool(on)
+
+
+def _on_network_file_cache(self, _context):
+    _set_network_file_cache(self.cache_network_files)
+
+
 def _get_prefs(context):
     """Safe prefs lookup — works for both legacy addon and Extension install."""
     for key in (__package__,
@@ -116,6 +125,13 @@ class OGC3DTilesPreferences(AddonPreferences):
                     "Keep it on a local disk: sqlite locking is unreliable over SMB, and cache "
                     "entries are keyed by URL, share-link tokens included",
         subtype="DIR_PATH", default="")
+    cache_network_files: BoolProperty(
+        name="Cache files on network shares",
+        description="Keep tiles read from a NAS (\\\\server\\share paths, mapped drives) in the cache "
+                    "folder, read again from the share only when a file's date or size changed. "
+                    "Turn off for a share as fast as the local disk. Files on a local disk are "
+                    "never cached",
+        default=True, update=_on_network_file_cache)
     cache_max_gb: FloatProperty(
         name="Cache size cap (GB)",
         description="Trimmed to this size, least recently used first, when the first stream of a "
@@ -239,6 +255,7 @@ class OGC3DTilesPreferences(AddonPreferences):
         row = boxc.row(align=True)
         row.prop(self, "cache_max_gb")
         row.operator("ogc3dtiles.cache_trim", text="", icon="BRUSH_DATA")
+        boxc.prop(self, "cache_network_files")
         boxc.prop(self, "mapped_drives_as_unc")
         boxc.prop(self, "library_files", text="Libraries")
         from . import library as _library

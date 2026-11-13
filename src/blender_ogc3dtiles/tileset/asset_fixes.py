@@ -164,6 +164,9 @@ _CONTENT_TYPES = {".json": "application/json", ".glb": "model/gltf-binary",
 _POOL = []
 _POOL_LOCK = threading.Lock()
 _KEEP = []          # accessors handed to cesium-native, see make_network_file_accessor
+# add-on preference "Cache files on network shares", read on every request so a
+# change applies at once; off: network files go through curl, uncached
+NETWORK_FILE_CACHE = [True]
 
 
 def _remote_drive(letter: str) -> bool:
@@ -243,7 +246,7 @@ def make_network_file_accessor(cs, inner):
 
     class NetworkFileAccessor(aio.IAssetAccessor):
         def get(self, async_system, url, headers):
-            if not is_network_file_url(url):
+            if not NETWORK_FILE_CACHE[0] or not is_network_file_url(url):
                 return inner.get(async_system, url, headers)
             # off the calling thread (often Blender's main thread): a NAS read
             # can take a while

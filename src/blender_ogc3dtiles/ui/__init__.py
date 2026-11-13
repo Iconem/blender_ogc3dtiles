@@ -864,6 +864,7 @@ def _start_stream(scene, props, st, choice, cache) -> None:
                            max_dist=props.load_distance,
                            cache_dir=cache.root if props.use_disk_cache else None,
                            direct_mesh=addon_pref("direct_mesh", True),
+                           cache_network_files=addon_pref("cache_network_files", True),
                            read_metadata=props.read_metadata,
                            voxel_grids=props.voxel_display != "FACES",
                            voxel_exaggeration=1.0 if props.voxel_display == "PROJECT" else props.voxel_exaggeration,
@@ -1769,7 +1770,7 @@ def _tick_native(scene, props, st, now) -> bool:
         res = backend.update_view(view.position, view.direction, view.up,
                                   view.viewport_width, view.viewport_height,
                                   view.fov_x, view.fov_y, dt=now - st["last_sel_t"],
-                                  ortho=view.ortho_extents)
+                                  ortho=view.ortho_extents, faces=view.faces)
         changed |= _apply_visibility(st, set(res.to_render), set(), now)
         st["stats"] = res.stats
         st["last_sig"] = view.signature

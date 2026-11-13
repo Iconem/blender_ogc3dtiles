@@ -549,6 +549,7 @@ class CesiumNativeBackend:
     def __init__(self, max_sse=16.0, cache_dir=None,
                  max_cached_mb=512, max_simultaneous_loads=20,
                  max_dist=float("inf"), detail_falloff=600.0, direct_mesh=True, read_metadata=False,
+                 cache_network_files=True,
                  voxel_grids=False, voxel_exaggeration=1.0, **_ignored):
         self._max_sse = max_sse
         self.read_metadata = bool(read_metadata)
@@ -556,6 +557,7 @@ class CesiumNativeBackend:
         self.voxel_grids = bool(voxel_grids)    # keep the whole grid of voxel tiles (Volume, lookup)
         self.voxel_exaggeration = float(voxel_exaggeration)
         self.direct_mesh = bool(direct_mesh)   # numpy -> bpy mesh instead of GLB re-import
+        asset_fixes.NETWORK_FILE_CACHE[0] = bool(cache_network_files)
         self.on_main_thread_ready = None        # UI callback: ReadyTile -> bool (built now?)
         self.main_thread_ms = 12.0              # cesium-native main-thread load budget per tick
         self._max_dist = max_dist              # cesium-native culls by fog/frustum; kept for parity
@@ -719,11 +721,14 @@ class CesiumNativeBackend:
                 pass
 
     def update_view(self, position_ecef, direction_ecef, up_ecef,
-                    viewport_w, viewport_h, hfov, vfov, dt=0.0, ortho=None):
+                    viewport_w, viewport_h, hfov, vfov, dt=0.0, ortho=None, faces=None):
         """``ortho`` = (half_width, half_height) of an orthographic frame in
         metres, centred on ``position_ecef``: the binding's orthographic
         ViewState then culls with the four side planes and uses
-        SSE = error * viewport_h / frame_height, independent of distance."""
+        SSE = error * viewport_h / frame_height, independent of distance.
+        ``faces`` = [(direction, up)] of a panoramic camera's cube faces: one
+        90 degree ViewState each, viewport_w x viewport_h px, and cesium-native
+        selects for their union."""
         if self._tileset is None:
             return NativeViewResult([], [], {})
         sel = self._cs.tiles.selection
@@ -731,13 +736,17 @@ class CesiumNativeBackend:
                 np.asarray(direction_ecef, np.float64),
                 np.asarray(up_ecef, np.float64),
                 np.asarray([viewport_w, viewport_h], np.float64))
-        if ortho is not None:
+        if faces:
+            quarter = math.pi / 2.0
+            views = [sel.ViewState(args[0], np.asarray(d, np.float64), np.asarray(u, np.float64),
+                                   args[3], quarter, quarter) for d, u in faces]
+        elif ortho is not None:
             hw, hh = float(ortho[0]), float(ortho[1])
-            view = sel.ViewState(*args, -hw, hw, -hh, hh)
+            views = [sel.ViewState(*args, -hw, hw, -hh, hh)]
         else:
-            view = sel.ViewState(*args, float(hfov), float(vfov))
+            views = [sel.ViewState(*args, float(hfov), float(vfov))]
         vg = self._tileset.default_view_group
-        res = self._tileset.update_view_group(vg, [view], float(dt))
+        res = self._tileset.update_view_group(vg, views, float(dt))
         self._tileset.load_tiles()
         keys = []
         for t in res.tiles_to_render:

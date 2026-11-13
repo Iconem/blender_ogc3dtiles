@@ -204,6 +204,11 @@ class ViewState:
     is_persp: bool = True
     frustum_planes: Optional[List[Tuple[float, float, float, float]]] = None  # (nx,ny,nz,d) in ECEF
     signature: tuple = ()
+    # panoramic camera: (direction, up) in ECEF of the 90 degree cube faces seen
+    # from ``position``, each viewport_width x viewport_height px with p00 = p11
+    # = 1. cesium-native selects for their union; the Python backend has no
+    # frustum (frustum_planes None) and uses the per-face error
+    faces: Optional[List[Tuple[Tuple[float, float, float], Tuple[float, float, float]]]] = None
     # placeholder fov of an orthographic view: both backends use the real
     # frame (the Python SSE and culling read p11 and the clip planes,
     # cesium-native gets ``ortho_extents``), so it only fills the fov

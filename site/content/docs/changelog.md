@@ -6,7 +6,7 @@ description: "What changed, newest first"
 Dates are those of the commits. Versions are the tags on the Releases page; *Unreleased* is on the
 main branch and not in a release zip yet.
 
-## Unreleased
+## 0.6.3 (2026-11-13)
 
 - **`EXT_splat_opacity` honoured.** Tilesets from the 3DGS-PLY-3DTiles converter (William Liu)
   looked like soft blobs at coarse levels: the converter grows the splats it merged ("coverage

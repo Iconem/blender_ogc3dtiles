@@ -34,8 +34,9 @@ A panoramic camera (Cycles: equirectangular, fisheye, central cylindrical, cube 
 each view gets the panorama's own resolution: an equirectangular render 4096 × 2048 has 1024 px per
 quarter turn, so tiles are as fine as the render needs at the horizon; a square one (1920 × 1920)
 is finer vertically and gets 960 px. Fisheye cameras skip the cube faces outside their field of
-view: a 180° fisheye uses five. Tiles high above the camera often arrive last: wait for the loading
-count to settle before rendering. EEVEE does not render panoramic cameras; Cycles
+view: a 180° fisheye uses five. Detail close to the camera comes in refinement steps, the finest
+last: on Notre-Dame with Google tiles, two minutes for the full set, the tower tops in the last
+step. Wait for the loading count to settle before rendering. EEVEE does not render panoramic cameras; Cycles
 does.
 
 ## Max SSE: how fine

@@ -519,7 +519,7 @@ def _shared_externals(cs, cache_dir, max_loads):
     tp = cs.async_.NativeTaskProcessor()
     asys = cs.async_.AsyncSystem(tp)
     copts = cs.curl.CurlAssetAccessorOptions()
-    copts.user_agent = "blender-ogc3dtiles/0.6.3 cesium-native-python"   # manifest version
+    copts.user_agent = "blender-ogc3dtiles/0.6.4 cesium-native-python"   # manifest version
     try:
         # the manylinux curl only knows Red Hat's CA bundle path; on other Linux
         # distributions every HTTPS request fails without a CA file (issue 9)

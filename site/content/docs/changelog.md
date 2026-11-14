@@ -6,7 +6,7 @@ description: "What changed, newest first"
 Dates are those of the commits. Versions are the tags on the Releases page; *Unreleased* is on the
 main branch and not in a release zip yet.
 
-## Unreleased
+## 0.6.4 (2026-11-14)
 
 - **Panoramic cameras.** A panoramic camera as *Scene camera* or *Chosen camera* selects tiles all
   around it, at the panorama's resolution: six 90° views of a cube (five for a 180° fisheye), which

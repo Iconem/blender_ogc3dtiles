@@ -7,7 +7,7 @@ Requires: Blender 4.2+ (Python 3.11+). Version and metadata: blender_manifest.to
 bl_info = {             # legacy add-on loading only; the extension manifest is authoritative
     "name":     "OGC 3D Tiles Streaming",
     "author":   "Jonathan Chemla",
-    "version":  (0, 6, 3),
+    "version":  (0, 6, 4),
     "blender":  (4, 2, 0),
     "location": "View3D > Sidebar > 3D Tiles",
     "description": "Stream OGC 3D Tiles with cesium-native-python and Cesium-compatible LOD",

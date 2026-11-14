@@ -103,7 +103,11 @@ where sections 6 and 7 say otherwise.**
   covers 360 degrees. Square equirectangular images use their finer vertical resolution
   (1920 x 1920: 960 px faces). Notre-Dame with Google tiles: tower tops missing in a
   screenshot taken while tiles were still loading (main-thread queue in the hundreds);
-  complete in the viewport and in a Cycles render once loaded.
+  complete in the viewport and in a Cycles render once loaded. Arrival logged on a fresh
+  stream: geometry within 120 m of the camera came in refinement steps (300 vertices at
+  47 s, 206 k at 108 s), the >30 m part one step after the ground (2.7 k at 108 s, 12.6 k
+  at 118 s). cesium-native's load priority is (1 - cos angle to the nearest face
+  direction) x distance, so elevation itself is not penalised.
 - **Network share cache is a preference** (*Cache files on network shares*, default off since
   Jonathan's call on 2026-11-14):
   `asset_fixes.NETWORK_FILE_CACHE`, read per request, so a change applies at once.

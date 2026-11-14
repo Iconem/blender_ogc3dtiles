@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name            = "blender-ogc3dtiles"
-version         = "0.6.3"
+version         = "0.6.4"
 description     = "OGC 3D Tiles streaming addon for Blender"
 readme          = "README.md"
 requires-python = ">=3.11"

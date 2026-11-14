@@ -35,7 +35,7 @@ import bpy
 from ..tileset.origin import origin_lla
 from ..tileset.traversal import Tile, TileState, mat_mul, mat_translation
 
-USER_AGENT = "blender-ogc3dtiles/0.6.3"     # keep in step with blender_manifest.toml
+USER_AGENT = "blender-ogc3dtiles/0.6.4"     # keep in step with blender_manifest.toml
 TIMEOUT_S = 30
 COLLECTION_NAME = "3D Tiles"
 

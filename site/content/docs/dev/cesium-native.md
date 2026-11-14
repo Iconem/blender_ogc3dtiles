@@ -114,6 +114,10 @@ Panoramic cameras, two ways:
   follows the wrong point, and a Python error function would run once per
   visited tile, so the binding would rather offer built-in ones in C++.
 
+A view state taking an eye position, a culling volume and an error function
+is requested upstream:
+[cesium-native#1501](https://github.com/CesiumGS/cesium-native/issues/1501).
+
 ## Tiled formats cesium-native reads, and what needs a converter
 
 cesium-native loads 3D Tiles 1.0 / 1.1 (`tileset.json`, implicit tiling,

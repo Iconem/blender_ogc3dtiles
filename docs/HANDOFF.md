@@ -71,7 +71,8 @@ where sections 6 and 7 say otherwise.**
   streaming stopped or on a tileset copied to disk (notes on the Gaussian splats page).
   Issue 6 (BlenderGIS) is deferred by Jonathan.
 - Feature request for cesium-native (panoramic / arbitrary projection view states, also
-  for Unreal nDisplay): drafted for Jonathan 2026-11-14, not posted.
+  for Unreal nDisplay): posted by Jonathan on 2026-11-14 as
+  [cesium-native#1501](https://github.com/CesiumGS/cesium-native/issues/1501).
 - Set aside by Jonathan: the Vestibule column, voxels.
 
 ### Later on 2026-11-13

@@ -52,6 +52,9 @@ main branch and not in a release zip yet.
 - **Start** reuses the live modal instead of stacking a second one, so menus and keys are no longer
   dropped after Stop then Start in a script. Tiles freed and loaded again under the same key no
   longer leave an orphaned object behind.
+- **Development**: the add-on no longer carries its Windows patch for cesium-native-python nor its
+  own wheel workflow, since upstream merged the build fixes and a cibuildwheel workflow (#3, #4, #5,
+  #7). A Screencasts page in the developer docs describes the two video capture workflows.
 
 ## 0.6.0 (2026-11-06)
 
@@ -95,6 +98,8 @@ main branch and not in a release zip yet.
   panels named Nodes: Material, Geometry, Compositing, Metadata.
 - A missing cesium-native backend is shown in red at the top, with the install button.
 - Geometry cut for Solid view and exports is on by default.
+- *Direct mesh* moved to the Developer box of the add-on preferences and applies to both backends
+  (off: tiles go through the glTF importer, to compare or work around a tile).
 
 **Tilesets**
 
@@ -123,7 +128,10 @@ main branch and not in a release zip yet.
 ## 0.4.0 (2026-11-04)
 
 - **Clipping**: polygons and boxes, cut or keep, inside any or all; on meshes, points and splats;
-  keyframed volumes in renders; tiles fully cut are not downloaded.
+  keyframed volumes in renders; tiles fully cut are not downloaded. Switching modes is instant
+  (no material or shader rebuild), and *Cut Geometry* also deletes cut faces for Solid view,
+  snapping and exports.
+- Several imagery overlays sharing a projection now show together instead of replacing each other.
 - **Feature metadata**: tables as vertex attributes, colours per class, metadata in textures,
   per-point and tileset metadata.
 - **Voxel tilesets**: blocks, volumes, and colouring other tilesets from voxel classes.

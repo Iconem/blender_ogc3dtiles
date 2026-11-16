@@ -2216,6 +2216,15 @@ class OGC3D_PT_LodPanel(_OGC3DSidebar, Panel):
         if props.max_elements_m > 0 and props.is_streaming:
             layout.label(text=f"Shown: {_state.get('cap_total', 0) / 1e6:.2f} M   "
                               f"SSE x{_state.get('cap_factor', 1.0):.2f}", icon="INFO")
+        col = layout.column(align=True)
+        col.prop(props, "show_tile_bounds", text="Show tile bounds", icon="CUBE")
+        if props.show_tile_bounds:
+            row = col.row(align=True)
+            row.prop(props, "tile_bounds_random", text="", icon="COLOR")
+            if not props.tile_bounds_random:
+                row.prop(props, "tile_bounds_color", text="")
+            row.prop(props, "tile_bounds_width", text="Width")
+            row.prop(props, "tile_bounds_depth", text="", icon="HIDE_ON")
         sub_h, sub = layout.panel("ogc3d_lod_advanced", default_closed=True)
         sub_h.label(text="Advanced")
         if sub:

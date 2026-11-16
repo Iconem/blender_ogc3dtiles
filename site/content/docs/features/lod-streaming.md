@@ -77,6 +77,22 @@ coarser until the view fits, and the panel shows by how much (*SSE x1.50*). Deta
 is room. 0, the default, means no ceiling. The coarsest tiles of a tileset are always shown, so a
 ceiling below their size cannot be met.
 
+## Show tile bounds
+
+Draws a wire box around every visible tile, in the 3D view only: nothing is added to the scene and
+nothing shows in renders. Drag *Max SSE* or move the view with it on to watch tiles split into
+finer ones and coarser ones come back. It works for meshes, point clouds and Gaussian splats
+alike; Blender's own *Bounds* display draws nothing for splat objects.
+
+- The colour swatch sets one colour for every box; the colour icon gives each tile its own random
+  colour instead.
+- *Width* is the line width in pixels.
+- The eye icon hides the parts of boxes that are behind mesh and point tiles. Off, the default,
+  every box is drawn on top. Gaussian splats hide no box: they are blended without writing depth.
+
+The boxes are the tile objects' bounding boxes, that is what each tile actually holds. They are not
+the bounding volumes declared in the tileset (box, region or sphere), which can be larger.
+
 ## Advanced
 
 - **cesium-native cache MB**: memory for tiles that are loaded but no longer shown, so that coming

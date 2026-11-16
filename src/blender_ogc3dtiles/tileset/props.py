@@ -27,6 +27,22 @@ def _on_global_sse(self, context):
         pass
 
 
+def _on_tile_bounds(self, context):
+    try:
+        from .. import tile_bounds
+        tile_bounds.enable(self.show_tile_bounds)
+    except Exception:          # noqa: BLE001
+        pass
+
+
+def _on_tile_bounds_look(self, context):
+    try:
+        from .. import tile_bounds
+        tile_bounds.invalidate()
+    except Exception:          # noqa: BLE001
+        pass
+
+
 def _on_meta_color(self, context):
     try:
         from .. import materials
@@ -829,6 +845,32 @@ class TilesSceneProps(PropertyGroup):
         name="Disk cache",
         description="Keep unwrapped GLBs in %LOCALAPPDATA%/blender_ogc3dtiles/cache",
         default=True,
+    )
+
+    # --- Tile bounds (debug overlay, tile_bounds.py) ---
+    show_tile_bounds: BoolProperty(
+        name="Show Tile Bounds",
+        description="Draw a wire box around every visible tile, the tile object's bounding "
+                    "box, in the 3D view only (not in renders). Shows how the tileset is cut "
+                    "into tiles and which ones streaming keeps",
+        default=False, update=_on_tile_bounds,
+    )
+    tile_bounds_random: BoolProperty(
+        name="Random Colours", description="One random colour per tile",
+        default=False, update=_on_tile_bounds_look,
+    )
+    tile_bounds_color: FloatVectorProperty(
+        name="Colour", subtype="COLOR", size=4, min=0.0, max=1.0,
+        default=(1.0, 0.45, 0.05, 1.0), update=_on_tile_bounds_look,
+    )
+    tile_bounds_width: FloatProperty(
+        name="Line Width", description="Line width in pixels",
+        default=1.5, min=0.5, max=8.0, update=_on_tile_bounds_look,
+    )
+    tile_bounds_depth: BoolProperty(
+        name="Hidden by Geometry", description="Boxes behind the tiles are hidden; off draws "
+                    "every box in front",
+        default=False, update=_on_tile_bounds_look,
     )
 
     # --- Tileset list (several sources at once) ---

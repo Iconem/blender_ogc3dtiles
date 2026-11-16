@@ -6,6 +6,12 @@ description: "What changed, newest first"
 Dates are those of the commits. Versions are the tags on the Releases page; *Unreleased* is on the
 main branch and not in a release zip yet.
 
+## Unreleased
+
+- **A clipping object deleted and recreated under the same name cuts again** on point and splat
+  tiles. Their clip node group only compared names, so it kept pointing at the deleted object and
+  nothing was cut.
+
 ## 0.6.4 (2026-11-14)
 
 - **Panoramic cameras.** A panoramic camera as *Scene camera* or *Chosen camera* selects tiles all

@@ -349,6 +349,18 @@ def _gn_signature(cfg, faces) -> str:
                   for b in cfg["boxes"]]))
 
 
+def _refs_live(ng, cfg) -> bool:
+    """The group's Object Info nodes point at the objects now carrying the
+    config's names. The signature holds names only: a box deleted and recreated
+    under the same name leaves the old node pointing at nothing, and one missing
+    when the group was built was left out."""
+    names = [b["obj"] for b in cfg["boxes"]] + ([cfg["helper"]] if cfg["n_polygons"] else [])
+    want = {o for o in (bpy.data.objects.get(n) for n in names if n) if o is not None}
+    have = [n.inputs["Object"].default_value for n in ng.nodes
+            if n.bl_idname == "GeometryNodeObjectInfo" and not n.inputs["Object"].is_linked]
+    return None not in have and set(have) == want
+
+
 def build_group(cfg, faces=False):
     """(Re)build the tileset's clip group, deleting points, or with ``faces``
     the faces whose points are all cut; returns it (None: nothing to clip)."""
@@ -357,7 +369,7 @@ def build_group(cfg, faces=False):
     if not cfg["boxes"] and not cfg["n_polygons"]:
         return None
     sig = _gn_signature(cfg, faces)
-    if ng is not None and ng.get("sig") == sig:
+    if ng is not None and ng.get("sig") == sig and _refs_live(ng, cfg):
         return ng
     if ng is None:
         ng = bpy.data.node_groups.new(name, "GeometryNodeTree")
@@ -505,7 +517,8 @@ def set_mode(scene, uid, any_, invert) -> None:
 
 
 def _tile_group(prefix, cfg, faces):
-    return bpy.data.node_groups.get(prefix + cfg["uid"]) or build_group(cfg, faces)
+    ng = bpy.data.node_groups.get(prefix + cfg["uid"])
+    return ng if ng is not None and _refs_live(ng, cfg) else build_group(cfg, faces)
 
 
 def apply_to_tile(obj, cfg=None) -> None:

@@ -30,7 +30,7 @@ def _on_global_sse(self, context):
 def _on_tile_bounds(self, context):
     try:
         from .. import tile_bounds
-        tile_bounds.enable(self.show_tile_bounds)
+        tile_bounds.enable(self.tile_bounds != "OFF")
     except Exception:          # noqa: BLE001
         pass
 
@@ -848,12 +848,20 @@ class TilesSceneProps(PropertyGroup):
     )
 
     # --- Tile bounds (debug overlay, tile_bounds.py) ---
-    show_tile_bounds: BoolProperty(
-        name="Show Tile Bounds",
-        description="Draw a wire box around every visible tile, the tile object's bounding "
-                    "box, in the 3D view only (not in renders). Shows how the tileset is cut "
-                    "into tiles and which ones streaming keeps",
-        default=False, update=_on_tile_bounds,
+    tile_bounds: EnumProperty(
+        name="Tile Bounds",
+        description="Draw a wire outline around every visible tile, in the 3D view only "
+                    "(not in renders): shows how the tileset is cut into tiles and which "
+                    "ones streaming keeps",
+        items=[
+            ("OFF", "Off", "No outlines"),
+            ("OBJECT", "Tile objects", "Each tile object's bounding box: what the tile "
+             "actually holds. Meshes, point clouds and splats"),
+            ("VOLUME", "3D Tiles volumes", "The bounding volume the tileset declares for "
+             "each tile (box, region or sphere), which can be larger than what it holds. "
+             "cesium-native backend"),
+        ],
+        default="OFF", update=_on_tile_bounds,
     )
     tile_bounds_random: BoolProperty(
         name="Random Colours", description="One random colour per tile",

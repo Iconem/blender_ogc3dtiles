@@ -77,21 +77,24 @@ coarser until the view fits, and the panel shows by how much (*SSE x1.50*). Deta
 is room. 0, the default, means no ceiling. The coarsest tiles of a tileset are always shown, so a
 ceiling below their size cannot be met.
 
-## Show tile bounds
+## Tile bounds
 
-Draws a wire box around every visible tile, in the 3D view only: nothing is added to the scene and
-nothing shows in renders. Drag *Max SSE* or move the view with it on to watch tiles split into
-finer ones and coarser ones come back. It works for meshes, point clouds and Gaussian splats
-alike; Blender's own *Bounds* display draws nothing for splat objects.
+Draws a wire outline around every visible tile, in the 3D view only: nothing is added to the scene
+and nothing shows in renders. Drag *Max SSE* or move the view with it on to watch tiles split into
+finer ones and coarser ones come back.
 
-- The colour swatch sets one colour for every box; the colour icon gives each tile its own random
-  colour instead.
-- *Width* is the line width in pixels.
-- The eye icon hides the parts of boxes that are behind mesh and point tiles. Off, the default,
-  every box is drawn on top. Gaussian splats hide no box: they are blended without writing depth.
+- **Off**, the default.
+- **Tile objects**: each tile object's bounding box, that is what the tile actually holds. Works
+  for meshes, point clouds and Gaussian splats alike; Blender's own *Bounds* display draws nothing
+  for splat objects.
+- **3D Tiles volumes**: the bounding volume the tileset declares for each tile: a box, a sphere
+  (three circles) or a region (a box curved along the globe, as in quantized-mesh terrain). It can
+  be larger than what the tile holds. cesium-native backend only.
 
-The boxes are the tile objects' bounding boxes, that is what each tile actually holds. They are not
-the bounding volumes declared in the tileset (box, region or sphere), which can be larger.
+The colour swatch sets one colour for every outline; the colour icon gives each tile its own random
+colour instead. *Width* is the line width in pixels. The eye icon hides the parts of outlines that
+are behind mesh and point tiles; off, every outline is drawn on top. Gaussian splats hide no
+outline: they are blended without writing depth.
 
 ## Advanced
 

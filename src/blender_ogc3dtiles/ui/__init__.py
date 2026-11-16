@@ -2217,8 +2217,8 @@ class OGC3D_PT_LodPanel(_OGC3DSidebar, Panel):
             layout.label(text=f"Shown: {_state.get('cap_total', 0) / 1e6:.2f} M   "
                               f"SSE x{_state.get('cap_factor', 1.0):.2f}", icon="INFO")
         col = layout.column(align=True)
-        col.prop(props, "show_tile_bounds", text="Show tile bounds", icon="CUBE")
-        if props.show_tile_bounds:
+        col.prop(props, "tile_bounds", text="Tile bounds")
+        if props.tile_bounds != "OFF":
             row = col.row(align=True)
             row.prop(props, "tile_bounds_random", text="", icon="COLOR")
             if not props.tile_bounds_random:

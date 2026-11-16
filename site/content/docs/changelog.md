@@ -8,9 +8,10 @@ main branch and not in a release zip yet.
 
 ## Unreleased
 
-- **Show tile bounds** (LOD / Streaming panel): a wire box around every visible tile, in one colour
-  or a random colour per tile, drawn in the 3D view only. Works for splats too, which Blender's own
-  Bounds display skips. See [Show tile bounds](/features/lod-streaming#show-tile-bounds).
+- **Tile bounds** (LOD / Streaming panel): a wire outline around every visible tile, drawn in the 3D
+  view only, in one colour or a random colour per tile. *Tile objects* outlines what each tile
+  holds, splats included, which Blender's own Bounds display skips; *3D Tiles volumes* outlines the
+  boxes, spheres and regions the tileset declares. See [Tile bounds](/features/lod-streaming#tile-bounds).
 - **A clipping object deleted and recreated under the same name cuts again** on point and splat
   tiles. Their clip node group only compared names, so it kept pointing at the deleted object and
   nothing was cut.

@@ -257,6 +257,10 @@ class _GlbPreparer:
         payload = load_result.mesh_payload
         if payload is not None and "unit_verts" in payload:
             self._owner.place_voxels(tile, payload)
+        try:                                  # for Show tile bounds: 3D Tiles volumes
+            self._owner.tile_volumes[load_result.key] = volume_shape(tile.bounding_volume)
+        except Exception:                     # noqa: BLE001
+            pass
         if self._owner.read_metadata:
             try:                              # where the tile sits in the hierarchy
                 level, up = 0, tile.parent
@@ -282,6 +286,7 @@ class _GlbPreparer:
         rt = main_result or load_result
         if rt is not None:
             self._owner.tile_info.pop(rt.key, None)
+            self._owner.tile_volumes.pop(rt.key, None)
             with self._owner._lock:
                 self._owner._freed.append(rt.key)
             for p in [rt.glb_path] + list(rt.aux_files):
@@ -423,6 +428,27 @@ def _volume_excluder(base, boxes, mode, joined):
     return VolumeExcluder()
 
 
+def volume_shape(bv):
+    """A tile's 3D Tiles bounding volume as plain data, in ECEF:
+    ("region", (west, south, east, north, min h, max h)) in radians and metres,
+    ("sphere", centre, radius) or ("box", centre, three half axes). Other
+    volumes (S2 cells, cylinders) come as cesium-native's enclosing box."""
+    import re
+    region = bv.bounding_region
+    if region is not None:
+        r = region.rectangle
+        return ("region", (float(r.west), float(r.south), float(r.east), float(r.north),
+                           float(region.minimum_height), float(region.maximum_height)))
+    m = re.search(r"BoundingSphere\(radius=([-+0-9.eE]+)", repr(bv))
+    if m:
+        c = bv.center() if callable(bv.center) else bv.center
+        return ("sphere", tuple(float(v) for v in c), float(m.group(1)))
+    obb = bv.as_oriented_bounding_box()
+    # glm hands matrices over column-major: half_axes[i] is the i-th half axis
+    return ("box", tuple(float(v) for v in obb.center),
+            tuple(tuple(float(v) for v in ax) for ax in np.asarray(obb.half_axes, np.float64)))
+
+
 def _make_overlay(cs, spec):
     """cesium-native RasterOverlay for an overlay list entry (see props.OVERLAY_KINDS)."""
     ro = cs.raster_overlays
@@ -554,6 +580,7 @@ class CesiumNativeBackend:
         self._max_sse = max_sse
         self.read_metadata = bool(read_metadata)
         self.tile_info = {}                     # tile key -> {column: value} (feature_meta.TILE_COLUMNS)
+        self.tile_volumes = {}                  # tile key -> volume_shape(), in ECEF
         self.voxel_grids = bool(voxel_grids)    # keep the whole grid of voxel tiles (Volume, lookup)
         self.voxel_exaggeration = float(voxel_exaggeration)
         self.direct_mesh = bool(direct_mesh)   # numpy -> bpy mesh instead of GLB re-import

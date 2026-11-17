@@ -1,21 +1,28 @@
 import { type DesignSystem, type Page, type SlideMeta, useSlidePageNumber } from '@open-slide/core';
 import type { CSSProperties, ReactNode } from 'react';
+import { shot } from '@assets/shots';
 
-import rome from '@assets/img/rome_google_3dtiles.jpg';
-import sidebar from '@assets/img/sidebar.jpg';
-import overlays from '@assets/img/raster_overlays.jpg';
-import place from '@assets/img/place_search.jpg';
-import globe from '@assets/img/globe_osm.jpg';
-import tileMaterial from '@assets/img/nodes_tile_material.jpg';
-import relight from '@assets/img/nodes_relight.jpg';
-import compositor from '@assets/img/nodes_compositor.jpg';
-import classes from '@assets/img/metadata_classes.jpg';
-import ramp from '@assets/img/metadata_ramp.jpg';
-import splats from '@assets/img/splat_tiles.jpg';
+// --- Deck kit (the same in both decks of this repository, and the look of the open-geodata-catalog and
+// terrain-viewer decks) ---
+// White, hairline rules, soft panels, one accent. Screenshots are the repository's docs/img, by URL (assets/shots.ts).
 
-// --- Deck kit (the look of the open-geodata-catalog and terrain-viewer decks) ---
-// White, hairline rules, soft panels, one accent. Screenshots are the repository's docs/img, copied in by
-// scripts/sync-assets.mjs.
+const rome = shot('rome_google_3dtiles.jpg');
+const sidebar = shot('sidebar.jpg');
+const overlays = shot('raster_overlays.jpg');
+const place = shot('place_search.jpg');
+const globe = shot('globe_osm.jpg');
+const lodCamera = shot('lod_camera_view.jpg');
+const lodOutside = shot('lod_outside_view.jpg');
+const tileMaterial = shot('nodes_tile_material.jpg');
+const relight = shot('nodes_relight.jpg');
+const points = shot('nodes_points.jpg');
+const clipNodes = shot('nodes_clip.jpg');
+const compositor = shot('nodes_compositor.jpg');
+const classes = shot('metadata_classes.jpg');
+const ramp = shot('metadata_ramp.jpg');
+const splats = shot('splat_tiles.jpg');
+const voxels = shot('voxel_tilesets.jpg');
+const types = shot('tileset_types.png');
 
 export const design: DesignSystem = {
   palette: { bg: '#ffffff', text: '#0a0a0a', accent: '#C2570A' },
@@ -30,7 +37,7 @@ export const design: DesignSystem = {
 // The repository is on two accounts, each with its own Pages site: the deploy passes the owner it builds for.
 const OWNER = ((import.meta as { env?: Record<string, string | undefined> }).env?.VITE_PAGES_OWNER || 'jo-chemla').toLowerCase();
 const SITE = `${OWNER}.github.io/blender_ogc3dtiles`;
-const FOOT = `OGC 3D Tiles for Blender · ${SITE}`;
+const FOOT = `OGC 3D Tiles Streaming · ${SITE}`;
 
 const ink = {
   text: '#0a0a0a',
@@ -57,7 +64,6 @@ const shadow = {
 
 const pad2 = (n: number) => String(n).padStart(2, '0');
 const PAD_X = 120;
-// the screenshots' own ratio: a frame of this ratio shows one whole
 const SHOT_RATIO = 9 / 16;
 
 const fill: CSSProperties = {
@@ -153,12 +159,14 @@ const Shot = ({
   width = 900,
   height,
   position = '50% 50%',
+  fit = 'cover',
 }: {
   src: string;
   caption?: string;
   width?: number;
   height?: number;
   position?: string;
+  fit?: CSSProperties['objectFit'];
 }) => (
   <figure style={{ margin: 0, width, flex: 'none' }}>
     <img
@@ -166,7 +174,7 @@ const Shot = ({
       style={{
         width,
         height: height ?? Math.round(width * SHOT_RATIO),
-        objectFit: 'cover',
+        objectFit: fit,
         objectPosition: position,
         borderRadius: 12,
         boxShadow: shadow.window,
@@ -221,13 +229,6 @@ const Row = ({ k, v, w = 230 }: { k: ReactNode; v: ReactNode; w?: number }) => (
   </div>
 );
 
-const Stat = ({ n, label }: { n: ReactNode; label: ReactNode }) => (
-  <div style={{ flex: 1, minWidth: 0, borderTop: `1px solid ${ink.rule}`, paddingTop: 20 }}>
-    <div style={{ fontSize: 56, fontWeight: 500, letterSpacing: '-0.035em', lineHeight: 1, color: ink.text }}>{n}</div>
-    <div style={{ marginTop: 12, fontSize: 20, color: ink.muted, lineHeight: 1.3 }}>{label}</div>
-  </div>
-);
-
 const Cover = ({ img, eyebrow, title, subtitle }: { img: string; eyebrow: string; title: ReactNode; subtitle: ReactNode }) => (
   <div style={fill}>
     <Mark />
@@ -263,6 +264,15 @@ const CloseLine = ({ n, children }: { n: number; children: ReactNode }) => (
   </div>
 );
 
+// Diagram pieces: a stage, and the arrow between two.
+const Box = ({ children, sub, accent = 'var(--osd-accent)', w = 360 }: { children: ReactNode; sub?: ReactNode; accent?: string; w?: number }) => (
+  <div style={{ width: w, flex: 'none', background: '#fff', boxShadow: shadow.edge, borderTop: `3px solid ${accent}`, borderRadius: 12, padding: '16px 18px', textAlign: 'center' }}>
+    <div style={{ fontSize: 23, fontWeight: 500, lineHeight: 1.25 }}>{children}</div>
+    {sub ? <div style={{ fontSize: 18, color: ink.muted, marginTop: 6, lineHeight: 1.3 }}>{sub}</div> : null}
+  </div>
+);
+
+const Arrow = () => <div style={{ color: ink.dim, fontSize: 30, alignSelf: 'center', flex: 'none' }}>→</div>;
 
 // --- Pages ---
 
@@ -299,51 +309,82 @@ const P02Why: Page = () => (
 
 const P03How: Page = () => (
   <Frame eyebrow="How it works" title="The viewport is the camera cesium-native follows">
-    <TwoCol
-      leftWidth={820}
-      left={
-        <Bullets>
-          <Li k="Every tick">the add-on hands the viewport (or the render camera) to cesium-native as a view state.</Li>
-          <Li k="Selection">screen-space error, frustum culling, REPLACE and ADD refinement, load priorities.</Li>
-          <Li k="Loading">tiles are decoded off the main thread and built as meshes from numpy arrays.</Li>
-          <Li k="Unloading">tiles out of view are hidden, then freed; a disk cache keeps the downloads.</Li>
-          <Li k="Georeference">a scene origin on the globe; ECEF becomes local east, north, up in metres.</Li>
-        </Bullets>
-      }
-      right={<Shot src={rome} width={820} height={660} caption="Google Photorealistic 3D Tiles over the Colosseum, streamed in the viewport" />}
-    />
-  </Frame>
-);
-
-const P04Content: Page = () => (
-  <Frame eyebrow="What streams" title="The flavours of 3D Tiles cesium-native reads">
-    <div style={{ display: 'flex', gap: 28 }}>
-      <Card title="Meshes">b3dm and glb, with Draco, meshopt and KTX2. 3D Tiles 1.0 and 1.1, implicit tiling included.</Card>
-      <Card title="Point clouds">pnts and glTF points, with their colours, intensity and classification.</Card>
+    <div style={{ display: 'flex', gap: 16, alignItems: 'stretch' }}>
+      <Box w={300} sub="viewport or render camera">Blender view</Box>
+      <Arrow />
+      <Box w={300} sub="ECEF, frustum, resolution">ViewState</Box>
+      <Arrow />
+      <Box w={300} sub="select, load, decode" accent={ink.mint}>cesium-native</Box>
+      <Arrow />
+      <Box w={300} sub="meshes, points, splats" accent={ink.violet}>Blender objects</Box>
     </div>
-    <div style={{ display: 'flex', gap: 28, marginTop: 28 }}>
-      <Card title="Gaussian splats">KHR_gaussian_splatting, SPZ or uncompressed, as native Blender 5.3 splats.</Card>
-      <Card title="Voxels">box and region voxel tiles, as blocks or as OpenVDB volumes.</Card>
-    </div>
-    <div style={{ marginTop: 40 }}>
-      <Bullets size={25}>
-        <Li k="Sources">any tileset.json URL, local and network files, Cesium ion assets, Google Photorealistic 3D Tiles.</Li>
-        <Li k="Also">a bare WGS84 globe to drape imagery on, and quantized-mesh terrain.</Li>
+    <div style={{ marginTop: 48 }}>
+      <Bullets>
+        <Li k="Every tick">the add-on hands the viewport, or a camera, to cesium-native as a view state.</Li>
+        <Li k="Selection">screen-space error, frustum culling, REPLACE and ADD refinement, load priorities.</Li>
+        <Li k="Loading">tiles are decoded off the main thread into numpy arrays, then built as meshes.</Li>
+        <Li k="Unloading">tiles out of view are hidden, then freed; a disk cache keeps the downloads.</Li>
+        <Li k="Binding">cesium-native-python, installed as a wheel built for Blender's own Python.</Li>
       </Bullets>
     </div>
   </Frame>
 );
 
-const P05Sidebar: Page = () => (
+const P04Objects: Page = () => (
+  <Frame eyebrow="Tiles as Blender objects" title="Every tile is an object you can see in the outliner">
+    <TwoCol
+      leftWidth={760}
+      left={
+        <Bullets>
+          <Li k="One root Empty">per tileset, in a 3D Tiles collection: move, rotate, hide or fold it as one.</Li>
+          <Li k="Shown, then hidden">a tile stays loaded while it is out of view, until the cap frees it.</Li>
+          <Li k="Shared node groups">each tile's material and modifiers point at one graph per kind.</Li>
+          <Li k="Your selection">imports never touch the selected or active object.</Li>
+          <Li k="Pause">untick a tileset to freeze what is loaded while you look around.</Li>
+        </Bullets>
+      }
+      right={<Shot src={lodOutside} width={820} height={480} caption="Seen from outside: tiles exist, and are detailed, only where the camera looks" />}
+    />
+  </Frame>
+);
+
+const P05Content: Page = () => (
+  <Frame eyebrow="What streams" title="The flavours of 3D Tiles cesium-native reads">
+    <TwoCol
+      leftWidth={1000}
+      left={
+        <>
+          <div style={{ display: 'flex', gap: 24 }}>
+            <Card title="Meshes">b3dm and glb, Draco, meshopt, KTX2. 3D Tiles 1.0 and 1.1, implicit tiling.</Card>
+            <Card title="Point clouds">pnts and glTF points, with colours, intensity and classification.</Card>
+          </div>
+          <div style={{ display: 'flex', gap: 24, marginTop: 24 }}>
+            <Card title="Gaussian splats">KHR_gaussian_splatting, SPZ or plain, as native Blender 5.3 splats.</Card>
+            <Card title="Voxels">box and region voxel tiles, as blocks or as OpenVDB volumes.</Card>
+          </div>
+          <div style={{ marginTop: 32 }}>
+            <Bullets size={24}>
+              <Li k="Sources">any tileset.json URL, local and network files, Cesium ion, Google Photorealistic 3D Tiles.</Li>
+              <Li k="Also">a bare WGS84 globe to drape imagery on, and quantized-mesh terrain.</Li>
+            </Bullets>
+          </div>
+        </>
+      }
+      right={<Shot src={types} width={560} height={410} fit="contain" caption="Entry types: a globe with OpenStreetMap, a tileset URL, a Cesium ion asset" />}
+    />
+  </Frame>
+);
+
+const P06Sidebar: Page = () => (
   <Frame eyebrow="In Blender" title="One sidebar tab: add a URL, press Start">
     <TwoCol
       leftWidth={760}
       left={
         <Bullets>
           <Li k="Tilesets">a list of entries, each with its overlays and its clipping; several stream at once.</Li>
-          <Li k="Scene origin">automatic, typed in, or found by searching a place name.</Li>
-          <Li k="LOD / Streaming">maximum screen-space error, parallel downloads, imports per tick.</Li>
-          <Li k="Nodes">material, geometry, compositing and metadata, each one shared by every tile.</Li>
+          <Li k="Scene origin">automatic, typed in, pasted in double precision, or found by place name.</Li>
+          <Li k="LOD / Streaming">Max SSE, which camera decides, parallel downloads, tile bounds.</Li>
+          <Li k="Nodes">material, geometry, compositing and metadata, each shared by every tile.</Li>
           <Li k="Render">wait for the tiles of each frame before rendering it.</Li>
         </Bullets>
       }
@@ -352,7 +393,47 @@ const P05Sidebar: Page = () => (
   </Frame>
 );
 
-const P06Overlays: Page = () => (
+const P07Lod: Page = () => (
+  <Frame eyebrow="Level of detail" title="Max SSE sets how fine, a camera sets where">
+    <div style={{ display: 'flex', gap: 40 }}>
+      <Shot src={lodCamera} width={820} height={480} caption="Through the scene camera that selects the tiles, over the Capitoline Hill" />
+      <Shot src={lodOutside} width={820} height={480} caption="The same moment from outside the camera" />
+    </div>
+    <div style={{ marginTop: 22 }}>
+      <Bullets size={24}>
+        <Li k="Max SSE">the error allowed on screen, in pixels: 8 by default, lower for finer tiles.</Li>
+        <Li k="Stream for">the 3D viewport, the scene camera at render resolution, or any camera you pick.</Li>
+      </Bullets>
+    </div>
+  </Frame>
+);
+
+const P08SeeLod: Page = () => (
+  <Frame eyebrow="New in 0.6 and after" title="See the tiles and their levels">
+    <div style={{ display: 'flex', gap: 28 }}>
+      <Card title="Tile bounds">
+        A wire outline per visible tile, in the 3D view only. <i>Tile objects</i> outlines what a tile holds, splats
+        included; <i>3D Tiles volumes</i> outlines the boxes, spheres and regions the tileset declares.
+      </Card>
+      <Card title="Colour by tile level" accent={ink.violet}>
+        Through the Color Ramp: depth in the hierarchy, or the geometric error as log2 metres. Shows which level is on
+        screen where, and where two levels meet.
+      </Card>
+      <Card title="Random colour per tile" accent={ink.mint}>
+        One of 24 colours per tile, kept when the tile comes back: the tiles themselves, at a glance.
+      </Card>
+    </div>
+    <div style={{ marginTop: 44 }}>
+      <Bullets size={25}>
+        <Li k="Drag Max SSE">with bounds on, and watch tiles split into finer ones and coarser ones come back.</Li>
+        <Li k="Nothing added">the outlines are drawn by the viewport, not objects: they never show in renders.</Li>
+        <Li k="Panoramic cameras">select tiles all around them, as six 90° views at the panorama's resolution.</Li>
+      </Bullets>
+    </div>
+  </Frame>
+);
+
+const P09Overlays: Page = () => (
   <Frame eyebrow="Raster overlays" title="Imagery draped on any tileset, as in Cesium">
     <TwoCol
       leftWidth={760}
@@ -360,7 +441,7 @@ const P06Overlays: Page = () => (
         <Bullets>
           <Li k="Sources">URL templates, TMS, WMTS, WMS, Cesium ion, Bing Maps, Google Map Tiles.</Li>
           <Li k="Presets">OpenStreetMap, Esri World Imagery and IGN orthophotos need no key.</Li>
-          <Li k="Projection">cesium-native computes the texture coordinates per tile, in the overlay's own tiling scheme.</Li>
+          <Li k="Projection">cesium-native computes the texture coordinates per tile, in the overlay's tiling scheme.</Li>
           <Li k="Live">tick an overlay or change its opacity while streaming. Several stack in order.</Li>
           <Li k="Point clouds too">each point takes the colour of the map under it.</Li>
         </Bullets>
@@ -370,7 +451,7 @@ const P06Overlays: Page = () => (
   </Frame>
 );
 
-const P07Origin: Page = () => (
+const P10Origin: Page = () => (
   <Frame eyebrow="Georeference" title="The scene origin sits on the globe">
     <div style={{ display: 'flex', gap: 40 }}>
       <Shot src={place} width={820} height={461} caption="Search place: the origin on the ground at the place found, terrain and geoid heights included" />
@@ -379,37 +460,32 @@ const P07Origin: Page = () => (
     <div style={{ marginTop: 26 }}>
       <Bullets size={25}>
         <Li k="Several tilesets">share one origin, so a drone scan lands inside the city model around it.</Li>
-        <Li k="Metres, Z up">Blender units stay metres; coordinates near the origin stay small and precise.</Li>
+        <Li k="Double precision">kept in a scene property: no 0.7 m drift at longitude 150, as with Blender's floats.</Li>
       </Bullets>
     </div>
   </Frame>
 );
 
-const P08Clipping: Page = () => (
-  <Frame eyebrow="Clipping" title="Cut a tileset with Blender objects">
+const P11Clipping: Page = () => (
+  <Frame eyebrow="Clipping volumes" title="Cut a tileset with Blender objects">
     <TwoCol
-      leftWidth={860}
+      leftWidth={800}
       left={
-        <Bullets>
-          <Li k="Clip-polygons">the outline of a mesh or curve seen from above, as Cesium's clipping polygons.</Li>
-          <Li k="Boxes">an object's bounding box, to cut in 3D: the top floors of a building, a slab of a point cloud.</Li>
-          <Li k="Viewport region">Blender's Alt+B region, honoured in Material Preview and Rendered too.</Li>
+        <Bullets size={25}>
+          <Li k="Polygons">the outline of a mesh or curve seen from above, as Cesium's clipping polygons.</Li>
+          <Li k="Boxes">an object's bounding box, to cut in 3D: the top floors of a building, a slab of points.</Li>
+          <Li k="Cut or keep">inside any or all volumes; switching modes is instant, no shader rebuild.</Li>
           <Li k="Live">move or keyframe the object and the cut follows, on meshes, points and splats.</Li>
-          <Li k="Why">drop a high-resolution scan into a coarser city model without the two overlapping.</Li>
+          <Li k="Never downloaded">tiles fully outside are excluded during selection.</Li>
+          <Li k="Viewport region">Blender's Alt+B, honoured in Material Preview and Rendered.</Li>
         </Bullets>
       }
-      right={
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-          <Card title="Tiles fully outside">are never downloaded: cesium-native excludes them during selection.</Card>
-          <Card title="Tiles on the edge">are cut in the shader, and optionally in the geometry for Solid view and exports.</Card>
-          <Card title="Upstream">geometry-level clipping in cesium-native is requested in issue 1486.</Card>
-        </div>
-      }
+      right={<Shot src={clipNodes} width={850} height={544} caption="OGC3D Clip, the shared group that cuts edge tiles in the shader" />}
     />
   </Frame>
 );
 
-const P09Graphs: Page = () => (
+const P12Graphs: Page = () => (
   <Frame eyebrow="One graph for all tiles" title="Edit one node group, every tile follows">
     <div style={{ display: 'flex', gap: 40 }}>
       <Shot src={tileMaterial} width={820} height={525} caption="A tile's own material: its texture, then the shared groups in a row" />
@@ -417,13 +493,31 @@ const P09Graphs: Page = () => (
     </div>
     <div style={{ marginTop: 22 }}>
       <Bullets size={25}>
-        <Li k="Shader, geometry, compositor">three shared graphs, applied to tiles already loaded and to those that stream in later.</Li>
+        <Li k="Shader, geometry, compositor, metadata">shared graphs, applied to tiles loaded and to those that stream in later.</Li>
       </Bullets>
     </div>
   </Frame>
 );
 
-const P10Metadata: Page = () => (
+const P13Points: Page = () => (
+  <Frame eyebrow="Point clouds" title="Points as Geometry Nodes, sized on screen">
+    <TwoCol
+      leftWidth={760}
+      left={
+        <Bullets>
+          <Li k="Display">points with a shared Geometry Nodes group, in EEVEE and Cycles.</Li>
+          <Li k="Size">attenuated between 1 and 3 px on screen, so coarse tiles do not show as discs.</Li>
+          <Li k="Colours">RGB, intensity, classification, or the imagery draped over them.</Li>
+          <Li k="LiDAR classes">LAS names and colours, one opacity per class: hide the ground.</Li>
+          <Li k="Demo graphs">Suzanne on points, noise displacement, height reveal.</Li>
+        </Bullets>
+      }
+      right={<Shot src={points} width={820} height={525} caption="OGC3D Points, the shared point display group" />}
+    />
+  </Frame>
+);
+
+const P14Metadata: Page = () => (
   <Frame eyebrow="Feature metadata" title="Colour by class or by number">
     <div style={{ display: 'flex', gap: 40 }}>
       <Shot src={classes} width={820} height={519} caption="swissBUILDINGS3D over Bern by building type, one editable colour per class" />
@@ -432,13 +526,13 @@ const P10Metadata: Page = () => (
     <div style={{ marginTop: 22 }}>
       <Bullets size={25}>
         <Li k="Read from">feature tables, per-point attributes, property textures and tileset metadata.</Li>
-        <Li k="LiDAR">classification gets the LAS names and colours; each class has an opacity, to hide the ground.</Li>
+        <Li k="Saved">columns, class codes and ranges are rebuilt when the .blend is reopened.</Li>
       </Bullets>
     </div>
   </Frame>
 );
 
-const P11Splats: Page = () => (
+const P15Splats: Page = () => (
   <Frame eyebrow="Gaussian splats" title="Splat tilesets as native Blender 5.3 splats">
     <TwoCol
       leftWidth={760}
@@ -446,8 +540,8 @@ const P11Splats: Page = () => (
         <Bullets>
           <Li k="Format">KHR_gaussian_splatting in glTF tiles, SPZ compressed or plain accessors.</Li>
           <Li k="Level of detail">the tileset's own hierarchy: coarse splats far away, fine ones up close.</Li>
-          <Li k="Render">EEVEE viewport and Cycles, next to meshes and point clouds.</Li>
-          <Li k="Clipping">the same polygons and boxes cut splats.</Li>
+          <Li k="Converters">EXT_splat_opacity honoured: merged splats keep their source opacity.</Li>
+          <Li k="Render">EEVEE viewport and Cycles, next to meshes and point clouds; clipped like them.</Li>
           <Li k="Before 5.3">splat tiles show as points.</Li>
         </Bullets>
       }
@@ -456,15 +550,66 @@ const P11Splats: Page = () => (
   </Frame>
 );
 
-const P12Converged: Page = () => (
-  <Frame eyebrow="Animations" title="Each frame waits for its tiles">
+const P16Voxels: Page = () => (
+  <Frame eyebrow="Voxels" title="Voxel tilesets as blocks, volumes, or colours">
+    <Shot src={voxels} width={1680} height={319} caption="Voxel tilesets in Blender: blocks on top, OpenVDB volumes underneath" />
+    <div style={{ display: 'flex', gap: 28, marginTop: 40 }}>
+      <Card title="Blocks">the cell faces next to empty space, as a mesh. Crisp and opaque, best for classes.</Card>
+      <Card title="Volume" accent={ink.violet}>one OpenVDB volume per tile, see-through, for continuous fields.</Card>
+      <Card title="Colour other tilesets" accent={ink.mint}>a scan reads the class of the voxel under each pixel.</Card>
+      <Card title="Beta: phases" accent={ink.amber}>building phases as volumes, voxelized into a class grid with a year slider.</Card>
+    </div>
+  </Frame>
+);
+
+const P17Render: Page = () => (
+  <Frame eyebrow="Rendering" title="EEVEE and Cycles, with the look you choose">
+    <TwoCol
+      leftWidth={800}
+      left={
+        <Bullets>
+          <Li k="Beauty compositor">eye-dome lighting, normal creases, ambient occlusion, haze, a grade.</Li>
+          <Li k="Atmosphere preset">a sun, a matching sky and haze, in one click.</Li>
+          <Li k="Relight">photogrammetry carries its own light: mix it with real lamps, or go clay.</Li>
+          <Li k="X-ray">faces turned to the viewer fade: interiors and plans read through the walls.</Li>
+          <Li k="Cycles">path-traced tiles; the compositor drops the passes Cycles has not got in the viewport.</Li>
+        </Bullets>
+      }
+      right={<Shot src={compositor} width={820} height={475} caption="OGC3D Beauty, the compositor tree built by the add-on" />}
+    />
+  </Frame>
+);
+
+const P18Cameras: Page = () => (
+  <Frame eyebrow="Cameras" title="Perspective, orthographic and panoramic">
+    <div style={{ display: 'flex', gap: 28 }}>
+      <Card title="Perspective">the viewport, the scene camera at render resolution, or a chosen camera while you navigate freely.</Card>
+      <Card title="Orthographic" accent={ink.violet}>
+        cesium-native's orthographic view state: plans and elevations select the tiles of the frame, behind the pivot too.
+      </Card>
+      <Card title="Panoramic" accent={ink.mint}>
+        equirectangular, fisheye, cylindrical: six cube views selected together, five for a 180° fisheye. Cycles renders them.
+      </Card>
+    </div>
+    <div style={{ marginTop: 44 }}>
+      <Bullets size={25}>
+        <Li k="Scrub the timeline">and the tiles follow the camera path, before any render.</Li>
+        <Li k="Finer than the viewport">lower Max SSE before rendering for more detail than you navigate with.</Li>
+        <Li k="Upstream">a view state with an eye, a culling volume and an error function: cesium-native#1501.</Li>
+      </Bullets>
+    </div>
+  </Frame>
+);
+
+const P19Converged: Page = () => (
+  <Frame eyebrow="Animations" title="Render converged animation: each frame waits">
     <TwoCol
       leftWidth={860}
       left={
         <Bullets>
           <Li k="The problem">Blender cannot pause inside a render: streaming stops while a frame renders.</Li>
           <Li k="Stream for the camera">tiles are selected for the scene camera, at the render resolution.</Li>
-          <Li k="Render converged animation">steps through the frame range and renders each frame itself.</Li>
+          <Li k="Step by step">the operator moves through the frame range and renders each frame itself.</Li>
           <Li k="Settle">a frame renders once the queue is empty and nothing has changed for a moment.</Li>
           <Li k="Output">one file per frame in the scene's output path, as Render Animation does.</Li>
         </Bullets>
@@ -473,48 +618,75 @@ const P12Converged: Page = () => (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
           <Card title="Warm-up">the first frame waits longer: empty scene, cold cache.</Card>
           <Card title="Max wait">a ceiling per frame, so a slow tile never stalls the whole render.</Card>
-          <Card title="Finer than the viewport">lower Max SSE before rendering for more detail than you navigate with.</Card>
+          <Card title="Clipping">keyframed clipping volumes are honoured, frame by frame.</Card>
         </div>
       }
     />
   </Frame>
 );
 
-const P13Render: Page = () => (
-  <Frame eyebrow="Rendering" title="EEVEE and Cycles, with the look you choose">
-    <TwoCol
-      leftWidth={800}
-      left={
-        <Bullets>
-          <Li k="Beauty compositor">eye-dome lighting, normal creases, ambient occlusion, haze, a grade.</Li>
-          <Li k="Relight">photogrammetry carries its own light: mix it with real lamps, or go clay.</Li>
-          <Li k="Orthographic">plans and elevations select the same tiles as a perspective view of that frame.</Li>
-          <Li k="X-ray and clay">fade the faces turned to the viewer, or drop the photo for a clay colour.</Li>
-        </Bullets>
-      }
-      right={<Shot src={compositor} width={820} height={475} caption="OGC3D Beauty, the compositor tree built by the add-on" />}
-    />
+const P20Files: Page = () => (
+  <Frame eyebrow="Files and export" title="Local tilesets, libraries, copies and exports">
+    <div style={{ borderBottom: `1px solid ${ink.rule}` }}>
+      <Row w={340} k="Local and network files" v="a folder on disk or a NAS share; network files can go through the disk cache." />
+      <Row w={340} k="Disk cache" v="cesium-native's sqlite HTTP cache, shared between tilesets, with a size cap." />
+      <Row w={340} k="Tileset libraries" v="JSON files of entries, personal or shared on a NAS, with search and type filters." />
+      <Row w={340} k="Copy into project" v="a tileset downloaded into //tilesets/, cropped to an object, down to a chosen error." />
+      <Row w={340} k="Cut geometry" v="clipped faces deleted for Solid view, snapping and exports; on by default." />
+      <Row w={340} k="Export" v="tiles are plain Blender meshes: any exporter, any modifier." />
+    </div>
+    <div style={{ marginTop: 28, fontSize: 21, color: ink.muted }}>Keys and share-link tokens are never written into a copy. Google's terms forbid storing its tiles offline.</div>
   </Frame>
 );
 
-const P14Cesium: Page = () => (
-  <Frame eyebrow="For the 3D Tiles crowd" title="What sits between cesium-native and Blender">
-    <div style={{ borderBottom: `1px solid ${ink.rule}` }}>
-      <Row w={330} k="cesium-native-python" v="the bindings by Caleb Buffa. The add-on installs a wheel built for Blender's own Python, no compiler needed." />
-      <Row w={330} k="IPrepareRendererResources" v="implemented in Python: glTF models become numpy arrays in the load thread, Blender meshes in the main thread." />
-      <Row w={330} k="Tile excluders" v="clipping polygons and boxes exclude whole tiles before they are downloaded." />
-      <Row w={330} k="Raster overlays" v="cesium-native's own, with the overlay texture coordinates read back into Blender materials." />
-      <Row w={330} k="Caching" v="cesium-native's sqlite HTTP cache, shared between tilesets, with a size cap." />
-      <Row w={330} k="Fallback" v="a pure Python traversal with the same selection rules, when the wheel is absent." />
-      <Row w={330} k="Wheels" v="Linux x86_64, Windows x64 and macOS arm64, CPython 3.11 to 3.13, built by GitHub Actions." />
+const P21Tested: Page = () => (
+  <Frame eyebrow="Tested on" title="From a basilica interior to the whole globe">
+    <div style={{ display: 'flex', gap: 24 }}>
+      <Card title="Gaussian splats">basilica interiors scanned as splats, converted to 3D Tiles; the Cesium splat samples.</Card>
+      <Card title="Photorealistic 3D Tiles" accent={ink.violet}>Google's tiles over Rome and Paris, through the Map Tiles API.</Card>
+      <Card title="Terrain" accent={ink.mint}>quantized-mesh terrain and a bare WGS84 globe, with imagery draped on them.</Card>
+    </div>
+    <div style={{ display: 'flex', gap: 24, marginTop: 24 }}>
+      <Card title="Point clouds" accent={ink.amber}>LiDAR as pnts and COPC tiles, with intensity and classification.</Card>
+      <Card title="City models">swissBUILDINGS3D with its metadata; photogrammetry from drones and RealityCapture.</Card>
+      <Card title="Voxels" accent={ink.violet}>GeoTOP, the Dutch geological model, and the Cesium voxel samples.</Card>
+    </div>
+    <div style={{ marginTop: 36 }}>
+      <Bullets size={24}>
+        <Li k="Blender">4.2 or newer, on Windows, Linux and macOS; splats need 5.3.</Li>
+      </Bullets>
     </div>
   </Frame>
 );
 
-const P15Close: Page = () => (
+const P22Install: Page = () => (
+  <Frame eyebrow="Install" title="An extension zip, then one button">
+    <TwoCol
+      leftWidth={860}
+      left={
+        <Bullets>
+          <Li k="1.">Download ogc_3dtiles_streaming-&lt;version&gt;.zip from the Releases page.</Li>
+          <Li k="2.">Preferences, Get Extensions, Install from Disk.</Li>
+          <Li k="3.">In the add-on preferences, Install wheel from GitHub Release, then restart.</Li>
+          <Li k="4.">Open the sidebar (N), the 3D Tiles tab: add an entry, paste a URL, press Start.</Li>
+        </Bullets>
+      }
+      right={
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+          <Card title="No compiler">the wheel matching your Blender and system: Linux x86_64, Windows x64, macOS arm64.</Card>
+          <Card title="Without the wheel" accent={ink.violet}>the pure Python backend streams mesh tilesets.</Card>
+          <Code size={20}>{`blender --command extension install-file \\
+  -r user_default -e ogc_3dtiles_streaming-0.6.4.zip`}</Code>
+        </div>
+      }
+    />
+  </Frame>
+);
+
+const P23Close: Page = () => (
   <div style={fill}>
     <Mark />
-    <Eyebrow>OGC 3D Tiles for Blender</Eyebrow>
+    <Eyebrow>OGC 3D Tiles Streaming</Eyebrow>
     <h1 style={{ position: 'absolute', left: PAD_X, top: 220, margin: 0, fontFamily: font.display, fontSize: 112, fontWeight: 500, letterSpacing: '-0.04em', lineHeight: 1 }}>
       Paste a tileset URL.
       <br />
@@ -522,7 +694,7 @@ const P15Close: Page = () => (
     </h1>
     <div style={{ position: 'absolute', left: PAD_X, right: PAD_X, top: 580, borderBottom: `1px solid ${ink.rule}` }}>
       <CloseLine n={1}>github.com/{OWNER}/blender_ogc3dtiles · the extension zip is on the Releases page</CloseLine>
-      <CloseLine n={2}>{SITE} · the documentation</CloseLine>
+      <CloseLine n={2}>{SITE} · the documentation and these slides</CloseLine>
       <CloseLine n={3}>Blender 4.2 or newer · splats need 5.3</CloseLine>
       <CloseLine n={4}>MIT licence · issues and pull requests welcome</CloseLine>
     </div>
@@ -534,18 +706,26 @@ export const notes: (string | undefined)[] = [
   `A Blender extension that streams OGC 3D Tiles. The engine is cesium-native, the one behind Cesium for Unreal and Unity.`,
   `Blender users cannot open a city. The 3D Tiles crowd cannot path-trace or composite a tileset. This is the bridge between the two.`,
   `Each tick the viewport becomes a cesium-native view state. Selection, loading and unloading are cesium-native's; the add-on turns the result into Blender objects.`,
+  `Tiles are ordinary objects under one root Empty per tileset. Their materials and modifiers point at shared node groups.`,
   `Everything cesium-native reads: meshes, point clouds, splats, voxels, from a URL, a local file, ion or Google.`,
   `One sidebar tab. Add an entry, paste a URL, press Start.`,
+  `Max SSE is how fine. Stream for says which view decides: the viewport, the scene camera or a chosen camera.`,
+  `Tile bounds, the latest addition, and colour by tile level: two ways to see what the level of detail does.`,
   `Raster overlays the way Cesium for Unreal does them, with presets that need no key.`,
-  `The scene origin anchors Blender's local frame on the globe. Several tilesets share it.`,
+  `The scene origin anchors Blender's local frame on the globe, in double precision. Several tilesets share it.`,
   `Clipping with Blender objects, live. Tiles fully outside are never downloaded.`,
-  `Three shared graphs: shader, geometry, compositor. Edit one, every tile follows.`,
-  `Metadata as colours: classes with a palette, numbers with a ramp. LiDAR classes get their usual names and an opacity each.`,
+  `Shared graphs: shader, geometry, compositor, metadata. Edit one, every tile follows.`,
+  `Point clouds through a shared Geometry Nodes group, sized on screen, coloured by any attribute.`,
+  `Metadata as colours: classes with a palette, numbers with a ramp.`,
   `Splat tilesets as native Blender 5.3 splats, with their level of detail.`,
+  `Voxels as blocks, volumes, or as colours on other tilesets. Phases, in beta, build on the same voxel grid.`,
+  `Rendering: the beauty compositor, the atmosphere preset, relight and X-ray.`,
+  `Every kind of camera selects tiles: orthographic exactly, panoramic as six cube views.`,
   `Blender cannot pause a render to wait for tiles. The converged animation steps through the frames itself and renders each one once its tiles are in.`,
-  `Rendering: relight, the beauty compositor for edges, AO and haze, and orthographic views.`,
-  `For those who know cesium-native: what the add-on implements on top of the Python bindings.`,
-  `Install the zip, paste a URL, press Start. Docs and source at the addresses on screen.`,
+  `Files: local and NAS tilesets, libraries, copy into project, exports.`,
+  `What it was tested on, kept generic.`,
+  `Install the zip, then the wheel from the preferences.`,
+  `Docs, slides and source at the addresses on screen.`,
 ];
 
 export const meta: SlideMeta = {
@@ -557,16 +737,24 @@ export default [
   P01Cover,
   P02Why,
   P03How,
-  P04Content,
-  P05Sidebar,
-  P06Overlays,
-  P07Origin,
-  P08Clipping,
-  P09Graphs,
-  P10Metadata,
-  P11Splats,
-  P12Converged,
-  P13Render,
-  P14Cesium,
-  P15Close,
+  P04Objects,
+  P05Content,
+  P06Sidebar,
+  P07Lod,
+  P08SeeLod,
+  P09Overlays,
+  P10Origin,
+  P11Clipping,
+  P12Graphs,
+  P13Points,
+  P14Metadata,
+  P15Splats,
+  P16Voxels,
+  P17Render,
+  P18Cameras,
+  P19Converged,
+  P20Files,
+  P21Tested,
+  P22Install,
+  P23Close,
 ] satisfies Page[];

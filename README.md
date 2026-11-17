@@ -84,7 +84,7 @@ blender --command extension build --source-dir src/blender_ogc3dtiles --output-d
 ```
 
 Setup, tests and releasing, the architecture, the cesium-native wheel and versions, and the roadmap
-are in the documentation, under *Development*. Its pages live in [`site/`](site), the slide deck in
+are in the documentation, under *Development*. Its pages live in [`site/`](site), the slide decks in
 [`slides/`](slides); both are built and deployed by
 [`.github/workflows/docs.yml`](.github/workflows/docs.yml).
 

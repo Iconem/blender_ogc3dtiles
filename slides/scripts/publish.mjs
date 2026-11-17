@@ -13,6 +13,7 @@ import { spawnSync, spawn } from "node:child_process"
 import { createServer } from "node:http"
 import { cpSync, rmSync, existsSync, statSync, readFileSync } from "node:fs"
 import { join, dirname, extname, resolve } from "node:path"
+import { serveImg } from "./serve-img.mjs"
 
 const root = resolve(dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1")), "..")
 const arg = (name, fallback) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : fallback }
@@ -27,7 +28,6 @@ const run = (cmd, args, env = {}) => {
   if (r.status !== 0) process.exit(r.status ?? 1)
 }
 
-run("node", ["scripts/sync-assets.mjs"])
 run("npx", ["open-slide", "build"], { SLIDES_BASE: base })
 rmSync(out, { recursive: true, force: true })
 cpSync(join(root, "dist"), out, { recursive: true })
@@ -37,8 +37,10 @@ console.log(`static site: ${out} (served under ${base})`)
 if (!wantPdf && !serve) process.exit(0)
 
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".ico": "image/x-icon", ".woff2": "font/woff2", ".pdf": "application/pdf" }
-// Like GitHub Pages: files as they are, a directory's index.html, else 404.
+// Like GitHub Pages: files as they are, a directory's index.html, else 404. The decks show the screenshots by URL
+// (assets/shots.ts), which the deployed docs site has next to them: served here from docs/img.
 const server = createServer((req, res) => {
+  if (serveImg(req, res)) return
   const path = decodeURIComponent(new URL(req.url, "http://x").pathname)
   if (!path.startsWith(base)) { res.writeHead(404).end(); return }
   let file = join(out, path.slice(base.length))

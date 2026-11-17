@@ -15,6 +15,10 @@ main branch and not in a release zip yet.
 - **A clipping object deleted and recreated under the same name cuts again** on point and splat
   tiles. Their clip node group only compared names, so it kept pointing at the deleted object and
   nothing was cut.
+- **Slide decks**: the deck now covers tile bounds, colour by tile level, panoramic cameras, the
+  Atmosphere preset, X-ray, voxels, files and export, and the datasets tested; a second deck,
+  *Under the hood*, shows how the add-on works inside. Both on the
+  [Slide decks](/guide/slide-decks) page, which replaces the Slides page.
 
 ## 0.6.4 (2026-11-14)
 

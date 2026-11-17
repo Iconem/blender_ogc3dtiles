@@ -11,7 +11,7 @@ than the pure-Python [CesiumForBlender](https://github.com/CognitoBit/CesiumForB
 ([forum post](https://community.cesium.com/t/cesium-for-blender/46938))
 although I keep a python native fallback.
 
-The same tour as a [slide deck](https://jo-chemla.github.io/blender_ogc3dtiles/slides/s/blender-3dtiles/) ([PDF](https://jo-chemla.github.io/blender_ogc3dtiles/slides/pdf/blender-3dtiles.pdf)).
+The same tour as a [slide deck](https://jo-chemla.github.io/blender_ogc3dtiles/slides/s/blender-3dtiles/) ([PDF](https://jo-chemla.github.io/blender_ogc3dtiles/slides/pdf/blender-3dtiles.pdf)), with a second one [under the hood](/guide/slide-decks).
 
 What works today:
 

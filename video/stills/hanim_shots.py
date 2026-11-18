@@ -122,6 +122,8 @@ elif shot == "a_bayon_split":
     N = 168; t0 = time.monotonic()
     for i in range(N):
         t = i / (N - 1)
+        fp = os.path.join(d, "f_%04d.png" % i)
+        if os.path.exists(fp) and os.path.getsize(fp) > 100000: continue     # resume after a timeout
         look_at(cam, e0.lerp(e1, ease(t)), tgt); bpy.context.view_layer.update(); converge(25, settle=0.35)
         cycles(32); P.comp_enabled = False; relight(Albedo_Strength=0.0, Baked_Light=0.0)
         a_ = os.path.join(d, "clay.png"); sc.render.filepath = a_; bpy.ops.render.render(write_still=True)

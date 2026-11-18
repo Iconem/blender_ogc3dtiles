@@ -101,3 +101,25 @@ or restart Blender between chains.
 - A minimised Blender window gives stale or 1x1 screenshots; restore it first and capture from a
   timer, not inside the operator that changed the view.
 - A Cycles viewport never converges while the view or a light moves: hold still before switching.
+
+## Rendered clips and stills: `video/stills/`
+
+The screenshots of these docs and of the slide decks, and the rendered clips of the [Videos](/guide/videos) page,
+come from headless Blender (`blender -b`). `hshot.py` renders the stills. `hanim_shots.py` renders the clips: each
+frame waits for its tiles before it renders. `video/stills/README.md` lists the scripts.
+
+## Where the media live
+
+The screenshots (`docs/img`) and clips (`docs/video`) are not in git, apart from the two pictures the README shows.
+Each folder is a tar archive on a release of Iconem/blender_ogc3dtiles: *Media: screenshots* and *Media: videos*.
+A tracked lock file (`docs/media-screenshots.lock`, `docs/media-videos.lock`) names the archive a commit uses.
+
+```sh
+node scripts/docs-media.mjs pull                 # both sets; also run by the site and slides dev and build scripts
+node scripts/docs-media.mjs push screenshots     # after a retake: upload, rewrite the lock, then commit the lock
+node scripts/docs-media.mjs push videos
+node scripts/docs-media.mjs status
+node scripts/check-media.mjs                     # the docs workflow's guard against heavy files in git
+```
+
+Old archives stay on the releases, so an older commit still builds. The full-length takes stay on their own release.

@@ -7,6 +7,10 @@ Clipping cuts a tileset with Blender objects: remove a block to place your own m
 site out of a city, drop a detailed scan into a coarser tileset without the two overlapping. It works
 on meshes, point clouds and Gaussian splats.
 
+![Google Photorealistic 3D Tiles kept inside a box around the Colosseum](/img/clip_box_colosseum.jpg)
+
+![A horizontal section through the Geghard monastery, Armenia: the interior and exterior point clouds, both streamed through 3dtiled, cut low enough to open the rock-cut halls](/img/clip_geghard.jpg)
+
 ## Add a clipping object
 
 1. Draw the shape: a Circle or Plane mesh, a polyline or a closed curve in Top view for an outline,

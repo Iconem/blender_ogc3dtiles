@@ -4,6 +4,9 @@ import type { MDXComponents } from 'mdx/types';
 import { Mermaid } from '@/components/mermaid';
 import { basePath } from '@/lib/shared';
 
+const withBase = (src: unknown) =>
+  typeof src === 'string' && src.startsWith('/') && !src.startsWith(`${basePath}/`) ? `${basePath}${src}` : (src as string | undefined);
+
 export function getMDXComponents(components?: MDXComponents) {
   return {
     ...defaultMdxComponents,
@@ -15,6 +18,10 @@ export function getMDXComponents(components?: MDXComponents) {
         {...(props as React.ComponentProps<typeof ImageZoom>)}
         src={typeof src === 'string' && src.startsWith('/') && !src.startsWith(`${basePath}/`) ? `${basePath}${src}` : (src as string)}
       />
+    ),
+    // the clips of the Videos page (/video/..., copied into public/ like the screenshots): same basePath fix as img
+    video: ({ src, poster, ...props }: React.ComponentProps<'video'>) => (
+      <video {...props} src={withBase(src)} poster={withBase(poster)} />
     ),
     Mermaid,
     ...components,

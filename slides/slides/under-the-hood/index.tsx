@@ -21,7 +21,7 @@ export const design: DesignSystem = {
 };
 
 // The repository is on two accounts, each with its own Pages site: the deploy passes the owner it builds for.
-const OWNER = ((import.meta as { env?: Record<string, string | undefined> }).env?.VITE_PAGES_OWNER || 'jo-chemla').toLowerCase();
+const OWNER = ((import.meta as { env?: Record<string, string | undefined> }).env?.VITE_PAGES_OWNER || 'iconem').toLowerCase();
 const SITE = `${OWNER}.github.io/blender_ogc3dtiles`;
 const FOOT = 'OGC 3D Tiles Streaming · under the hood';
 
@@ -512,7 +512,7 @@ const P12Close: Page = () => (
     <div style={{ position: 'absolute', left: PAD_X, right: PAD_X, top: 580, borderBottom: `1px solid ${ink.rule}` }}>
       <CloseLine n={1}>{SITE}/dev/architecture · modules, data flow, the two backends</CloseLine>
       <CloseLine n={2}>{SITE}/dev/cesium-native · the wheel, versions, upstream requests</CloseLine>
-      <CloseLine n={3}>github.com/{OWNER}/blender_ogc3dtiles · source, issues, releases</CloseLine>
+      <CloseLine n={3}>github.com/Iconem/blender_ogc3dtiles · source, issues, releases</CloseLine>
     </div>
     <Footer />
   </div>

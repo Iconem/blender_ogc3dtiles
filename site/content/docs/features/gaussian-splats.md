@@ -18,6 +18,8 @@ splats show from far away, finer ones as you get closer.
 Scene origin, clipping, rendering and converged animations work as for other tilesets. Raster
 overlays are not draped on splats.
 
+![Bernini's baldacchino in San Pietro, Gaussian splat tiles rendered in Cycles](/img/splats_baldacchino.jpg)
+
 ## Which tilesets
 
 Tiles whose glTF uses `KHR_gaussian_splatting`, compressed with SPZ or not. That is what

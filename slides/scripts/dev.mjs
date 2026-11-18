@@ -8,7 +8,9 @@ import { createViteConfig } from "@open-slide/core/vite"
 import { IMG_PATH, serveImg } from "./serve-img.mjs"
 
 const base = await createViteConfig({ userCwd: process.cwd(), mode: "serve" })
+// SLIDES_HOST=0.0.0.0 (or a tailnet address) opens the dev server to other devices, e.g. a phone.
 const server = await createServer(mergeConfig(base, {
+  ...(process.env.SLIDES_HOST ? { server: { host: process.env.SLIDES_HOST } } : {}),
   plugins: [{
     name: "docs-img",
     configureServer(s) { s.middlewares.use((req, res, next) => { if (!serveImg(req, res)) next() }) },

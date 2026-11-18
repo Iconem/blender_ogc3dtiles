@@ -11,7 +11,15 @@ than the pure-Python [CesiumForBlender](https://github.com/CognitoBit/CesiumForB
 ([forum post](https://community.cesium.com/t/cesium-for-blender/46938))
 although I keep a python native fallback.
 
-The same tour as a [slide deck](https://jo-chemla.github.io/blender_ogc3dtiles/slides/s/blender-3dtiles/) ([PDF](https://jo-chemla.github.io/blender_ogc3dtiles/slides/pdf/blender-3dtiles.pdf)), with a second one [under the hood](/guide/slide-decks).
+The same tour as a [slide deck](https://iconem.github.io/blender_ogc3dtiles/slides/s/blender-3dtiles/) ([PDF](https://github.com/Iconem/blender_ogc3dtiles/releases/download/slide-decks/blender-3dtiles.pdf)), with a second one [under the hood](/guide/slide-decks), and a few [videos](/guide/videos).
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px">
+
+![3D Tiles, streamed into Blender: the cover of the slide deck](/img/slides-blender-3dtiles.jpg)
+
+![Under the hood: the cover of the slide deck](/img/slides-under-the-hood.jpg)
+
+</div>
 
 What works today:
 

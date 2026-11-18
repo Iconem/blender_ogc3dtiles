@@ -1,8 +1,9 @@
 // Copies into the site what lives elsewhere in the repository, at build time, so nothing is kept twice:
-//   ../docs/img/*      -> public/img/            (the screenshots the README also shows)
+//   ../docs/img/*      -> public/img/            (the screenshots; ../scripts/docs-media.mjs pulls them from a release)
+//   ../docs/video/*    -> public/video/          (the clips of the Videos page, pulled the same way)
 //   ../docs/<note>.md  -> content/docs/dev/notes (long developer notes, edited in ../docs only)
 // Both targets are git-ignored. The other pages of content/docs are written by hand and committed.
-import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -17,7 +18,9 @@ const NOTES = [
 ];
 
 rmSync(join(site, 'public', 'img'), { recursive: true, force: true });
-cpSync(join(repo, 'docs', 'img'), join(site, 'public', 'img'), { recursive: true });
+cpSync(join(repo, 'docs', 'img'), join(site, 'public', 'img'), { recursive: true, filter: (f) => !f.endsWith('.media-sha') });
+rmSync(join(site, 'public', 'video'), { recursive: true, force: true });
+if (existsSync(join(repo, 'docs', 'video'))) cpSync(join(repo, 'docs', 'video'), join(site, 'public', 'video'), { recursive: true, filter: (f) => !f.endsWith('.media-sha') });
 
 const out = join(site, 'content', 'docs', 'dev', 'notes');
 rmSync(out, { recursive: true, force: true });
@@ -35,4 +38,4 @@ for (const [file, slug] of NOTES) {
   writeFileSync(join(out, `${slug}.md`), `---\ntitle: ${JSON.stringify(title)}\n---\n${text}`);
 }
 writeFileSync(join(out, 'meta.json'), JSON.stringify({ title: 'Notes', pages: NOTES.map(([, slug]) => slug) }, null, 2) + '\n');
-console.log(`synced ${NOTES.length} notes and docs/img`);
+console.log(`synced ${NOTES.length} notes, docs/img and docs/video`);

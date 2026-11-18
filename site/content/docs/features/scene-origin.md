@@ -16,6 +16,14 @@ the east, Y to the north, Z up, in metres.
 
 The origin is saved in the .blend. *Reset Origin* forgets it.
 
+![Google Photorealistic 3D Tiles in Cycles, the scene origin on Notre-Dame de Paris](/img/origin_notre_dame.jpg)
+
+![Origin on Tokyo Tower](/img/origin_tokyo.jpg)
+
+![Origin on the Colosseum](/img/origin_colosseum.jpg)
+
+![Origin on the Grand Canyon, from Yavapai Point](/img/origin_grand_canyon.jpg)
+
 ## Precision
 
 Blender keeps the three fields in single precision: at longitude 150 the step between two

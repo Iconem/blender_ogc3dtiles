@@ -22,12 +22,20 @@ camera, or scrub the timeline when it is animated, and the tiles follow.
 
 ![The same moment from outside: tiles exist, and are detailed, only where the camera looks](/img/lod_outside_view.jpg)
 
+![The same idea rendered: through the scene camera, then from outside with the camera drawn large, over the tiles it selected](/img/lod_camera_render.jpg)
+
+![From outside: the camera drawn large, over the patch of tiles it selected](/img/lod_outside_render.jpg)
+
 - Looking through the camera (Numpad 0) shows what a render will contain.
 - Looking from outside shows how far the selection reaches and where detail stops. It is the way to
   check a shot before a long render, or to understand why a view is heavy.
 - To freeze what is loaded while you look around, untick the tileset's checkbox in the list.
 
 ## Panoramic cameras
+
+![An equirectangular panorama in Cycles over the Colosseum, and from above with one colour per tile: tiles are selected all around the camera](/img/camera_pano.jpg)
+
+![Top view of the panorama's tiles, one colour each](/img/camera_pano_top.jpg)
 
 A panoramic camera (Cycles: equirectangular, fisheye, central cylindrical, cube map face) works as
 *Scene camera* or *Chosen camera*. Tiles are selected all around it, as six 90° views of a cube, and

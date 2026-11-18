@@ -8,6 +8,8 @@ passes, after the render: edge darkening, ambient occlusion, a colour grade, dep
 glare. The add-on switches every 3D viewport's compositor to *Always*, so **Rendered** shading shows
 it live.
 
+![The full beauty pass on IGN LiDAR HD: eye-dome lighting, creases, ambient occlusion and haze](/img/beauty_ign.jpg)
+
 ![OGC3D Beauty](/img/nodes_compositor.jpg)
 
 | Setting | What it does |

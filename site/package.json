@@ -6,8 +6,9 @@
   "description": "Fumadocs site of the add-on: user guide and features in content/docs, developer notes synced from ../docs/*.md at build time.",
   "scripts": {
     "sync": "node scripts/sync-content.mjs",
-    "build": "node scripts/sync-content.mjs && next build",
-    "dev": "node scripts/sync-content.mjs && next dev -p 3210",
+    "media": "node ../scripts/docs-media.mjs pull",
+    "build": "node ../scripts/docs-media.mjs pull --strict && node scripts/sync-content.mjs && next build",
+    "dev": "node ../scripts/docs-media.mjs pull && node scripts/sync-content.mjs && next dev -p 3210",
     "start": "npx serve out -l 3210",
     "types:check": "next typegen && tsc --noEmit"
   },

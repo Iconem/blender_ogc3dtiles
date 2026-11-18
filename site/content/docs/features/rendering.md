@@ -58,6 +58,12 @@ Tips:
 
 ## Orthographic views
 
+![An orthographic plan of the Colosseum, and from above with one colour per tile: exactly the frame, at even detail](/img/camera_ortho.jpg)
+
+![Top view of the orthographic camera's tiles; a perspective camera's, for comparison, follow below](/img/camera_ortho_top.jpg)
+
+![A perspective camera's tiles from above: a wedge, fine near the camera, coarse to the horizon](/img/camera_persp_top.jpg)
+
 Orthographic viewports and cameras work: plans and elevations select the tiles that the same frame
 would get in perspective.
 

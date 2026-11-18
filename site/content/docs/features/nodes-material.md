@@ -34,6 +34,12 @@ The node button opens the group to edit it by hand. Its Value nodes are also ava
 
 ## Lighting with your own lamps
 
+![Albedo Strength at 0: clay, the geometry shaded by a sun lamp and a sky](/img/shader_clay.jpg)
+
+![Albedo Strength 1, Baked Light 1: the photogrammetry texture as captured](/img/shader_albedo.jpg)
+
+![Baked Light lowered: the photo albedo mostly lit by the scene's sun and sky](/img/shader_relit.jpg)
+
 In Rendered shading the tiles are lit by three things, and two of them are not your lamps:
 
 - **Baked Light** (0.5 by default) makes that share of the material emit its own colour, as
@@ -48,6 +54,8 @@ still emit their colour whatever the lamps: point clouds, and tiles that declare
 which Google Photorealistic 3D Tiles do.
 
 ## X-ray
+
+![X-ray on the San Pietro interior mesh: faces turned to you fade, grazing ones stay](/img/shader_xray.jpg)
 
 The **X-ray** slider makes the tiles see-through: faces turned toward you fade out, faces seen at a
 grazing angle stay. Walls and outlines then read through each other, which suits interiors and

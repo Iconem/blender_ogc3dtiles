@@ -20,6 +20,8 @@ ones (subdivision, remeshing, booleans) on hundreds of tiles will slow streaming
 
 ## Demo graphs
 
+![The height reveal demo on the Geghard monastery point cloud: the scene builds up from the ground](/img/points_reveal.jpg)
+
 **Demo graphs**, under the row, replaces the shared group with a ready-made graph, on every tile. They
 are starting points to open and edit; the Value nodes at the left of each graph are its settings.
 

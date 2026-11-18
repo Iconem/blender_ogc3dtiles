@@ -6,6 +6,8 @@ description: "How points are drawn and how large they are"
 Point cloud tiles (`pnts`, or glTF tiles made of points) stream like meshes. Their settings are in
 the **Nodes: Geometry** panel: how each point is drawn, and how large.
 
+![Sacré-Cœur, Paris, as a point cloud in EEVEE](/img/points_sacre_colour.jpg)
+
 ## Display
 
 | Mode | What you get |
@@ -26,6 +28,8 @@ the **Nodes: Geometry** panel: how each point is drawn, and how large.
 If points look too sparse or too fat, change *Point scale* first.
 
 ## Colours
+
+![IGN LiDAR HD around the Eiffel Tower coloured by LAS class, with eye-dome lighting](/img/beauty_edl_ign.jpg)
 
 Points keep their own colour. To colour them by class or by intensity, see
 [Nodes: Metadata](/features/nodes-metadata); to drape a map on them, see

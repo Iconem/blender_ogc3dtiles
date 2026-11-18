@@ -19,6 +19,11 @@ main branch and not in a release zip yet.
   Atmosphere preset, X-ray, voxels, files and export, and the datasets tested; a second deck,
   *Under the hood*, shows how the add-on works inside. Both on the
   [Slide decks](/guide/slide-decks) page, which replaces the Slides page.
+- **Docs: new screenshots and a [Videos](/guide/videos) page.** The feature pages show the deck's new screenshots
+  (Venice, Giza, Geghard, IGN LiDAR classes, the Bayon, Tokyo, the Grand Canyon). The Videos page has short clips,
+  most of them rendered frame by frame with the tiles converged. The screenshots and clips are no longer in git:
+  they live on the *Media: screenshots* and *Media: videos* releases, and `scripts/docs-media.mjs` pulls them
+  before the site and the decks build.
 
 ## 0.6.4 (2026-11-14)
 

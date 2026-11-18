@@ -5,6 +5,12 @@ description: "Textured mesh tilesets: photogrammetry, city models, Google Photor
 
 ![Google Photorealistic 3D Tiles over the Colosseum in Blender: viewport with the add-on sidebar, then EEVEE, Cycles with a 10 kW lamp, and EEVEE through the beauty compositor](/img/rome_google_3dtiles.jpg)
 
+![Piazza San Marco in Venice, a photogrammetry mesh tileset, in the Solid view](/img/solid_venice.jpg)
+
+![Khafre and Khufu at Giza, a photogrammetry mesh tileset, in the Solid view with the normal matcap](/img/mesh_gizeh_normal.jpg)
+
+![One random colour per tile on Google Photorealistic 3D Tiles around Notre-Dame de Paris: every tile is its own object, at its own level of detail](/img/tiles_random_google.jpg)
+
 Mesh tilesets are the most common kind: photogrammetry of a site, a city model, Google Photorealistic
 3D Tiles. Add the `tileset.json` and press Start. Each tile becomes a Blender mesh with its own
 material and texture.

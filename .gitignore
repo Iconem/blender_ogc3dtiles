@@ -10,3 +10,10 @@ build/
 *.zip
 *.blend1
 .local/
+# the docs screenshots and clips live on the "Media: screenshots" and "Media: videos" releases
+# (scripts/docs-media.mjs, docs/media-*.lock); only the README's pictures stay in git
+docs/img/*
+!docs/img/rome_google_3dtiles.jpg
+!docs/img/sidebar.jpg
+docs/video/
+.cache/

@@ -1,7 +1,9 @@
 # Builds and deploys to GitHub Pages (https://<owner>.github.io/blender_ogc3dtiles/):
-#   site/    a standalone Next.js + Fumadocs app: user guide and features in site/content/docs, developer notes and
-#            screenshots copied from docs/ at build time by site/scripts/sync-content.mjs;
-#   slides/  the open-slide decks, as a static site under /slides/ and one PDF per deck under /slides/pdf/.
+#   site/    a standalone Next.js + Fumadocs app: user guide and features in site/content/docs, developer notes,
+#            screenshots (docs/img) and clips (docs/video) copied from docs/ at build time by site/scripts/sync-content.mjs;
+#            the screenshots and clips are pulled from two releases first (scripts/docs-media.mjs);
+#   slides/  the open-slide decks, as a static site under /slides/; one PDF per deck goes on the rolling
+#            "Media: slide decks" pre-release (tag slide-decks) of the repository it runs on, never in git or Pages.
 # Pages serves one artifact per repository, so the decks are copied into the docs export before the upload.
 # The decks show the screenshots by URL from the docs site's /blender_ogc3dtiles/img/ (slides/assets/shots.ts), so the
 # artifact holds each picture once.
@@ -13,10 +15,12 @@ on:
       - "site/**"
       - "slides/**"
       - "docs/**"
+      - "scripts/docs-media.mjs"
+      - "scripts/check-media.mjs"
       - ".github/workflows/docs.yml"
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write      # the PDFs, uploaded to the slide-decks release
   pages: write
   id-token: write
 concurrency:
@@ -40,11 +44,24 @@ jobs:
           cache-dependency-path: |
             site/pnpm-lock.yaml
             slides/pnpm-lock.yaml
+      # heavy media stay out of git: the screenshots and clips come from the "Media: screenshots" and "Media: videos"
+      # releases (scripts/docs-media.mjs, docs/media-*.lock), before the site and the decks are built
+      - name: No heavy media in git
+        run: node scripts/check-media.mjs
+      - run: node scripts/docs-media.mjs pull --strict
       - run: pnpm --dir site install --frozen-lockfile
       - run: pnpm --dir site build
       - run: pnpm --dir slides install --frozen-lockfile
       # the static decks, then each one printed to .site/pdf/<deck>.pdf by the runner's own Chrome
       - run: node slides/scripts/publish.mjs --base /blender_ogc3dtiles/slides/ --pdf
+      - name: Deck PDFs on the rolling "Media: slide decks" release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          R=${{ github.repository }}
+          gh release view slide-decks -R "$R" >/dev/null 2>&1 || gh release create slide-decks -R "$R" --prerelease --latest=false             --title "Media: slide decks" --notes "The open-slide decks of slides/ as PDF, replaced on every docs deploy. Live decks: https://${{ github.repository_owner }}.github.io/blender_ogc3dtiles/slides/"
+          gh release upload slide-decks slides/.site/pdf/*.pdf -R "$R" --clobber
+          rm -rf slides/.site/pdf
       - run: cp -r slides/.site site/out/slides
       - uses: actions/upload-pages-artifact@v4
         with: { path: site/out }

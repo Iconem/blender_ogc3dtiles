@@ -54,12 +54,13 @@ jobs:
       - run: pnpm --dir slides install --frozen-lockfile
       # the static decks, then each one printed to .site/pdf/<deck>.pdf by the runner's own Chrome
       - run: node slides/scripts/publish.mjs --base /blender_ogc3dtiles/slides/ --pdf
-      - name: Deck PDFs on the rolling "Media: slide decks" release
+      - name: 'Deck PDFs on the rolling "Media: slide decks" release'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           R=${{ github.repository }}
-          gh release view slide-decks -R "$R" >/dev/null 2>&1 || gh release create slide-decks -R "$R" --prerelease --latest=false             --title "Media: slide decks" --notes "The open-slide decks of slides/ as PDF, replaced on every docs deploy. Live decks: https://${{ github.repository_owner }}.github.io/blender_ogc3dtiles/slides/"
+          gh release view slide-decks -R "$R" >/dev/null 2>&1 || gh release create slide-decks -R "$R" --prerelease --latest=false \
+            --title "Media: slide decks" --notes "The open-slide decks of slides/ as PDF, replaced on every docs deploy. Live decks: https://${{ github.repository_owner }}.github.io/blender_ogc3dtiles/slides/"
           gh release upload slide-decks slides/.site/pdf/*.pdf -R "$R" --clobber
           rm -rf slides/.site/pdf
       - run: cp -r slides/.site site/out/slides

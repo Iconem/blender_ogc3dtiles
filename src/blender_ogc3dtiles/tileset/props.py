@@ -27,6 +27,17 @@ def _on_global_sse(self, context):
         pass
 
 
+def _on_concurrent_requests(self, context):
+    try:
+        from ..ui import _state
+        for st in _state["streams"].values():
+            b = st.get("backend")
+            if b is not None and hasattr(b, "set_max_loads"):
+                b.set_max_loads(self.max_concurrent_requests)
+    except Exception:          # noqa: BLE001
+        pass
+
+
 def _on_tile_bounds(self, context):
     try:
         from .. import tile_bounds
@@ -401,10 +412,11 @@ class TilesetItem(PropertyGroup):
                     "(use the eye to hide the loaded tiles)",
         default=True)
     use_own_sse: BoolProperty(
-        name="Own SSE", description="Override the global Max SSE for this tileset",
+        name="Override Max SSE", description="Stream this tileset with its own Max SSE instead of the "
+                                             "scene's (LOD / Streaming)",
         default=False, update=_on_item_sse)
     max_sse: FloatProperty(name="Max SSE", description="Screen-space error threshold (px) for "
-                           "this tileset when 'Own SSE' is ticked; lower = finer tiles. Live",
+                           "this tileset when 'Override Max SSE' is ticked; lower = finer tiles. Live",
                            default=8.0, min=1.0, max=512.0, update=_on_item_sse)
     uid: StringProperty(default="", options={'HIDDEN'})
     overlays: CollectionProperty(type=OverlayItem)
@@ -499,14 +511,16 @@ class TilesSceneProps(PropertyGroup):
     max_screen_space_error: FloatProperty(
         name="Max SSE",
         description="Screen-space error threshold in pixels for every tileset without "
-                    "'Own SSE'; lower = finer tiles. Live while streaming",
+                    "its own (Override Max SSE); lower = finer tiles. Live while streaming",
         default=8.0, min=1.0, max=512.0,
         update=_on_global_sse,
     )
     max_concurrent_requests: IntProperty(
-        name="Max Concurrent Downloads",
-        description="Parallel HTTP tile downloads",
-        default=16, min=1, max=64,
+        name="Concurrent Requests",
+        description="Tiles requested at once, per tileset. cesium-native: tile loads in flight "
+                    "(download and decoding), live; 20 is its own default. Python backend: "
+                    "parallel downloads, applied at the next Start",
+        default=20, min=1, max=64, update=_on_concurrent_requests,
     )
     max_loaded_tiles: IntProperty(
         name="Max Loaded Tiles",
@@ -557,8 +571,9 @@ class TilesSceneProps(PropertyGroup):
     )
     imports_per_tick: IntProperty(
         name="Imports per tick",
-        description="Tiles built per 50 ms timer tick (lower keeps the UI smoother "
-                    "while loading, higher fills the view faster). Live",
+        description="Tiles built per 50 ms tick of the streaming loop (update and draw of the "
+                    "viewport): lower keeps the UI smoother while loading, higher fills the view "
+                    "faster. Converged renders wait for every tile whatever it is. Live",
         default=4, min=1, max=16,
     )
     max_elements_m: FloatProperty(
@@ -814,6 +829,14 @@ class TilesSceneProps(PropertyGroup):
                     "scene, cold cache); later frames only need the settle time because a "
                     "smooth camera path changes little between frames",
         default=10.0, min=0.0, max=600.0,
+    )
+    render_converge_cli: BoolProperty(
+        name="Converge command-line renders",
+        description="blender -b file.blend -a (or -f): stream for the scene camera and, before each "
+                    "frame renders, wait until its tiles have loaded (Warm-up, Settle time, Max wait). "
+                    "F12 and Ctrl+F12 in the Blender window render on a separate thread, where the "
+                    "add-on cannot load tiles: use Render converged animation there",
+        default=True,
     )
     render_max_wait_s: FloatProperty(
         name="Max wait",

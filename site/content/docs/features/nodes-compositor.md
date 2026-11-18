@@ -28,10 +28,15 @@ it by hand; *Reset to default* in the arrow menu rebuilds it.
 **Atmosphere preset: sun, sky, haze** sets outdoor light in one click:
 
 - a sun lamp, `OGC3D Sun`: rotate it to move the light;
-- a sky for the world, with its sun in the same direction;
+- a sky with its sun in the same direction: the `OGC3D Sky` node group, plugged into the output of the
+  scene's World. The nodes already there stay, only unplugged from the output: plug your Background
+  back in to undo it. The world-icon button next to the preset puts the sky in a new *3D Tiles Sky*
+  World instead, and keeps the current one in the file to switch back;
 - the beauty compositor on, with haze.
 
-It replaces the nodes of the scene's world. With Shared shader nodes on, lower *Baked Light* to let
+The beauty compositor keeps a compositor tree you made yourself: it is kept in the file while the
+beauty tree is on, and back on the scene when you turn the beauty nodes off. On Blender 4.x, which has
+one compositor tree per scene, the beauty tree is not built over a tree of yours. With Shared shader nodes on, lower *Baked Light* to let
 the sun shade the tiles: see [Nodes: Material Shader](/features/nodes-material).
 
 ## In Cycles

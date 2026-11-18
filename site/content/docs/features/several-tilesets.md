@@ -33,7 +33,7 @@ Ion, globe and terrain entries need the cesium-native backend.
 ## Level of detail
 
 **Max SSE** (LOD / Streaming panel) applies to every tileset, live. Lower is finer and heavier. Tick
-**Own SSE** on an entry to give that tileset its own value.
+the checkbox next to **Tileset Max SSE** on an entry to give that tileset its own value.
 
 The value is the error a tile declares, in screen pixels, so what a number looks like depends on the
 data and on the tool that tiled it:

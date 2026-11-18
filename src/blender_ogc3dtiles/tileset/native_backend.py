@@ -825,6 +825,12 @@ class CesiumNativeBackend:
             if self._tileset is not None:
                 self._tileset.options.main_thread_loading_time_limit = ms
 
+    def set_max_loads(self, n):
+        """Tile loads in flight at once (requests and decoding); read by cesium-native on every update."""
+        self._max_loads = int(n)
+        if self._tileset is not None:
+            self._tileset.options.maximum_simultaneous_tile_loads = self._max_loads
+
     def set_max_sse(self, v):
         self._max_sse = v
         if self._tileset is not None:

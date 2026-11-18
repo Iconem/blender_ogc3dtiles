@@ -21,7 +21,7 @@ terrain need it.
 
 1. Open the add-on preferences: Preferences, Add-ons, OGC 3D Tiles. The same button is offered in red
    at the top of the sidebar while the backend is missing.
-2. Press **Install wheel from GitHub Release**.
+2. Press **Install cesium-native-python library**, at the top.
 3. Restart Blender.
 
 No compiler is needed: the button downloads the build that matches your Blender and your system
@@ -48,8 +48,8 @@ blender --command extension validate dist/ogc_3dtiles_streaming-0.6.4.zip
   [cesium-native-python](https://github.com/calebbuffa/cesium-native-python). By default the add-on
   takes it from the latest release of the
   [jo-chemla fork](https://github.com/jo-chemla/cesium-native-python/releases), whose CI builds
-  wheels for CPython 3.11 to 3.13. The repository can be changed in the preferences; *Build / install
-  from source* is there for a local checkout.
+  wheels for CPython 3.11 to 3.13. The repository can be changed in the preferences' folded *Developer* section,
+  with *Build* next to a source folder for a local checkout.
 - Windows: Blender 4.2 to 4.5 bundle an old Microsoft C++ runtime. The released Windows wheels are
   built to work with it, on 4.5 and 5.x alike. A wheel built differently is refused on Blender older
   than 5.0, with a message, instead of crashing.

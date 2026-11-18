@@ -16,6 +16,9 @@ import math
 import bpy
 from typing import NamedTuple
 
+# (evaluated camera, render depsgraph) while a command-line render waits for a frame's tiles
+RENDER_CAMERA = [None]
+
 from ..tileset.origin import origin_lla
 from ..tileset.traversal import (
     ViewState,
@@ -131,6 +134,17 @@ class CesiumCameraAdapter:
         source = getattr(props, "view_source", "VIEWPORT")
         cam = (scene.camera if source == "CAMERA"
                else getattr(props, "view_camera", None) if source == "OBJECT" else None)
+        if RENDER_CAMERA[0] is not None and source == "CAMERA":
+            # a command-line render: the camera as the render depsgraph evaluated it for this frame
+            # (the original object keeps the frame the file was saved at)
+            cam, dg = RENDER_CAMERA[0]
+            r = scene.render
+            w = max(int(r.resolution_x * r.resolution_percentage / 100), 1)
+            hpx = max(int(r.resolution_y * r.resolution_percentage / 100), 1)
+            win = cam.calc_matrix_camera(dg, x=w, y=hpx, scale_x=r.pixel_aspect_x, scale_y=r.pixel_aspect_y)
+            pano = panorama_faces(cam.data, w, hpx) if cam.data.type == "PANO" else None
+            return (cam.matrix_world.inverted(), win, w, hpx, cam.data.type != "ORTHO",
+                    ("CAM", cam.name, scene.frame_current, pano[0] if pano else 0), pano)
         if cam is not None:
             r = scene.render
             w = max(int(r.resolution_x * r.resolution_percentage / 100), 1)

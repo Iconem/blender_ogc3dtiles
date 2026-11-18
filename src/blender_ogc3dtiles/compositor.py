@@ -134,6 +134,27 @@ def apply_settings(scene, **kw) -> bool:
     return True
 
 
+PREV_TREE = "ogc3d_prev_compositor"
+
+
+def _keep_user_tree(scene) -> None:
+    """Blender 5.x: before the beauty tree is attached, remember the scene's own compositor group and give it
+    a fake user, so it is neither lost on save nor forgotten: turning the beauty nodes off puts it back."""
+    cur = scene.compositing_node_group
+    if cur is not None and cur.name != TREE_NAME:
+        cur.use_fake_user = True
+        scene[PREV_TREE] = cur.name
+
+
+def user_tree_4x(scene) -> bool:
+    """Blender 4.x: True when scene.node_tree holds more than Blender's default Render Layers and Composite
+    and is not the beauty tree, i.e. a tree the user built."""
+    nt = getattr(scene, "node_tree", None)
+    if nt is None or nt.nodes.get(VERSION_NODE) is not None:
+        return False
+    return any(n.type not in ("R_LAYERS", "COMPOSITE") for n in nt.nodes)
+
+
 def build_beauty_tree(scene, edges: str = None, edl_radius_px: int = 3,
                       edl_strength: float = None, crease_strength: float = None,
                       ao: float = None, haze: float = None):
@@ -142,6 +163,7 @@ def build_beauty_tree(scene, edges: str = None, edl_radius_px: int = 3,
     Output; 4.x: scene.node_tree with a Composite node."""
     _passes(scene)
     if hasattr(scene, "compositing_node_group"):
+        _keep_user_tree(scene)
         old = bpy.data.node_groups.get(TREE_NAME)
         if old is not None:
             bpy.data.node_groups.remove(old)
@@ -153,6 +175,9 @@ def build_beauty_tree(scene, edges: str = None, edl_radius_px: int = 3,
     else:
         scene.use_nodes = True
         nt = scene.node_tree
+        if user_tree_4x(scene):
+            raise RuntimeError("the scene's compositor has nodes of its own; the beauty tree would replace "
+                               "them (Blender 4.x has one compositor tree per scene)")
         for n in list(nt.nodes):
             nt.nodes.remove(n)
         out = nt.nodes.new("CompositorNodeComposite")
@@ -384,15 +409,21 @@ def set_enabled(context, enabled: bool) -> None:
     edits when it exists), or detach it."""
     sc = context.scene
     if not enabled:
-        sc.render.use_compositing = False
         if hasattr(sc, "compositing_node_group"):
-            sc.compositing_node_group = None
+            cur = sc.compositing_node_group
+            if cur is None or cur.name == TREE_NAME:     # a tree the user attached since is left alone
+                prev = bpy.data.node_groups.get(sc.get(PREV_TREE, ""))
+                sc.compositing_node_group = prev           # the user's own tree, when there was one
+                sc.render.use_compositing = prev is not None
+        else:
+            sc.render.use_compositing = False
         set_viewport_compositor(context, "DISABLED")
         set_stable_viewport(sc, False)
         return
     nt = bpy.data.node_groups.get(TREE_NAME) if hasattr(sc, "compositing_node_group") else None
     if nt is not None and nt.nodes.get(VERSION_NODE) is not None:
         _passes(sc)
+        _keep_user_tree(sc)
         sc.compositing_node_group = nt
         sc.render.use_compositing = True
         apply_settings(sc)
@@ -411,7 +442,11 @@ class OGC3D_OT_CompositorBuild(Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
-        build_beauty_tree(context.scene)
+        try:
+            build_beauty_tree(context.scene)
+        except RuntimeError as e:
+            self.report({"ERROR"}, f"Beauty compositor not built: {e}")
+            return {"CANCELLED"}
         set_viewport_compositor(context, "ALWAYS")
         set_stable_viewport(context.scene, context.scene.ogc3dtiles.comp_stable_viewport)
         lit = ensure_world_light(context.scene)
@@ -438,8 +473,10 @@ class OGC3D_OT_CompositorRemove(Operator):
 def draw_panel(layout, props):
     from . import node_rows
     on = node_rows.draw(layout, props, "comp_enabled", "Beauty compositor nodes", "COMPOSITOR")
-    layout.operator("ogc3dtiles.atmosphere", text="Atmosphere preset: sun, sky, haze",
-                    icon="LIGHT_SUN")
+    row = layout.row(align=True)
+    row.operator("ogc3dtiles.atmosphere", text="Atmosphere preset: sun, sky, haze",
+                 icon="LIGHT_SUN").world = "INSERT"
+    row.operator("ogc3dtiles.atmosphere", text="", icon="WORLD_DATA").world = "NEW"
     if not on:
         return
     layout.prop(props, "comp_edges", text="Edges")

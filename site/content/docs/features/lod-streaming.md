@@ -65,14 +65,22 @@ under it is fine enough and stays.
 - The setting is live: change it and tiles are re-selected at once.
 - Because it is measured in pixels, a larger window or a higher render resolution loads more.
 - What a value looks like depends on the tileset and on the tool that made it, since each tool
-  declares its errors its own way. Tick **Own SSE** on a tileset entry to give it its own value.
+  declares its errors its own way. Tick the checkbox next to **Tileset Max SSE** on a tileset entry to
+  give it its own value instead of this one.
 - To see the levels on screen, colour the tiles by *tile level* or *tile error* in
   [Nodes: Metadata](/features/nodes-metadata).
 
-## Parallel DL and Imports / tick: how fast
+## Concurrent Requests and Viewport Performance: how fast
 
-- **Parallel DL** (16 by default): how many tiles are downloaded at the same time. Raise it on a
-  fast connection, lower it if a server refuses requests.
+- **Concurrent Requests** (20 by default, per tileset): how many tiles are requested at the same time.
+  With cesium-native it counts tile loads in flight, download and decoding, and changes live; 20 is
+  cesium-native's own default. With the Python backend it is the number of parallel downloads, applied
+  at the next Start. Raise it on a fast connection, lower it if a server refuses requests.
+
+*Viewport Performance*, folded under it, sets how much the viewport does at each step of the streaming
+loop (an update and a redraw of the view). Renders are not affected: a converged render waits for every
+tile whatever these are.
+
 - **Imports / tick** (4 by default): how many downloaded tiles become Blender objects at each step of
   the streaming loop. Building objects happens on Blender's main thread, the one that also draws the
   interface. Higher fills the view faster but makes navigation stutter while tiles pour in; lower

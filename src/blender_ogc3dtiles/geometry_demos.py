@@ -176,8 +176,54 @@ class OGC3D_OT_GeometryDemo(Operator):
         return {"FINISHED"}
 
 
-def atmosphere(scene, elevation_deg=35.0, azimuth_deg=140.0) -> None:
-    """A sun, a sky that agrees with it, and haze: outdoor light for tiles."""
+SKY_GROUP = "OGC3D Sky"
+SKY_WORLD = "3D Tiles Sky"
+
+
+def _sky_group(elevation, azimuth):
+    """The 'OGC3D Sky' shader group: a sky texture that agrees with the sun, through a Background. One per
+    file, its settings refreshed on every call."""
+    grp = bpy.data.node_groups.get(SKY_GROUP)
+    if grp is None or grp.bl_idname != "ShaderNodeTree":
+        grp = bpy.data.node_groups.new(SKY_GROUP, "ShaderNodeTree")
+        grp.interface.new_socket(name="Background", in_out="OUTPUT", socket_type="NodeSocketShader")
+        sky = grp.nodes.new("ShaderNodeTexSky")
+        background = grp.nodes.new("ShaderNodeBackground")
+        background.inputs["Strength"].default_value = 0.25
+        out = grp.nodes.new("NodeGroupOutput")
+        sky.location, background.location, out.location = (-300, 0), (0, 0), (250, 0)
+        grp.links.new(sky.outputs[0], background.inputs["Color"])
+        grp.links.new(background.outputs[0], out.inputs[0])
+    sky = next((n for n in grp.nodes if n.type == "TEX_SKY"), None)
+    if sky is not None:
+        for name, value in (("sun_elevation", elevation), ("sun_rotation", azimuth), ("sun_disc", False)):
+            if hasattr(sky, name):               # the lamp is the sun: no second disc in the sky
+                setattr(sky, name, value)
+    return grp
+
+
+def _insert_sky(world, grp):
+    """Feed the world's active output from the sky group. The nodes already there stay, only unplugged from
+    the output, so plugging the old one back undoes it."""
+    world.use_nodes = True
+    nt = world.node_tree
+    outs = [n for n in nt.nodes if n.type == "OUTPUT_WORLD"]
+    out = next((n for n in outs if n.is_active_output), outs[0] if outs else None)
+    if out is None:
+        out = nt.nodes.new("ShaderNodeOutputWorld")
+    node = next((n for n in nt.nodes if n.type == "GROUP" and n.node_tree == grp), None)
+    if node is None:
+        node = nt.nodes.new("ShaderNodeGroup")
+        node.node_tree = grp
+        node.label = "3D Tiles sky"
+        node.location = (out.location.x - 220, out.location.y + 180)
+    nt.links.new(node.outputs[0], out.inputs["Surface"])
+
+
+def atmosphere(scene, elevation_deg=35.0, azimuth_deg=140.0, world_mode="INSERT") -> None:
+    """A sun, a sky that agrees with it, and haze: outdoor light for tiles. The sky is the 'OGC3D Sky' group,
+    inserted into the scene's World (INSERT) or into a new '3D Tiles Sky' world (NEW, the previous world
+    kept with a fake user). Nothing the user built is deleted."""
     sun = bpy.data.objects.get(SUN)
     if sun is None:
         sun = bpy.data.objects.new(SUN, bpy.data.lights.new(SUN, "SUN"))
@@ -186,23 +232,22 @@ def atmosphere(scene, elevation_deg=35.0, azimuth_deg=140.0) -> None:
     sun.data.angle = math.radians(0.6)
     elevation, azimuth = math.radians(elevation_deg), math.radians(azimuth_deg)
     sun.rotation_euler = (math.pi / 2 - elevation, 0.0, math.pi - azimuth)
-    sun.location = (0.0, 0.0, 300.0)
 
-    world = scene.world or bpy.data.worlds.new("World")
-    scene.world = world
-    world.use_nodes = True
-    nt = world.node_tree
-    nt.nodes.clear()
-    sky = nt.nodes.new("ShaderNodeTexSky")
-    for name, value in (("sun_elevation", elevation), ("sun_rotation", azimuth), ("sun_disc", False)):
-        if hasattr(sky, name):                   # the lamp is the sun: no second disc in the sky
-            setattr(sky, name, value)
-    background = nt.nodes.new("ShaderNodeBackground")
-    background.inputs["Strength"].default_value = 0.25
-    out = nt.nodes.new("ShaderNodeOutputWorld")
-    sky.location, background.location, out.location = (-300, 0), (0, 0), (250, 0)
-    nt.links.new(sky.outputs[0], background.inputs["Color"])
-    nt.links.new(background.outputs[0], out.inputs["Surface"])
+    grp = _sky_group(elevation, azimuth)
+    if world_mode == "NEW":
+        if scene.world is not None and scene.world.name != SKY_WORLD:
+            scene.world.use_fake_user = True     # the previous world stays in the file, to switch back
+        world = bpy.data.worlds.get(SKY_WORLD)
+        if world is None:
+            world = bpy.data.worlds.new(SKY_WORLD)
+            world.use_nodes = True
+            for n in [n for n in world.node_tree.nodes if n.type != "OUTPUT_WORLD"]:
+                world.node_tree.nodes.remove(n)  # a world made here: its default Background is not needed
+        scene.world = world
+    else:
+        world = scene.world or bpy.data.worlds.new("World")
+        scene.world = world
+    _insert_sky(world, grp)
     world["ogc3d_lit"] = True
 
     props = scene.ogc3dtiles
@@ -212,16 +257,31 @@ def atmosphere(scene, elevation_deg=35.0, azimuth_deg=140.0) -> None:
 
 
 class OGC3D_OT_Atmosphere(Operator):
-    """Outdoor light in one click: a sun lamp, a sky world that agrees with it, and haze
-    from the beauty compositor. With Shared shader nodes on, lower Baked Light to let
-    the sun shade the tiles"""
+    """Outdoor light in one click: a sun lamp, a sky that agrees with it, and haze from the beauty
+    compositor. The sky is a node group plugged into the World's output: the nodes already there stay.
+    With Shared shader nodes on, lower Baked Light to let the sun shade the tiles"""
     bl_idname = "ogc3dtiles.atmosphere"
     bl_label = "Atmosphere Preset"
     bl_options = {"REGISTER", "UNDO"}
 
+    world: bpy.props.EnumProperty(
+        name="World",
+        items=[("INSERT", "Insert into the scene's World",
+                "Plug the 'OGC3D Sky' group into the current World's output; its other nodes stay"),
+               ("NEW", "New World", "Make a '3D Tiles Sky' world for the scene; the current one is kept "
+                                    "in the file (fake user) to switch back")],
+        default="INSERT")
+
+    @classmethod
+    def description(cls, _context, props):
+        if props.world == "NEW":
+            return ("Atmosphere preset in a new '3D Tiles Sky' world: sun lamp, sky and haze. The current "
+                    "World stays in the file, to switch back")
+        return None
+
     def execute(self, context):
-        atmosphere(context.scene)
-        self.report({"INFO"}, f"'{SUN}' lamp, sky world and haze set: see them in Rendered shading")
+        atmosphere(context.scene, world_mode=self.world)
+        self.report({"INFO"}, f"'{SUN}' lamp, '{SKY_GROUP}' sky and haze set: see them in Rendered shading")
         return {"FINISHED"}
 
 

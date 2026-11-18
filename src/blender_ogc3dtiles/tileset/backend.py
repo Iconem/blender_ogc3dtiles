@@ -184,6 +184,7 @@ def make_backend(choice, max_sse: float = 16.0, max_tiles: int = 200,
         print("[3DTiles] Backend: cesium-native-python")
         return CesiumNativeBackend(max_sse=max_sse, cache_dir=cache_dir,
                                    max_cached_mb=kw.get("max_cached_mb", 512),
+                                   max_simultaneous_loads=kw.get("max_simultaneous_loads", 20),
                                    max_dist=max_dist, detail_falloff=detail_falloff,
                                    direct_mesh=kw.get("direct_mesh", True),
                                    cache_network_files=kw.get("cache_network_files", False),

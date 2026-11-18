@@ -4,9 +4,9 @@ addon_prefs.py — Blender Addon Preferences
 Edit → Preferences → Add-ons → OGC 3D Tiles → Preferences
 
 Sections
-  1. Traversal Backend   — CESIUM / PYTHON / AUTO + status + perf stats
-  2. Performance         — live timing comparison between backends
-  3. Developer           — direct mesh, wheel/install path
+  cesium-native status and install button, at the top
+  Cache / library, Place search, Beta features
+  Developer (folded) — backend choice, direct mesh, wheel source, backend timing comparison
 """
 
 from __future__ import annotations
@@ -195,60 +195,22 @@ class OGC3DTilesPreferences(AddonPreferences):
     def draw(self, context):
         layout = self.layout
 
-        # ── 1. Backend ────────────────────────────────────────────────────────
-        box = layout.box()
-        row = box.row()
-        row.label(text="Traversal Backend", icon="MOD_DYNAMICPAINT")
-
-        box.prop(self, "traversal_backend", text="")
-
-        # Status row
+        # ── cesium-native backend: status, and the install button while it is missing ──
         ok, status = probe_cesium()
-        status_row = box.row()
-        status_row.label(
-            text=f"cesium-native-python:  {status}",
-            icon="CHECKMARK" if ok else ("ERROR" if "error" in status.lower() else "INFO"),
-        )
-
-        # Install from a release wheel (no compiler needed), or build from source
-        row1 = box.row(align=True)
-        row1.operator("ogc3dtiles.install_cesium_wheel", icon="IMPORT", text="Install wheel from GitHub Release")
-        row1.operator("ogc3dtiles.reload_cesium", icon="FILE_REFRESH", text="")
-        box.prop(self, "cesium_wheel_repo", text="Release repo")
-        row2 = box.row(align=True)
-        row2.operator("ogc3dtiles.install_cesium", icon="TOOL_SETTINGS", text="Build / install from source")
-        box.prop(self, "cesium_install_path", text="Source dir")
-
-        # ── 2. Performance comparison ─────────────────────────────────────────
-        layout.separator()
-        box2 = layout.box()
-        box2.label(text="Performance", icon="SORTTIME")
-        box2.prop(self, "show_perf_compare")
-
-        if self.perf_samples > 0:
-            col = box2.column(align=True)
-            col.scale_y = 0.9
-
-            def bar(label: str, ms: float, ref_ms: float):
-                pct = (ms / ref_ms * 100) if ref_ms > 0 else 0
-                row = col.row(align=True)
-                row.label(text=f"{label:<22} {ms:6.3f} ms  ({pct:.0f}%)")
-
-            ref = max(self.perf_cesium_ms, self.perf_python_ms, 0.001)
-            bar("cesium-native-python", self.perf_cesium_ms, ref)
-            bar("Pure Python",          self.perf_python_ms, ref)
-            col.label(text=f"Samples: {self.perf_samples}", icon="DRIVER")
-
-            row3 = box2.row()
-            row3.operator("ogc3dtiles.reset_perf_stats", icon="X", text="Reset Stats")
-        else:
-            box2.label(text="Start streaming to gather samples.", icon="INFO")
+        box = layout.box()
+        col = box.column()
+        col.alert = not ok
+        col.label(text=f"cesium-native-python:  {status}", icon="CHECKMARK" if ok else "ERROR")
+        row = box.row(align=True)
+        if not ok:
+            row.scale_y = 1.4
+        row.operator("ogc3dtiles.install_cesium_wheel", icon="IMPORT",
+                     text="Reinstall wheel from GitHub Release" if ok else "Install cesium-native-python library")
+        row.operator("ogc3dtiles.reload_cesium", icon="FILE_REFRESH", text="")
 
         layout.prop(self, "open_sidebar")
-        layout.label(text="Add-on maintainer: Jonathan Chemla, Iconem CTO", icon="USER")
 
         # ── Cache / library ───────────────────────────────────────────────────
-        layout.separator()
         boxc = layout.box()
         boxc.label(text="Cache, local tilesets, library", icon="FILE_CACHE")
         boxc.prop(self, "cache_dir")
@@ -258,15 +220,14 @@ class OGC3DTilesPreferences(AddonPreferences):
         boxc.prop(self, "cache_network_files")
         boxc.prop(self, "mapped_drives_as_unc")
         boxc.prop(self, "library_files", text="Libraries")
+        import os
         from . import library as _library
         for p in _library.split_paths(self.library_files):
-            import os
             boxc.operator("ogc3dtiles.library_edit", text=f"Edit {os.path.basename(p)} in a text editor",
                           icon="TEXT").path = p
         boxc.operator("ogc3dtiles.library_add_file", text="Add library file…", icon="FILEBROWSER")
 
         # ── Place search ───────────────────────────────────────────────────────
-        layout.separator()
         boxp = layout.box()
         boxp.label(text="Place search (Scene Origin)", icon="VIEWZOOM")
         boxp.prop(self, "photon_url", text="Geocoder")
@@ -274,7 +235,6 @@ class OGC3DTilesPreferences(AddonPreferences):
         boxp.prop(self, "geoid_url", text="Geoid grid")
 
         # ── Beta features ──────────────────────────────────────────────────────
-        layout.separator()
         boxb = layout.box()
         boxb.label(text="Beta features", icon="EXPERIMENTAL")
         boxb.prop(self, "beta_phases")
@@ -283,11 +243,27 @@ class OGC3DTilesPreferences(AddonPreferences):
         sub.prop(self, "beta_phase_strokes")
         boxb.prop(self, "beta_material_controls")
 
-        # ── 3. Developer ──────────────────────────────────────────────────────
-        layout.separator()
-        box3 = layout.box()
-        box3.label(text="Developer", icon="SCRIPT")
-        box3.prop(self, "direct_mesh")
+        # ── Developer, folded: backend choice, mesh path, wheel source, profiling ──
+        head, body = layout.panel("ogc3d_prefs_developer", default_closed=True)
+        head.label(text="Developer", icon="SCRIPT")
+        if body is None:
+            return
+        body.prop(self, "traversal_backend", text="Backend")
+        body.prop(self, "direct_mesh")
+        body.prop(self, "cesium_wheel_repo", text="Wheel release repo")
+        row = body.row(align=True)
+        row.prop(self, "cesium_install_path", text="Source dir")
+        row.operator("ogc3dtiles.install_cesium", icon="TOOL_SETTINGS", text="Build")
+        body.prop(self, "show_perf_compare")
+        if self.perf_samples > 0:
+            col = body.column(align=True)
+            col.scale_y = 0.9
+            ref = max(self.perf_cesium_ms, self.perf_python_ms, 0.001)
+            for label, ms in (("cesium-native-python", self.perf_cesium_ms), ("Pure Python", self.perf_python_ms)):
+                col.label(text=f"{label:<22} {ms:6.3f} ms  ({ms / ref * 100:.0f}%)")
+            row = col.row()
+            row.label(text=f"Samples: {self.perf_samples}", icon="DRIVER")
+            row.operator("ogc3dtiles.reset_perf_stats", icon="X", text="Reset")
 
 
 # ── Operators ─────────────────────────────────────────────────────────────────

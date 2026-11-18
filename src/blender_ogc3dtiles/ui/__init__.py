@@ -517,6 +517,61 @@ def _clip_frame_change(scene, depsgraph):
 _clip_frame_change._bpy_persistent = True          # = @bpy.app.handlers.persistent
 
 
+def _render_converge(scene, depsgraph):
+    """Command-line renders (blender -b -a / -f): before each frame renders, stream for the scene camera
+    as the render depsgraph evaluated it and wait until the tiles have loaded. Blender runs this
+    frame_change_post handler between evaluating the frame and rendering it, and evaluates again after
+    it, so the tiles built here are in the frame. F12 and Ctrl+F12 run render handlers on the render
+    job's thread, where tiles cannot be built: those are skipped, Render converged animation is the
+    window's way."""
+    import threading
+    props = getattr(scene, "ogc3dtiles", None)
+    if (props is None or depsgraph is None or depsgraph.mode != "RENDER" or not bpy.app.background
+            or not props.render_converge_cli or threading.current_thread() is not threading.main_thread()):
+        return
+    if scene.camera is None or not any(it.enabled for it in props.tilesets):
+        return
+    from .. import camera as _camera
+    from ..io import _render_pre
+    first = not _state["streams"]       # a fresh session (the saved file may still say streaming)
+    if first:
+        props.is_streaming = False
+        props.view_source = "CAMERA"
+        if "FINISHED" not in bpy.ops.ogc3dtiles.start_stream():
+            print("[3DTiles] command-line render: streaming could not start, rendering as is")
+            return
+    cam = scene.camera.evaluated_get(depsgraph)
+    _camera.RENDER_CAMERA[0] = (cam, depsgraph)
+    prev_source = props.view_source
+    props.view_source = "CAMERA"
+    t0 = time.monotonic()
+    min_wait = props.render_warmup_s if first else 0.0
+    _state["last_change_t"] = t0
+    try:
+        while True:
+            stream_tick(bpy.context)
+            now = time.monotonic()
+            quiet = now - _state.get("last_change_t", now)
+            clip_pending = any(st.get("clip_dirty_t") is not None or st.get("clip_todo")
+                               for st in _state["streams"].values())
+            if (_state.get("pending_total", 1) == 0 and not clip_pending and quiet >= props.render_settle_s
+                    and now - t0 >= max(props.render_settle_s, min_wait)):
+                print(f"[3DTiles] frame {scene.frame_current}: tiles loaded in {now - t0:.1f} s")
+                break
+            if now - t0 >= props.render_max_wait_s:
+                print(f"[3DTiles] frame {scene.frame_current}: Max wait ({props.render_max_wait_s:.0f} s) "
+                      f"reached with {_state.get('pending_total', '?')} tiles still loading, rendered as is")
+                break
+            time.sleep(0.03)
+        _render_pre(scene, cam=cam)                 # point sizes from this frame's camera
+    finally:
+        _camera.RENDER_CAMERA[0] = None
+        props.view_source = prev_source
+
+
+_render_converge._bpy_persistent = True             # = @bpy.app.handlers.persistent
+
+
 def _is_animated(o) -> bool:
     ad = o.animation_data
     return ad is not None and (ad.action is not None or len(ad.drivers) > 0)
@@ -860,6 +915,7 @@ def _start_stream(scene, props, st, choice, cache) -> None:
     backend = make_backend(choice, max_sse=st["max_sse"] * _state.get("cap_factor", 1.0),
                            max_tiles=props.max_loaded_tiles,
                            max_cached_mb=props.native_cache_mb,
+                           max_simultaneous_loads=props.max_concurrent_requests,
                            detail_falloff=props.detail_falloff,
                            max_dist=props.load_distance,
                            cache_dir=cache.root if props.use_disk_cache else None,
@@ -2041,7 +2097,7 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
             row.prop(it, "use_own_sse", text="")
             sub = row.row(align=True)
             sub.enabled = it.use_own_sse
-            sub.prop(it, "max_sse", text="Own SSE")
+            sub.prop(it, "max_sse", text="Tileset Max SSE")
             st = _state["streams"].get(it.uid) if it.uid else None
             if st is not None:
                 root = bpy.data.objects.get(st["root_obj"] or "")
@@ -2210,8 +2266,7 @@ class OGC3D_PT_LodPanel(_OGC3DSidebar, Panel):
         _draw_view_source(layout, props)
         col = layout.column(align=True)
         col.prop(props, "max_screen_space_error", text="Max SSE (live)")
-        col.prop(props, "max_concurrent_requests", text="Parallel DL")
-        col.prop(props, "imports_per_tick", text="Imports / tick")
+        col.prop(props, "max_concurrent_requests", text="Concurrent Requests")
         col.prop(props, "max_elements_m", text="Max points / vertices (M, beta)")
         if props.max_elements_m > 0 and props.is_streaming:
             layout.label(text=f"Shown: {_state.get('cap_total', 0) / 1e6:.2f} M   "
@@ -2225,10 +2280,16 @@ class OGC3D_PT_LodPanel(_OGC3DSidebar, Panel):
                 row.prop(props, "tile_bounds_color", text="")
             row.prop(props, "tile_bounds_width", text="Width")
             row.prop(props, "tile_bounds_depth", text="", icon="HIDE_ON")
+        # how much tile building the viewport loop does per tick: viewport only, renders wait for every tile
+        perf_h, perf = layout.panel("ogc3d_lod_viewport_perf", default_closed=True)
+        perf_h.label(text="Viewport Performance")
+        if perf:
+            col = perf.column(align=True)
+            col.prop(props, "imports_per_tick", text="Imports / tick")
+            col.prop(props, "nav_build_ms", text="Build ms while navigating")
         sub_h, sub = layout.panel("ogc3d_lod_advanced", default_closed=True)
         sub_h.label(text="Advanced")
         if sub:
-            sub.prop(props, "nav_build_ms", text="Build ms while navigating")
             if _python_backend_in_use(context):     # the pure Python traversal only
                 sub.prop(props, "max_loaded_tiles", text="Max Tiles / tileset")
                 row = sub.row(align=True)
@@ -2387,6 +2448,7 @@ class OGC3D_PT_RenderPanel(_OGC3DSidebar, Panel):
         col.prop(props, "render_warmup_s", text="Warm-up s (first frame)")
         col.prop(props, "render_settle_s", text="Settle s (every frame)")
         col.prop(props, "render_max_wait_s", text="Max wait s")
+        layout.prop(props, "render_converge_cli")
         layout.operator("ogc3dtiles.render_converged", icon="RENDER_ANIMATION",
                       text="Render converged animation")
         prog = _state.get("render_progress")
@@ -2847,6 +2909,8 @@ def register():
         bpy.app.handlers.depsgraph_update_post.append(_clip_depsgraph_watch)
     if _clip_frame_change not in bpy.app.handlers.frame_change_post:
         bpy.app.handlers.frame_change_post.append(_clip_frame_change)
+    if _render_converge not in bpy.app.handlers.frame_change_post:
+        bpy.app.handlers.frame_change_post.append(_render_converge)
     if _open_sidebar not in bpy.app.handlers.load_post:
         bpy.app.handlers.load_post.append(_open_sidebar)
     _open_sidebar()
@@ -2859,6 +2923,8 @@ def unregister():
         bpy.app.handlers.depsgraph_update_post.remove(_clip_depsgraph_watch)
     if _clip_frame_change in bpy.app.handlers.frame_change_post:
         bpy.app.handlers.frame_change_post.remove(_clip_frame_change)
+    if _render_converge in bpy.app.handlers.frame_change_post:
+        bpy.app.handlers.frame_change_post.remove(_render_converge)
     if _open_sidebar in bpy.app.handlers.load_post:
         bpy.app.handlers.load_post.remove(_open_sidebar)
     if bpy.app.timers.is_registered(_open_sidebar_tick):

@@ -174,7 +174,7 @@ on screen, Blender 5.3, orbiting view:
 | stopped, Rendered (EEVEE) | 147 ms |
 
 The knobs: *Imports / tick* is the build budget when the view rests
-(12 ms per import); *Build ms while navigating* (LOD / Streaming > Advanced)
+(12 ms per import); *Build ms while navigating* (LOD / Streaming > Viewport Performance)
 is the budget while the view moves and 0.3 s after, so orbiting stays fluid
 and loading catches up when you stop; Solid shading draws fastest; with
 raster overlays, *Raster detail* trades imagery resolution for fewer
@@ -215,7 +215,7 @@ material.  Point clouds become vertex-only meshes, see [Point clouds](/features/
 Measured main-thread cost per tile: 8–9 ms direct vs 10–13 ms
 through `bpy.ops.import_scene.gltf`; the direct path also needs no temp files
 and works regardless of which glTF extensions Blender's importer knows.
-Toggle: "Direct mesh" in the add-on preferences, Developer box (off = GLB re-import).
+Toggle: "Direct mesh" in the add-on preferences, folded Developer section (off = GLB re-import).
 
 The Python backend uses the same route: `tileset/gltf_payload.py` is a pure
 numpy GLB reader (any accessor type incl. KHR_mesh_quantization, interleaved

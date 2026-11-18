@@ -25,6 +25,25 @@ main branch and not in a release zip yet.
   they live on the *Media: screenshots* and *Media: videos* releases, and `scripts/docs-media.mjs` pulls them
   before the site and the decks build.
 
+- **Command-line renders wait for their tiles.** `blender -b scene.blend -a` (or `-f`) streams for
+  the scene camera and, before each frame renders, waits until its tiles have loaded, with the Render
+  panel's Warm-up, Settle and Max wait. A frame that reaches Max wait says how many tiles were still
+  loading. F12 and Ctrl+F12 render on another thread, where tiles can't load: *Render converged
+  animation* stays the way there. See [Rendering](/features/rendering#from-the-command-line).
+- **The Atmosphere preset no longer deletes your World's nodes.** The sky is an `OGC3D Sky` group
+  plugged into the World's output, next to the nodes already there, or in a new *3D Tiles Sky* World
+  (the world-icon button). The beauty compositor keeps a compositor tree of yours and puts it back when
+  turned off.
+- **Concurrent Requests** (was *Parallel DL*) now applies to cesium-native too, live: it was only read
+  by the Python backend, and cesium-native stayed at 20 loads. The default is 20.
+- *Own SSE* is now the checkbox next to **Tileset Max SSE**. *Imports / tick* and *Build ms while
+  navigating* are in a folded **Viewport Performance** section of LOD / Streaming.
+- **Preferences**: the cesium-native status and install button at the top; the backend choice, Direct
+  mesh, the wheel source and the timing comparison in a folded *Developer* section. The maintainer and
+  the website come from the extension manifest.
+- Tiles imported through the glTF importer find their shader nodes by type, so they work with
+  Blender's *Translate New Data* on.
+
 ## 0.6.4 (2026-11-14)
 
 - **Panoramic cameras.** A panoramic camera as *Scene camera* or *Chosen camera* selects tiles all

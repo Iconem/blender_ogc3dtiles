@@ -543,13 +543,20 @@ def _image_from_payload(ip: dict, key: str):
     return img
 
 
+def _node_of_type(nt, type_):
+    """First node of a type (the active one for outputs). Never by name: with Preferences > Interface >
+    Translation > New Data on, Blender names a new material's nodes in the UI language."""
+    nodes = [n for n in nt.nodes if n.type == type_]
+    return next((n for n in nodes if getattr(n, "is_active_output", False)), nodes[0] if nodes else None)
+
+
 def _material_from_payload(mp: dict, img, key: str):
     mat = bpy.data.materials.new(f"{mp.get('name') or 'mat'}_{abs(hash(key)) % 10_000_000}"[:60])
     mat.use_nodes = True
     mat.use_backface_culling = not mp.get("double_sided", True)
     nt = mat.node_tree
-    bsdf = nt.nodes.get("Principled BSDF")
-    out = nt.nodes.get("Material Output")
+    bsdf = _node_of_type(nt, "BSDF_PRINCIPLED")
+    out = _node_of_type(nt, "OUTPUT_MATERIAL")
     if bsdf is None or out is None:
         return mat
     # photogrammetry: lighting is baked, keep the surface matte
@@ -577,7 +584,7 @@ def _wire_point_colors(mat):
     the instance domain for disc splats (points instanced, not realised).
     The two are added: whichever domain exists carries the colour."""
     nt = mat.node_tree
-    bsdf = nt.nodes.get("Principled BSDF")
+    bsdf = _node_of_type(nt, "BSDF_PRINCIPLED")
     if bsdf is None:
         return
     attr = nt.nodes.new("ShaderNodeAttribute")
@@ -598,7 +605,7 @@ def _ensure_instancer_color(mat) -> bool:
         return False
     if any(n.type == "ATTRIBUTE" and n.attribute_type == "INSTANCER" for n in nt.nodes):
         return False
-    bsdf = nt.nodes.get("Principled BSDF")
+    bsdf = _node_of_type(nt, "BSDF_PRINCIPLED")
     geo = next((n for n in nt.nodes if n.type == "ATTRIBUTE" and n.attribute_name == "Col"), None)
     if bsdf is None or geo is None:
         return False
@@ -1766,10 +1773,11 @@ def _short_name(url: str) -> str:
     return ("t_" + name)[:60]
 
 
-def _render_pre(scene, _depsgraph=None):
-    """Rendering: the eye is the scene camera, pixels are the render height."""
+def _render_pre(scene, _depsgraph=None, cam=None):
+    """Rendering: the eye is the scene camera (or ``cam``, the evaluated one of a command-line render),
+    pixels are the render height."""
     try:
-        cam = scene.camera
+        cam = cam or scene.camera
         if cam is None:
             return
         props = scene.ogc3dtiles

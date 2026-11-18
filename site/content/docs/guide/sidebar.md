@@ -12,7 +12,7 @@ header. Blender remembers the order and which ones are folded.
 |---|---|
 | **OGC 3D Tiles** | Status line, Start / Stop / Clear, the tileset list and the selected tileset's fields. Below: its **Raster overlays** and its **Clipping**, each in a box with the checkbox that switches it on, and **Clip to viewport region (Alt+B)**, which applies to all tilesets. |
 | **Scene Origin** | Where the Blender origin sits on the globe. |
-| **LOD / Streaming** | Max SSE, parallel downloads, imports per tick, the points / vertices cap, and an *Advanced* sub-panel. |
+| **LOD / Streaming** | Max SSE, concurrent requests, the points / vertices cap, and the *Viewport Performance* and *Advanced* sub-panels. |
 | **Nodes: Material** | Shared shader nodes, back-face handling, a button that opens a tile's own material. |
 | **Nodes: Geometry** | Shared geometry nodes, point display and radius, relation lines. |
 | **Nodes: Compositing** | Beauty compositor nodes with their sliders. |
@@ -20,18 +20,22 @@ header. Blender remembers the order and which ones are folded.
 | **Render** | Stream for the viewport or the scene camera, converged animation. |
 | **Coordinate Info** | Origin and cursor coordinates. |
 
-The backend (cesium-native or pure Python) is chosen in the add-on preferences.
+The backend (cesium-native or pure Python) is chosen in the add-on preferences, in the folded *Developer*
+section.
 
 ## LOD / Streaming
 
-Defaults: Max SSE 8 px, 16 parallel downloads, 4 imports per tick.
+Defaults: Max SSE 8 px, 20 concurrent requests, 4 imports per tick.
 
 **Max points / vertices (M, beta)** caps what is shown, all tilesets together. Over the cap every
 tileset is streamed coarser (its SSE is multiplied, and the panel shows by how much) until the view
 fits; detail returns when there is room. 0, the default, means no cap. The coarsest tiles of a tileset
 are always shown, so a cap below their size cannot be met.
 
-*Advanced* holds the build time while navigating, the disk cache, per-stream backend statistics, and:
+*Viewport Performance* holds Imports / tick and the build time while navigating: how much tile building
+each step of the viewport loop does. Renders wait for every tile whatever they are.
+
+*Advanced* holds the disk cache, per-stream backend statistics, and:
 
 - with cesium-native, its cache size in MB. This is memory for tiles that are loaded but no longer
   shown; it is not a cap on what is shown.

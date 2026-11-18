@@ -1,0 +1,4 @@
+#!/bin/sh
+# Refuses a commit that would add heavy media to git (scripts/check-media.mjs, the docs workflow runs the same check).
+# Turn it on once per clone: git config core.hooksPath .githooks
+exec node scripts/check-media.mjs

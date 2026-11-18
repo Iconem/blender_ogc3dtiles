@@ -12,7 +12,7 @@ picture renders once the tiles of its view have loaded.
 | `sq.sh <shot>...` | queue of stills, two tries each, log in `sq.log` |
 | `aq.sh <shot>...` | queue of clips: builds `hanim.py` from the helpers of `hshot.py` and `hanim_shots.py`, log in `aq.log` |
 | `mkimg2.sh` | the PNG stills to the JPEGs of `docs/img`, over the page grey, cropped where needed |
-| `enc_anim.sh <shot> <clip> [crf]` | the frames of a clip to `docs/video/<clip>.mp4` (H.264, 1280×720, 24 fps) and its poster |
+| `enc_anim.sh <shot> <clip> [crf] [first] [last] [hold]` | the frames of a clip to `docs/video/<clip>.mp4` (H.264, 1280×720, 24 fps) and its poster; `first`..`last` keep part of the frames, `hold` repeats the last one before the loop. The Geghard clips: `a_reveal geghard_reveal 24 10 110 18` (the demo wraps at frame 111) and `a_geghard geghard_section 29 62 143 12` (the box reaches the roof at frame 76) |
 
 The queues work in `%TEMP%\ogc_tests\r9`: copy the two Python files there, and run `mkimg2.sh` and `enc_anim.sh`
 from the repository. The tilesets are looked up by name in the tileset library of the add-on preferences. The

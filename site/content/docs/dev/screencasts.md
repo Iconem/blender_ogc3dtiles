@@ -122,4 +122,7 @@ node scripts/docs-media.mjs status
 node scripts/check-media.mjs                     # the docs workflow's guard against heavy files in git
 ```
 
+The same guard runs before each commit once the hook is on, once per clone: `git config core.hooksPath .githooks`.
+The docs workflow still runs it, since a hook is opt-in and `git commit --no-verify` skips it.
+
 Old archives stay on the releases, so an older commit still builds. The full-length takes stay on their own release.

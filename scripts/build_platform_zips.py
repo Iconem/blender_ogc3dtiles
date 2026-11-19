@@ -8,8 +8,11 @@ binding fix reaches users without a new add-on release. The extensions platform 
 `blender --command extension build --split-platforms` writes one zip per platform, each with its own wheel.
 
 One Blender line ships one Python, and a wheel is built for one Python: `--python` picks the wheels (cp313 is
-Blender 5.1 and later) and sets `blender_version_min` to match. Platforms without a wheel on the release
-(macOS Intel, Windows and Linux on ARM) are left out. Output: dist/platform/.
+Blender 5.1 and later, cp311 is Blender 4.2 to 5.0) and sets `blender_version_min` and `blender_version_max`
+to match, so the two sets can sit side by side on the platform. Platforms without a wheel on the release
+(macOS Intel, Windows and Linux on ARM) are left out. `wheel_install.py`, the module that downloads a wheel
+from the preferences, is left out too: an extension there may not fetch code.
+Output: dist/platform/<python>/, the zips named <id>-<version>-<python>-<platform>.zip.
 """
 from __future__ import annotations
 
@@ -28,6 +31,8 @@ PLATFORMS = (("win_amd64", "windows-x64"), ("manylinux", "linux-x64"), ("macosx"
              ("win_arm64", "windows-arm64"))
 # first Blender release on each Python
 BLENDER_MIN = {"cp311": "4.2.0", "cp313": "5.1.0"}
+# first Blender release that no longer runs it (blender_version_max is exclusive)
+BLENDER_MAX = {"cp311": "5.1.0"}
 
 
 def blender_platform(name: str) -> str | None:
@@ -53,10 +58,10 @@ def main() -> None:
     if not wheels:
         raise SystemExit(f"{a.repo} {rel['tag_name']}: no {a.python} wheels")
 
-    work = ROOT / "dist" / "platform"
+    work = ROOT / "dist" / "platform" / a.python
     shutil.rmtree(work, ignore_errors=True)
     stage = work / "stage"
-    shutil.copytree(SRC, stage, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    shutil.copytree(SRC, stage, ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "wheel_install.py"))   # no downloader in these zips
     (stage / "wheels").mkdir()
     for name, url in sorted(wheels.items()):
         print("wheel", name)
@@ -67,6 +72,8 @@ def main() -> None:
     manifest = (stage / "blender_manifest.toml").read_text(encoding="utf-8")
     manifest = re.sub(r'^blender_version_min\s*=.*$', f'blender_version_min = "{BLENDER_MIN.get(a.python, "5.1.0")}"',
                       manifest, flags=re.M)
+    if a.python in BLENDER_MAX:
+        manifest = manifest.replace("\nlicense", f'\nblender_version_max = "{BLENDER_MAX[a.python]}"\n\nlicense', 1)
     plats = sorted({blender_platform(n) for n in wheels})
     extra = ("platforms = [" + ", ".join(f'"{p}"' for p in plats) + "]\n"
              "wheels = [\n" + "".join(f'  "./wheels/{n}",\n' for n in sorted(wheels)) + "]\n\n")
@@ -77,6 +84,7 @@ def main() -> None:
                     "--source-dir", str(stage), "--output-dir", str(work)], check=True)
     shutil.rmtree(stage)
     for z in sorted(work.glob("*.zip")):
+        z = z.rename(z.with_name(re.sub(r"-([a-z]+_[a-z0-9]+)\.zip$", rf"-{a.python}-\1.zip", z.name)))
         subprocess.run([a.blender, "-b", "--command", "extension", "validate", str(z)], check=True)
         print(f"{z.name}  {z.stat().st_size / 1e6:.1f} MB")
     print(f"binding: {a.repo} {rel['tag_name']}")

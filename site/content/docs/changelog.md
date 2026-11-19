@@ -28,8 +28,13 @@ main branch and not in a release zip yet.
 - **An Empty per dataset in a tileset of tilesets** (cesium-native backend). When a `tileset.json` only gathers
   other tilesets, each of them gets an Empty under the tileset's root, at its centre with Z up, and its tiles
   are parented to it. Typing a Location Z on it shifts that one dataset in height (geoid against ellipsoid);
-  the offset is kept per dataset URL with the scene. Level of detail and culling do not see the offset. See
-  [A tileset of tilesets](/features/several-tilesets#a-tileset-of-tilesets).
+  the offset is kept per dataset URL with the scene. Level of detail and culling follow the offset: a moved
+  dataset is also selected for a camera moved the other way (without it, a 100 m offset under a low camera
+  lost 45% of the splats on screen). See [A tileset of tilesets](/features/several-tilesets#a-tileset-of-tilesets).
+- **Scene origin: a *Dataset* mode.** The origin goes to a dataset of such a tileset, picked by the name of
+  its Empty.
+- A tileset path on a mapped network drive is stored as its share path when typed or pasted too, not only
+  when browsed to.
 - **Globe navigation: a place search now shows the place.** With the Globe scaled or turned, a search or a new
   scene origin left the view looking at nothing; the Globe now returns to 1:1 at the new origin, and objects
   parented to it keep their place on the Earth. *Re-anchor Scene Origin* is greyed while Globe Navigation is
@@ -64,8 +69,11 @@ main branch and not in a release zip yet.
   from the extension manifest. *Open the 3D Tiles sidebar* is gone: the add-on no longer opens the
   sidebar when Blender starts or a file loads.
 - `scripts/build_platform_zips.py` builds extension zips with the cesium-native-python wheel inside, one per
-  platform (Windows x64, Linux x64, macOS ARM, Blender 5.1 and later), the form extensions.blender.org needs.
-  The zip on the Releases page stays pure Python, with the wheel installed from the preferences.
+  platform (Windows x64, Linux x64, macOS ARM) and per Python (Blender 4.2 to 5.0, Blender 5.1 and later), the
+  form extensions.blender.org needs. They hold no wheel downloader, so their preferences show no Install or
+  Reinstall button. The *release extension* workflow can build them and upload them to the platform. The zip
+  on the Releases page stays pure Python, with the wheel installed from the preferences. What still blocks a
+  listing is in [extensions.blender.org](/dev/extensions-platform).
 - Tiles imported through the glTF importer find their shader nodes by type, so they work with
   Blender's *Translate New Data* on.
 

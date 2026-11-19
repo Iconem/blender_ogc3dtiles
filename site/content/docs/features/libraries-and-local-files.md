@@ -20,8 +20,8 @@ and reads it from the share again only when it changed, so revisiting a tileset 
 fast. Files on a local disk are always read directly. For heavy use, copy the tileset into the project
 (below).
 
-A drive letter mapped to a share (`Z:`) is stored as the share itself, so the entry also works on a
-computer that maps the share to another letter. *Mapped drives as UNC* in the preferences turns that
+A drive letter mapped to a share (`Z:`) is stored as the share itself, whether the path was browsed to,
+typed or pasted, so the entry also works on a computer that maps the share to another letter. *Mapped drives as UNC* in the preferences turns that
 off.
 
 ## Disk cache

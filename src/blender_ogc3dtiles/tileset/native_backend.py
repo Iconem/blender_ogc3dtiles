@@ -793,14 +793,16 @@ class CesiumNativeBackend:
                 pass
 
     def update_view(self, position_ecef, direction_ecef, up_ecef,
-                    viewport_w, viewport_h, hfov, vfov, dt=0.0, ortho=None, faces=None):
+                    viewport_w, viewport_h, hfov, vfov, dt=0.0, ortho=None, faces=None, offsets=None):
         """``ortho`` = (half_width, half_height) of an orthographic frame in
         metres, centred on ``position_ecef``: the binding's orthographic
         ViewState then culls with the four side planes and uses
         SSE = error * viewport_h / frame_height, independent of distance.
         ``faces`` = [(direction, up)] of a panoramic camera's cube faces: one
         90 degree ViewState each, viewport_w x viewport_h px, and cesium-native
-        selects for their union."""
+        selects for their union.
+        ``offsets`` = 4x4 ECEF matrices: every view again with the camera moved by each, for datasets shown
+        away from where they are (dataset_empties.view_offsets)."""
         if self._tileset is None:
             return NativeViewResult([], [], {})
         sel = self._cs.tiles.selection
@@ -817,6 +819,19 @@ class CesiumNativeBackend:
             views = [sel.ViewState(*args, -hw, hw, -hh, hh)]
         else:
             views = [sel.ViewState(*args, float(hfov), float(vfov))]
+        for M in offsets or ():
+            R = M[:3, :3]
+            for d, u in (faces or [(args[1], args[2])]):
+                p2 = R @ args[0] + M[:3, 3]
+                d2 = R @ np.asarray(d, np.float64)
+                u2 = R @ np.asarray(u, np.float64)
+                d2, u2 = d2 / np.linalg.norm(d2), u2 / np.linalg.norm(u2)
+                if faces:
+                    views.append(sel.ViewState(p2, d2, u2, args[3], math.pi / 2.0, math.pi / 2.0))
+                elif ortho is not None:
+                    views.append(sel.ViewState(p2, d2, u2, args[3], -hw, hw, -hh, hh))
+                else:
+                    views.append(sel.ViewState(p2, d2, u2, args[3], float(hfov), float(vfov)))
         vg = self._tileset.default_view_group
         res = self._tileset.update_view_group(vg, views, float(dt))
         self._tileset.load_tiles()

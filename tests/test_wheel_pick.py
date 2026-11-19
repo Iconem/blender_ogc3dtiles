@@ -1,4 +1,4 @@
-"""addon_prefs.pick_wheel: choose the release asset for this interpreter."""
+"""wheel_install.pick_wheel: choose the release asset for this interpreter."""
 import sys
 import types
 
@@ -8,7 +8,7 @@ sys.modules.setdefault("bpy", types.SimpleNamespace(
     props=types.SimpleNamespace(**{n: (lambda *a, **k: None) for n in
                                    ("StringProperty", "BoolProperty", "EnumProperty",
                                     "IntProperty", "FloatProperty")})))
-from blender_ogc3dtiles.addon_prefs import pick_wheel  # noqa: E402
+from blender_ogc3dtiles.wheel_install import pick_wheel  # noqa: E402
 
 ASSETS = [
     "cesium_python-0.1.0-cp311-cp311-manylinux_2_28_x86_64.whl",

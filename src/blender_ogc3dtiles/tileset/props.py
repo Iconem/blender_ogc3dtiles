@@ -10,6 +10,37 @@ from bpy.props import (
 from bpy.types import PropertyGroup
 
 
+def _dataset_names(self, context, edit_text):
+    try:
+        from .. import dataset_empties
+        return dataset_empties.names_matching(edit_text)
+    except Exception:          # noqa: BLE001
+        return []
+
+
+def _on_origin_dataset(self, context):
+    try:
+        from ..ui import origin_to_dataset
+        origin_to_dataset(context, self)
+    except Exception as e:     # noqa: BLE001
+        print(f"[3DTiles] origin at dataset: {e}")
+
+
+def _on_item_url(self, context):
+    """A typed or pasted path on a mapped network drive (Z:) becomes its share path, as a browsed one does
+    (preference 'Mapped drives as UNC'). Comes back here once with the share path, which is left alone."""
+    try:
+        from .. import paths
+        from ..io import addon_pref
+        u = self.url.strip().strip('"')
+        if paths.is_local_path(u) and addon_pref("mapped_drives_as_unc", True):
+            unc = paths.mapped_drive_unc(u)
+            if unc and unc != self.url:
+                self.url = unc
+    except Exception:          # noqa: BLE001
+        pass
+
+
 def _on_item_sse(self, context):
     """Push a live SSE edit to the running stream (both backends)."""
     try:
@@ -398,7 +429,8 @@ class TilesetItem(PropertyGroup):
     """One streamed tileset (list entry in the sidebar)."""
     name: StringProperty(name="Name", default="tileset")
     kind: EnumProperty(name="Type", items=TILESET_KINDS, default="TILESET", update=_on_item_kind)
-    url: StringProperty(name="Tileset URL", description="tileset.json URL or local path", default="")
+    url: StringProperty(name="Tileset URL", description="tileset.json URL or local path", default="",
+                        update=_on_item_url)
     ion_asset_id: IntProperty(name="Asset id", description="Cesium ion asset id", default=0, min=0)
     ion_token: StringProperty(name="Ion Token", description="Cesium ion access token (only sent "
                               "to Cesium ion)", subtype='PASSWORD', default="")
@@ -493,9 +525,18 @@ class TilesSceneProps(PropertyGroup):
             ("CUSTOM", "Custom", "Use the latitude / longitude / height entered below"),
             ("SEARCH", "Search place", "Find a place by name (Photon, OpenStreetMap) and put the "
              "origin on the ground there; until a place is picked, behaves like Auto"),
+            ("DATASET", "Dataset", "Put the origin at a dataset of a tileset of tilesets, picked by the "
+             "name of its Empty (cesium-native backend, 'An Empty per dataset'); until one is "
+             "picked, behaves like Auto"),
         ],
         default="AUTO",
     )
+    origin_dataset: StringProperty(
+        name="Dataset",
+        description="Name of a dataset's Empty: the scene origin goes to its centre, at its height "
+                    "(the Empty's Location Z included), and a running stream restarts there. The list "
+                    "holds the datasets loaded so far in this session",
+        default="", search=_dataset_names, update=_on_origin_dataset)
     place_query: StringProperty(
         name="Place", description="Place name to search (Enter runs the search)",
         default="", update=_on_place_query)

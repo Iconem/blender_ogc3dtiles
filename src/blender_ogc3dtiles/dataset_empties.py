@@ -13,7 +13,9 @@ tiles'. U is the Empty's own location, rotation and scale: zero until the user m
 height offset along the vertical (a dataset in geoid heights among ellipsoidal ones). U is remembered per dataset
 URL on the tileset's entry, so it comes back after a Stop, a reload or a restart of Blender.
 
-Level of detail and culling do not know about U: cesium-native selects the tiles where the dataset says it is.
+cesium-native selects tiles where the dataset says it is, so a moved dataset is selected for a camera moved the
+other way: view_offsets() gives, for each distinct U, the matrix that takes the camera there, and the backend
+adds one view per matrix. Level of detail and culling then match what is on screen.
 """
 from __future__ import annotations
 
@@ -28,6 +30,7 @@ PROP = "ogc3dtiles_dataset"            # on the Empty: the external tileset's UR
 CENTRE = "ogc3dtiles_dataset_centre"   # on the Empty: the dataset's centre, ECEF metres
 GENERIC = {"tileset", "cloud", "lod-meta", "metadata", "layer", "ept", "root", "index", "meta", "3dtiles", "tiles"}
 SAVE_EVERY_S = 1.0
+known: dict = {}                       # Empty name -> (URL, ECEF centre) of the datasets seen this session
 
 
 def short_name(url: str) -> str:
@@ -106,6 +109,7 @@ def adopt(scene, st, root, coll, obj_name: str, dataset, frame) -> None:
         if saved and len(saved) == 16:
             e.matrix_basis = Matrix([saved[i:i + 4] for i in range(0, 16, 4)])
         names[url] = e.name
+        known[e.name] = (url, tuple(float(v) for v in centre))
     obj.parent = e
     obj.matrix_parent_inverse = e.matrix_parent_inverse.inverted()
 
@@ -150,6 +154,77 @@ def save(scene, st, now: float | None = None) -> None:
     text = json.dumps(offsets, sort_keys=True) if offsets else ""
     if text != item.dataset_offsets:
         item.dataset_offsets = text
+
+
+MAX_OFFSET_VIEWS = 6
+
+
+def view_offsets(st):
+    """([4x4 ECEF matrices], signature). One matrix per distinct offset among the moved Empties (those with the
+    most tiles first, at most MAX_OFFSET_VIEWS): applied to the camera, it gives the camera that sees the
+    dataset's own position as the real camera sees the moved one."""
+    names = st.get("datasets")
+    if not names:
+        return [], ()
+    from .tileset.native_backend import enu_from_ecef_matrix
+    from .tileset.traversal import ecef_to_geodetic
+    ident = Matrix.Identity(4)
+    moved = []
+    for name in names.values():
+        e = bpy.data.objects.get(name)
+        if e is None or CENTRE not in e:
+            continue
+        m = e.matrix_basis
+        if all(abs(m[i][j] - ident[i][j]) < 1e-6 for i in range(3) for j in range(4)):
+            continue
+        moved.append((len(e.children), e))
+    if not moved:
+        return [], ()
+    moved.sort(key=lambda x: -x[0])
+    out, seen = [], []
+    for _n, e in moved:
+        c = np.asarray(tuple(e[CENTRE]), dtype=np.float64)
+        if float(np.linalg.norm(c)) < 6.0e6:
+            Bd = np.eye(4)
+            Bd[:3, 3] = c
+        else:
+            Bd = np.linalg.inv(enu_from_ecef_matrix(*ecef_to_geodetic(*c)))
+        U = np.array(e.matrix_basis, dtype=np.float64)
+        try:
+            inv = Bd @ np.linalg.inv(U) @ np.linalg.inv(Bd)
+        except np.linalg.LinAlgError:
+            continue
+        key = tuple(np.round(inv[:3, :], 3).ravel())
+        if key in seen:
+            continue
+        seen.append(key)
+        out.append(inv)
+        if len(out) >= MAX_OFFSET_VIEWS:
+            break
+    return out, tuple(seen)
+
+
+def find(name: str):
+    """(latitude, longitude, height) of a dataset by the name of its Empty, or None. The height includes the
+    Empty's Location Z. Datasets seen earlier in the session are found after a Stop too."""
+    from .tileset.traversal import ecef_to_geodetic
+    e = bpy.data.objects.get(name)
+    if e is not None and CENTRE in e:
+        centre, dz = tuple(e[CENTRE]), float(e.location.z)
+    elif name in known:
+        centre, dz = known[name][1], 0.0
+    else:
+        return None
+    if float(np.linalg.norm(centre)) < 6.0e6:
+        return None                                    # not georeferenced
+    lat, lon, h = ecef_to_geodetic(*centre)
+    return float(lat), float(lon), float(h) + dz
+
+
+def names_matching(text: str) -> list:
+    live = {o.name for o in bpy.data.objects if CENTRE in o}
+    t = (text or "").lower()
+    return sorted(n for n in live | set(known) if t in n.lower())
 
 
 def empties(st) -> list:

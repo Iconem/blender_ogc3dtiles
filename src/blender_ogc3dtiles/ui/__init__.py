@@ -937,7 +937,7 @@ class OGC3D_OT_StartStream(Operator):
         # SEARCH: a picked place is a custom origin; before any pick it
         # behaves like Auto (centre on the tileset)
         _state["origin_set"] = props.origin_mode == "CUSTOM" or (
-            props.origin_mode in ("KEEP", "SEARCH") and props.origin_valid)
+            props.origin_mode in ("KEEP", "SEARCH", "DATASET") and props.origin_valid)
 
         started = 0
         for index, item in items:
@@ -1180,6 +1180,48 @@ def _look_at_origin(context):
             r3d.view_rotation = mathutils.Euler((math.radians(60), 0, 0), "XYZ").to_quaternion()
             r3d.view_distance = 1500.0
             area.tag_redraw()
+
+
+def origin_to_dataset(context, props) -> None:
+    """Scene Origin > Dataset: the origin goes to the dataset named in props.origin_dataset. Called from the
+    field's update, so stopping and starting the stream is left to a timer."""
+    from .. import dataset_empties
+    name = props.origin_dataset.strip()
+    if not name:
+        return
+    lla = dataset_empties.find(name)
+    if lla is None:
+        hits = dataset_empties.names_matching(name)
+        lla = dataset_empties.find(hits[0]) if len(hits) == 1 else None
+        if lla is None:
+            props.place_status = (f"No dataset named '{name}'" if not hits
+                                  else f"{len(hits)} datasets match '{name}'")
+            return
+        name = hits[0]
+    scene_name = context.scene.name
+
+    def _apply():
+        scene = bpy.data.scenes.get(scene_name)
+        if scene is None:
+            return None
+        pr = scene.ogc3dtiles
+        was_streaming = pr.is_streaming
+        if was_streaming:
+            bpy.ops.ogc3dtiles.stop_stream()
+        set_origin(pr, *lla)
+        pr.origin_valid = True
+        pr.origin_place = name
+        pr.place_status = f"Origin at {name}: {lla[0]:.5f}, {lla[1]:.5f}, {lla[2]:.0f} m"
+        print(f"[3DTiles] Scene origin: dataset {name} lat={lla[0]:.5f} lon={lla[1]:.5f} h={lla[2]:.1f} m")
+        _look_at_origin(bpy.context)
+        if was_streaming:
+            _start_stream_in_view()
+        for window in bpy.context.window_manager.windows:
+            for area in window.screen.areas:
+                area.tag_redraw()
+        return None
+
+    bpy.app.timers.register(_apply, first_interval=0.05)
 
 
 class OGC3D_OT_PlaceSearch(Operator):
@@ -1926,13 +1968,18 @@ def _tick_native(scene, props, st, now) -> bool:
     view = _view_for(st)
     if view is None:
         return changed
-    need = (view.signature != st["last_sig"] or changed
+    offsets, off_sig = (), ()
+    if st.get("datasets"):                 # datasets moved by their Empty: selected for a camera moved back
+        from .. import dataset_empties
+        offsets, off_sig = dataset_empties.view_offsets(st)
+    need = (view.signature != st["last_sig"] or changed or off_sig != st.get("offsets_sig", ())
             or now - st["last_sel_t"] > SELECTION_MAX_AGE_S)
     if need:
+        st["offsets_sig"] = off_sig
         res = backend.update_view(view.position, view.direction, view.up,
                                   view.viewport_width, view.viewport_height,
                                   view.fov_x, view.fov_y, dt=now - st["last_sel_t"],
-                                  ortho=view.ortho_extents, faces=view.faces)
+                                  ortho=view.ortho_extents, faces=view.faces, offsets=offsets)
         changed |= _apply_visibility(st, set(res.to_render), set(), now)
         st["stats"] = res.stats
         st["last_sig"] = view.signature
@@ -2158,8 +2205,10 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
             col = layout.column(align=True)
             col.alert = True    # Blender's red error tint
             col.label(text=f"cesium-native-python: {status}", icon="ERROR")
-            col.operator("ogc3dtiles.install_cesium_wheel", icon="IMPORT",
-                         text="Install cesium-native-python library")
+            from .. import addon_prefs as _ap
+            if _ap.wheel_install:
+                col.operator("ogc3dtiles.install_cesium_wheel", icon="IMPORT",
+                             text="Install cesium-native-python library")
 
         box = layout.box()
         icon = "RADIOBUT_ON" if props.is_streaming else "RADIOBUT_OFF"
@@ -2345,6 +2394,10 @@ class OGC3D_PT_OriginPanel(_OGC3DSidebar, Panel):
                 layout.label(text=props.place_status, icon="INFO")
             if props.origin_place:
                 layout.label(text=props.origin_place, icon="WORLD")
+        if props.origin_mode == "DATASET":
+            layout.prop(props, "origin_dataset", text="", icon="EMPTY_SINGLE_ARROW")
+            if props.place_status:
+                layout.label(text=props.place_status, icon="INFO")
         col = layout.column()
         col.enabled = props.origin_mode == "CUSTOM"
         col.prop(props, "origin_lat", text="Latitude °")

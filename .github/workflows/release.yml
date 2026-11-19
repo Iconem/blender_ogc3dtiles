@@ -15,6 +15,14 @@ on:
       release_tag:
         description: "Attach the zip to this GitHub Release (created if missing); empty = artifact only"
         default: ""
+      platform_zips:
+        description: "Also build the zips that carry the cesium-native-python wheel (one per platform and Python)"
+        type: boolean
+        default: false
+      publish_extensions:
+        description: "Upload those zips to extensions.blender.org (needs the BLENDER_EXTENSIONS_TOKEN secret)"
+        type: boolean
+        default: false
 
 jobs:
   package:
@@ -63,3 +71,48 @@ jobs:
           gh release view "$TAG" >/dev/null 2>&1 || \
             gh release create "$TAG" --title "$TAG" --notes "OGC 3D Tiles Streaming extension for Blender 4.2+ (tested on 4.5 LTS, 5.1, 5.2 LTS and 5.3 beta). Install: Preferences > Get Extensions > Install from Disk, or 'blender --command extension install-file -r user_default -e $ZIP'. The recommended cesium-native backend is installed from the add-on preferences (Install wheel from GitHub Release), which fetches the pre-built wheel for your Blender's Python from https://github.com/jo-chemla/cesium-native-python/releases."
           gh release upload "$TAG" "$ZIP" --clobber
+
+  # Zips with the wheel inside, for extensions.blender.org: one per platform, for each Python Blender ships
+  # (cp311: Blender 4.2 to 5.0, cp313: 5.1 and later). Run by hand: Actions > release extension > Run workflow.
+  platform-zips:
+    if: github.event_name == 'workflow_dispatch' && inputs.platform_zips
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    strategy:
+      matrix:
+        python: [cp311, cp313]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and validate
+        run: |
+          curl -sSL -o blender.tar.xz https://download.blender.org/release/Blender4.5/blender-4.5.2-linux-x64.tar.xz
+          mkdir blender && tar -xJf blender.tar.xz -C blender --strip-components=1
+          python scripts/build_platform_zips.py --blender ./blender/blender --python ${{ matrix.python }}
+          ls -l dist/platform/${{ matrix.python }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: extension-${{ matrix.python }}
+          path: dist/platform/${{ matrix.python }}/*.zip
+
+      - name: Attach to release
+        if: inputs.release_tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.release_tag }}
+        run: gh release upload "$TAG" dist/platform/${{ matrix.python }}/*.zip --clobber
+
+      # One authenticated POST per zip. The token is made on extensions.blender.org (profile > API tokens)
+      # and kept as a repository secret; it never appears in the workflow or the logs.
+      - name: Upload to extensions.blender.org
+        if: inputs.publish_extensions
+        env:
+          TOKEN: ${{ secrets.BLENDER_EXTENSIONS_TOKEN }}
+        run: |
+          test -n "$TOKEN" || { echo "BLENDER_EXTENSIONS_TOKEN is not set"; exit 1; }
+          for z in dist/platform/${{ matrix.python }}/*.zip; do
+            echo "uploading $z"
+            curl -sS --fail-with-body -X POST               "https://extensions.blender.org/api/v1/extensions/ogc_3dtiles_streaming/versions/upload/"               -H "Authorization: Bearer $TOKEN"               -F "version_file=@$z"               --form-string "release_notes=See https://iconem.github.io/blender_ogc3dtiles/docs/changelog/"
+          done

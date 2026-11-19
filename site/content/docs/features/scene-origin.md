@@ -13,6 +13,7 @@ the east, Y to the north, Z up, in metres.
 | **Keep current** | Never moved once set. |
 | **Custom** | The latitude, longitude and height you type. |
 | **Search place** | A place found by name. |
+| **Dataset** | The centre of a dataset of a [tileset of tilesets](/features/several-tilesets#a-tileset-of-tilesets), picked by name. |
 
 The origin is saved in the .blend. *Reset Origin* forgets it.
 
@@ -47,6 +48,14 @@ moves there and a running stream restarts around it. It is the quickest way to l
 worldwide tileset: Google Photorealistic 3D Tiles, or the WGS84 globe with imagery.
 
 The origin is put on the ground, so the ground sits near z = 0.
+
+## Dataset
+
+A tileset that gathers other tilesets gives each of them a named Empty (cesium-native backend). Set the
+mode to *Dataset* and click the field: it lists the datasets loaded so far in this session, and typing
+filters them. Pick one and the origin goes to its centre, at its height plus the Empty's Location Z; a
+running stream restarts there. A dataset far from the view has not loaded yet, so it is not in the list
+until you have been near it.
 
 ## Terrain tiles and geoid grid
 

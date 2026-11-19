@@ -43,10 +43,14 @@ parented to it. The grouping tiles get none.
   above the ellipsoid.
 - The offset is kept on the tileset's entry, per dataset URL, and saved with the .blend. It comes back
   after a Stop, a reload, or with a dataset that loads later.
-- Tiles are still chosen where the dataset says it is: level of detail and culling do not see the
-  offset. A few tens of metres change nothing you can see. With a large offset and the camera close,
-  tiles come in coarser or finer than asked and can be culled at the edges of the view; give such a
-  dataset its own entry in the list and move its root Empty instead, which streaming follows.
+- Level of detail and culling follow the offset. cesium-native only knows where the dataset says it
+  is, so a moved dataset is also selected for a camera moved the other way, as one more view of the
+  same stream. Measured on a splat dataset moved up 100 m under a camera 200 m above it, looking
+  towards the horizon: without that view 45% of the splats that should be on screen were missing,
+  with it none. The price is some detail in excess, since the tiles of the unmoved view load too.
+  Up to six different offsets are followed per tileset, those of the datasets with most tiles first.
+- The names of the Empties also serve the scene origin: its *Dataset* mode puts the origin at the
+  dataset picked by name. See [Scene origin](/features/scene-origin#dataset).
 - *An Empty per dataset*, under the tileset's boxes in the main panel, turns this off for the tiles
   loaded from then on.
 - A tileset that pages its own hierarchy through external files, as Google Photorealistic 3D Tiles

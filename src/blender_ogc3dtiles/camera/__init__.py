@@ -16,7 +16,8 @@ import math
 import bpy
 from typing import NamedTuple
 
-# (evaluated camera, render depsgraph) while a command-line render waits for a frame's tiles
+# while a render waits for a frame's tiles: (evaluated camera, render depsgraph) on the command line, or
+# {"src": the tuple of _source()} for an F12 render in the window
 RENDER_CAMERA = [None]
 
 from ..tileset.origin import origin_lla
@@ -52,6 +53,48 @@ def find_view3d():
                     best_area = region.width * region.height
                     best = (space.region_3d, region)
     return best if best else (None, None)
+
+
+def border_view(view, win, w, hpx, is_persp, render):
+    """The camera view narrowed to the render border (Ctrl+B in a camera view), so a stream that follows a camera
+    loads the tiles of the part that renders. Returns (view, win, w, hpx, border signature); the inputs unchanged
+    without a border. Perspective: a symmetric view aimed at the border's centre that covers its four corners, at
+    the pixel density the full frame has there (the backends take a symmetric field of view, not an off-centre one).
+    Orthographic: the frame moved and shrunk to the border."""
+    if not getattr(render, "use_border", False):
+        return view, win, w, hpx, ()
+    x0, x1 = float(render.border_min_x), float(render.border_max_x)
+    y0, y1 = float(render.border_min_y), float(render.border_max_y)
+    if x1 - x0 < 1e-4 or y1 - y0 < 1e-4 or (x0 <= 0.0 and y0 <= 0.0 and x1 >= 1.0 and y1 >= 1.0):
+        return view, win, w, hpx, ()
+    import mathutils
+    sig = (round(x0, 4), round(y0, 4), round(x1, 4), round(y1, 4))
+    n = [2.0 * v - 1.0 for v in (x0, x1, y0, y1)]             # NDC: left, right, bottom, top
+    p00, p11 = float(win[0][0]), float(win[1][1])
+    win = win.copy()
+    if not is_persp:
+        cx = ((n[0] + n[1]) / 2.0 - win[0][3]) / p00
+        cy = ((n[2] + n[3]) / 2.0 - win[1][3]) / p11
+        win[0][0] = p00 * 2.0 / (n[1] - n[0]); win[0][3] = 0.0
+        win[1][1] = p11 * 2.0 / (n[3] - n[2]); win[1][3] = 0.0
+        move = mathutils.Matrix.Translation((-cx, -cy, 0.0))
+        return move @ view, win, max(int(w * (x1 - x0)), 1), max(int(hpx * (y1 - y0)), 1), sig
+
+    def ray(nx, ny):                                          # camera space, through an NDC point
+        return mathutils.Vector(((nx + win[0][2]) / p00, (ny + win[1][2]) / p11, -1.0))
+    f = ray((n[0] + n[1]) / 2.0, (n[2] + n[3]) / 2.0).normalized()
+    r_ = f.cross(mathutils.Vector((0.0, 1.0, 0.0))).normalized()
+    u = r_.cross(f)
+    hx = hy = 1e-6
+    for nx in n[:2]:
+        for ny in n[2:]:
+            d = ray(nx, ny)
+            hx = max(hx, abs(d.dot(r_) / d.dot(f))); hy = max(hy, abs(d.dot(u) / d.dot(f)))
+    turn = mathutils.Matrix((r_, u, -f)).to_4x4()             # old camera space -> the narrowed camera's
+    cos2 = max(f.z * f.z, 1e-6)                               # pixels per radian grow off-axis by 1 / cos^2
+    win[0][0] = 1.0 / hx; win[0][2] = 0.0
+    win[1][1] = 1.0 / hy; win[1][2] = 0.0
+    return (turn @ view, win, max(int(hx * w * p00 / cos2), 1), max(int(hy * hpx * p11 / cos2), 1), sig)
 
 
 class CesiumCameraAdapter:
@@ -125,7 +168,7 @@ class CesiumCameraAdapter:
                          p11=p11, p00=p00, is_persp=is_persp,
                          frustum_planes=planes, signature=sig)
 
-    def _source(self, props):
+    def _source(self, props, force_camera=False):
         """(view_matrix, window_matrix, width_px, height_px, is_persp,
         signature) from the 3D viewport, or at the render
         resolution from the scene camera (``view_source`` CAMERA) or from the
@@ -134,7 +177,10 @@ class CesiumCameraAdapter:
         source = getattr(props, "view_source", "VIEWPORT")
         cam = (scene.camera if source == "CAMERA"
                else getattr(props, "view_camera", None) if source == "OBJECT" else None)
-        if RENDER_CAMERA[0] is not None and source == "CAMERA":
+        if isinstance(RENDER_CAMERA[0], dict):
+            # an F12 render in the window: the frame's view, read on the render thread
+            return RENDER_CAMERA[0]["src"] if source == "CAMERA" else None
+        if RENDER_CAMERA[0] is not None and (source == "CAMERA" or force_camera):
             # a command-line render: the camera as the render depsgraph evaluated it for this frame
             # (the original object keeps the frame the file was saved at)
             cam, dg = RENDER_CAMERA[0]
@@ -143,8 +189,11 @@ class CesiumCameraAdapter:
             hpx = max(int(r.resolution_y * r.resolution_percentage / 100), 1)
             win = cam.calc_matrix_camera(dg, x=w, y=hpx, scale_x=r.pixel_aspect_x, scale_y=r.pixel_aspect_y)
             pano = panorama_faces(cam.data, w, hpx) if cam.data.type == "PANO" else None
-            return (cam.matrix_world.inverted(), win, w, hpx, cam.data.type != "ORTHO",
-                    ("CAM", cam.name, scene.frame_current, pano[0] if pano else 0), pano)
+            view, bsig = cam.matrix_world.inverted(), ()
+            if pano is None:
+                view, win, w, hpx, bsig = border_view(view, win, w, hpx, cam.data.type != "ORTHO", r)
+            return (view, win, w, hpx, cam.data.type != "ORTHO",
+                    ("CAM", cam.name, scene.frame_current, pano[0] if pano else 0, bsig), pano)
         if cam is not None:
             r = scene.render
             w = max(int(r.resolution_x * r.resolution_percentage / 100), 1)
@@ -157,8 +206,11 @@ class CesiumCameraAdapter:
                 return None
             view = cam.matrix_world.inverted()
             pano = panorama_faces(cam.data, w, hpx) if cam.data.type == "PANO" else None
+            bsig = ()
+            if pano is None:
+                view, win, w, hpx, bsig = border_view(view, win, w, hpx, cam.data.type != "ORTHO", r)
             return (view, win, w, hpx, cam.data.type != "ORTHO",
-                    ("CAM", cam.name, scene.frame_current, pano[0] if pano else 0), pano)
+                    ("CAM", cam.name, scene.frame_current, pano[0] if pano else 0, bsig), pano)
         r3d, region = find_view3d()
         if r3d is None:
             return None

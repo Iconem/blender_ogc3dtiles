@@ -517,22 +517,61 @@ def _clip_frame_change(scene, depsgraph):
 _clip_frame_change._bpy_persistent = True          # = @bpy.app.handlers.persistent
 
 
+def _render_converged(props, t0, min_wait, frame):
+    """One check of a render's wait: True when the frame's tiles have loaded, or Max wait has passed."""
+    now = time.monotonic()
+    quiet = now - _state.get("last_change_t", now)
+    clip_pending = any(st.get("clip_dirty_t") is not None or st.get("clip_todo")
+                       for st in _state["streams"].values())
+    if (_state.get("pending_total", 1) == 0 and not clip_pending and quiet >= props.render_settle_s
+            and now - t0 >= max(props.render_settle_s, min_wait)):
+        print(f"[3DTiles] frame {frame}: tiles loaded in {now - t0:.1f} s")
+        return True
+    if now - t0 >= props.render_max_wait_s:
+        print(f"[3DTiles] frame {frame}: Max wait ({props.render_max_wait_s:.0f} s) "
+              f"reached with {_state.get('pending_total', '?')} tiles still loading, rendered as is")
+        return True
+    return False
+
+
 def _render_converge(scene, depsgraph):
-    """Command-line renders (blender -b -a / -f): before each frame renders, stream for the scene camera
-    as the render depsgraph evaluated it and wait until the tiles have loaded. Blender runs this
-    frame_change_post handler between evaluating the frame and rendering it, and evaluates again after
-    it, so the tiles built here are in the frame. F12 and Ctrl+F12 run render handlers on the render
-    job's thread, where tiles cannot be built: those are skipped, Render converged animation is the
-    window's way."""
+    """Renders that Blender drives (blender -b -a / -f, F12, Ctrl+F12): before each frame renders, stream for
+    the scene camera as the render depsgraph evaluated it and wait until the tiles have loaded. Blender runs
+    this frame_change_post handler between evaluating the frame and rendering it, and evaluates again after
+    it, so the tiles built here are in the frame.
+
+    The command line runs it on the main thread: the wait is a loop of stream ticks. F12 and Ctrl+F12 run it
+    on the render job's thread, where tiles cannot be built: there it hands the frame's view to
+    _render_handoff_tick (a main-thread timer, the window keeps running during a render) and sleeps until that
+    says the tiles are in. The render thread touches nothing while the main thread builds."""
     import threading
     props = getattr(scene, "ogc3dtiles", None)
-    if (props is None or depsgraph is None or depsgraph.mode != "RENDER" or not bpy.app.background
-            or not props.render_converge_cli or threading.current_thread() is not threading.main_thread()):
+    if props is None or depsgraph is None or depsgraph.mode != "RENDER" or not props.render_converge_cli:
         return
     if scene.camera is None or not any(it.enabled for it in props.tilesets):
         return
     from .. import camera as _camera
     from ..io import _render_pre
+    cam = scene.camera.evaluated_get(depsgraph)
+    if threading.current_thread() is not threading.main_thread():
+        if bpy.app.background or not _state["streams"]:
+            return                      # no stream to wait for
+        _camera.RENDER_CAMERA[0] = (cam, depsgraph)
+        try:                            # the view as plain matrices: the main thread must not read this depsgraph
+            src = _camera.CesiumCameraAdapter(scene)._source(props, force_camera=True)
+        finally:
+            _camera.RENDER_CAMERA[0] = None
+        if src is None:
+            return
+        req = {"scene_name": scene.name, "src": src, "frame": scene.frame_current,
+               "done": threading.Event(), "t0": None}
+        _state["render_req"] = req
+        if not req["done"].wait(props.render_max_wait_s + 10.0):
+            print("[3DTiles] render: the window did not answer, frame rendered as is")
+        _render_pre(scene, cam=cam)
+        return
+    if not bpy.app.background:
+        return
     first = not _state["streams"]       # a fresh session (the saved file may still say streaming)
     if first:
         props.is_streaming = False
@@ -540,7 +579,6 @@ def _render_converge(scene, depsgraph):
         if "FINISHED" not in bpy.ops.ogc3dtiles.start_stream():
             print("[3DTiles] command-line render: streaming could not start, rendering as is")
             return
-    cam = scene.camera.evaluated_get(depsgraph)
     _camera.RENDER_CAMERA[0] = (cam, depsgraph)
     prev_source = props.view_source
     props.view_source = "CAMERA"
@@ -550,23 +588,65 @@ def _render_converge(scene, depsgraph):
     try:
         while True:
             stream_tick(bpy.context)
-            now = time.monotonic()
-            quiet = now - _state.get("last_change_t", now)
-            clip_pending = any(st.get("clip_dirty_t") is not None or st.get("clip_todo")
-                               for st in _state["streams"].values())
-            if (_state.get("pending_total", 1) == 0 and not clip_pending and quiet >= props.render_settle_s
-                    and now - t0 >= max(props.render_settle_s, min_wait)):
-                print(f"[3DTiles] frame {scene.frame_current}: tiles loaded in {now - t0:.1f} s")
-                break
-            if now - t0 >= props.render_max_wait_s:
-                print(f"[3DTiles] frame {scene.frame_current}: Max wait ({props.render_max_wait_s:.0f} s) "
-                      f"reached with {_state.get('pending_total', '?')} tiles still loading, rendered as is")
+            if _render_converged(props, t0, min_wait, scene.frame_current):
                 break
             time.sleep(0.03)
         _render_pre(scene, cam=cam)                 # point sizes from this frame's camera
     finally:
         _camera.RENDER_CAMERA[0] = None
         props.view_source = prev_source
+
+
+def _render_handoff_tick():
+    """Main-thread half of an F12 / Ctrl+F12 render (see _render_converge). While the render lasts the streams
+    follow the frame being rendered, not the viewport, so its tiles stay as they are while it renders; the
+    viewport's view comes back when the render ends."""
+    try:
+        from .. import camera as _camera
+        req = _state.get("render_req")
+        hold = _state.get("render_hold")           # (scene name, view_source before the render)
+        if req is None:
+            if hold is not None and _state.pop("render_release", False):
+                _camera.RENDER_CAMERA[0] = None
+                sc = bpy.data.scenes.get(hold[0])
+                if sc is not None:
+                    sc.ogc3dtiles.view_source = hold[1]
+                _state["render_hold"] = None
+            return 0.1
+        scene = bpy.data.scenes.get(req["scene_name"])
+        if scene is None:
+            req["done"].set(); _state["render_req"] = None
+            return 0.1
+        props = scene.ogc3dtiles
+        if req["t0"] is None:
+            if hold is None:
+                _state["render_hold"] = (scene.name, props.view_source)
+            _state.pop("render_release", None)
+            _camera.RENDER_CAMERA[0] = {"src": req["src"]}
+            if props.view_source != "CAMERA":
+                props.view_source = "CAMERA"
+            req["t0"] = _state["last_change_t"] = time.monotonic()
+        if not _state["streams"]:                   # the stream is driven by its own modal timer; none left
+            req["done"].set(); _state["render_req"] = None
+            return 0.1
+        stream_tick(bpy.context)
+        if _render_converged(props, req["t0"], 0.0, req["frame"]):
+            req["done"].set(); _state["render_req"] = None
+            return 0.05
+        return 0.03
+    except Exception as e:                           # noqa: BLE001 — never leave the render thread waiting
+        print(f"[3DTiles] render wait failed: {e}")
+        req = _state.get("render_req")
+        if req is not None:
+            req["done"].set(); _state["render_req"] = None
+        return 0.5
+
+
+def _render_release(*_args):
+    _state["render_release"] = True
+
+
+_render_release._bpy_persistent = True
 
 
 _render_converge._bpy_persistent = True             # = @bpy.app.handlers.persistent
@@ -2838,45 +2918,6 @@ _classes = [
 ]
 
 
-PANEL_CATEGORY = OGC3D_PT_MainPanel.bl_category
-SIDEBAR_TRIES = 25          # every 0.2 s: the window and its tabs appear after a draw
-
-
-def _open_sidebar_tick(tries=[0]):                   # noqa: B006
-    """Open each window's largest 3D Viewport's sidebar on our tab. A region only
-    accepts a tab once it has drawn its tabs, so this retries until then."""
-    if not addon_pref("open_sidebar", True):
-        return None
-    pending = not bpy.context.window_manager.windows
-    for win in bpy.context.window_manager.windows:
-        areas = [a for a in win.screen.areas if a.type == "VIEW_3D"]
-        if not areas:
-            continue
-        area = max(areas, key=lambda a: a.width * a.height)
-        area.spaces.active.show_region_ui = True
-        region = next((r for r in area.regions if r.type == "UI"), None)
-        try:
-            if region is not None and region.active_panel_category != PANEL_CATEGORY:
-                region.active_panel_category = PANEL_CATEGORY
-                area.tag_redraw()
-        except (AttributeError, TypeError):          # no tabs yet
-            pending = True
-            area.tag_redraw()
-    tries[0] += 1
-    if pending and tries[0] < SIDEBAR_TRIES:
-        return 0.2
-    tries[0] = 0
-    return None
-
-
-def _open_sidebar(*_args):
-    if not bpy.app.background and not bpy.app.timers.is_registered(_open_sidebar_tick):
-        bpy.app.timers.register(_open_sidebar_tick, first_interval=0.2)
-
-
-_open_sidebar._bpy_persistent = True               # = @bpy.app.handlers.persistent
-
-
 EYE_TIMER_S = 0.15
 
 
@@ -2911,9 +2952,11 @@ def register():
         bpy.app.handlers.frame_change_post.append(_clip_frame_change)
     if _render_converge not in bpy.app.handlers.frame_change_post:
         bpy.app.handlers.frame_change_post.append(_render_converge)
-    if _open_sidebar not in bpy.app.handlers.load_post:
-        bpy.app.handlers.load_post.append(_open_sidebar)
-    _open_sidebar()
+    for h in (bpy.app.handlers.render_complete, bpy.app.handlers.render_cancel):
+        if _render_release not in h:
+            h.append(_render_release)
+    if not bpy.app.background and not bpy.app.timers.is_registered(_render_handoff_tick):
+        bpy.app.timers.register(_render_handoff_tick, first_interval=1.0, persistent=True)
 
 
 def unregister():
@@ -2925,10 +2968,11 @@ def unregister():
         bpy.app.handlers.frame_change_post.remove(_clip_frame_change)
     if _render_converge in bpy.app.handlers.frame_change_post:
         bpy.app.handlers.frame_change_post.remove(_render_converge)
-    if _open_sidebar in bpy.app.handlers.load_post:
-        bpy.app.handlers.load_post.remove(_open_sidebar)
-    if bpy.app.timers.is_registered(_open_sidebar_tick):
-        bpy.app.timers.unregister(_open_sidebar_tick)
+    for h in (bpy.app.handlers.render_complete, bpy.app.handlers.render_cancel):
+        if _render_release in h:
+            h.remove(_render_release)
+    if bpy.app.timers.is_registered(_render_handoff_tick):
+        bpy.app.timers.unregister(_render_handoff_tick)
     for st in _state["streams"].values():
         dm = st.get("download_mgr")
         if dm:

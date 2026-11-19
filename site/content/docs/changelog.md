@@ -25,11 +25,13 @@ main branch and not in a release zip yet.
   they live on the *Media: screenshots* and *Media: videos* releases, and `scripts/docs-media.mjs` pulls them
   before the site and the decks build.
 
-- **Command-line renders wait for their tiles.** `blender -b scene.blend -a` (or `-f`) streams for
-  the scene camera and, before each frame renders, waits until its tiles have loaded, with the Render
-  panel's Warm-up, Settle and Max wait. A frame that reaches Max wait says how many tiles were still
-  loading. F12 and Ctrl+F12 render on another thread, where tiles can't load: *Render converged
-  animation* stays the way there. See [Rendering](/features/rendering#from-the-command-line).
+- **Blender's own renders wait for their tiles: F12, Ctrl+F12 and the command line.** Before each frame
+  renders, the add-on streams for the scene camera and waits until its tiles have loaded, with the Render
+  panel's Settle and Max wait. A frame that reaches Max wait says how many tiles were still loading. In
+  the window a stream must be running; `blender -b scene.blend -a` (or `-f`) starts one, with the Warm-up.
+  See [Rendering](/features/rendering#f12-ctrlf12-and-the-command-line).
+- **The render border (Ctrl+B in a camera view) narrows what a camera stream loads**: only the tiles of
+  the part that renders, for *Stream for* Scene camera or Chosen camera, and in renders.
 - **The Atmosphere preset no longer deletes your World's nodes.** The sky is an `OGC3D Sky` group
   plugged into the World's output, next to the nodes already there, or in a new *3D Tiles Sky* World
   (the world-icon button). The beauty compositor keeps a compositor tree of yours and puts it back when
@@ -38,9 +40,14 @@ main branch and not in a release zip yet.
   by the Python backend, and cesium-native stayed at 20 loads. The default is 20.
 - *Own SSE* is now the checkbox next to **Tileset Max SSE**. *Imports / tick* and *Build ms while
   navigating* are in a folded **Viewport Performance** section of LOD / Streaming.
-- **Preferences**: the cesium-native status and install button at the top; the backend choice, Direct
-  mesh, the wheel source and the timing comparison in a folded *Developer* section. The maintainer and
-  the website come from the extension manifest.
+- **Preferences**: the cesium-native status and install button at the top; labels and fields share a
+  row; *Material controls* is the first beta feature; the backend choice, Direct mesh, the wheel source
+  and the timing comparison are in a folded *Developer* section. The maintainer and the website come
+  from the extension manifest. *Open the 3D Tiles sidebar* is gone: the add-on no longer opens the
+  sidebar when Blender starts or a file loads.
+- `scripts/build_platform_zips.py` builds extension zips with the cesium-native-python wheel inside, one per
+  platform (Windows x64, Linux x64, macOS ARM, Blender 5.1 and later), the form extensions.blender.org needs.
+  The zip on the Releases page stays pure Python, with the wheel installed from the preferences.
 - Tiles imported through the glTF importer find their shader nodes by type, so they work with
   Blender's *Translate New Data* on.
 

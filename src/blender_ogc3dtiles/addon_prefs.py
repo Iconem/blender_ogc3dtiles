@@ -137,11 +137,6 @@ class OGC3DTilesPreferences(AddonPreferences):
         description="Trimmed to this size, least recently used first, when the first stream of a "
                     "session starts. 0 = no cap. cesium-native also keeps at most 4096 responses",
         default=10.0, min=0.0, soft_max=200.0)
-    open_sidebar: BoolProperty(
-        name="Open the 3D Tiles sidebar",
-        description="When Blender starts or a file loads, open the sidebar of each window's "
-                    "largest 3D Viewport on the 3D Tiles tab",
-        default=True)
     mapped_drives_as_unc: BoolProperty(
         name="Mapped drives as UNC",
         description="When browsing to a tileset on a mapped network drive (Z:), store its "
@@ -197,51 +192,68 @@ class OGC3DTilesPreferences(AddonPreferences):
 
         # ── cesium-native backend: status, and the install button while it is missing ──
         ok, status = probe_cesium()
+        layout.use_property_split = True
+        layout.use_property_decorate = False
         box = layout.box()
-        col = box.column()
-        col.alert = not ok
-        col.label(text=f"cesium-native-python:  {status}", icon="CHECKMARK" if ok else "ERROR")
-        row = box.row(align=True)
-        if not ok:
+        if ok:                                   # one row: status on the left, small buttons on the right
+            row = box.row()
+            row.label(text=f"cesium-native-python:  {status}", icon="CHECKMARK")
+            sub = row.row(align=True)
+            sub.alignment = "RIGHT"
+            sub.operator("ogc3dtiles.install_cesium_wheel", icon="IMPORT", text="Reinstall")
+            sub.operator("ogc3dtiles.reload_cesium", icon="FILE_REFRESH", text="")
+        else:
+            col = box.column()
+            col.alert = True
+            col.label(text=f"cesium-native-python:  {status}", icon="ERROR")
+            row = box.row(align=True)
             row.scale_y = 1.4
-        row.operator("ogc3dtiles.install_cesium_wheel", icon="IMPORT",
-                     text="Reinstall wheel from GitHub Release" if ok else "Install cesium-native-python library")
-        row.operator("ogc3dtiles.reload_cesium", icon="FILE_REFRESH", text="")
-
-        layout.prop(self, "open_sidebar")
+            row.operator("ogc3dtiles.install_cesium_wheel", icon="IMPORT",
+                         text="Install cesium-native-python library")
+            row.operator("ogc3dtiles.reload_cesium", icon="FILE_REFRESH", text="")
 
         # ── Cache / library ───────────────────────────────────────────────────
         boxc = layout.box()
         boxc.label(text="Cache, local tilesets, library", icon="FILE_CACHE")
-        boxc.prop(self, "cache_dir")
-        row = boxc.row(align=True)
-        row.prop(self, "cache_max_gb")
+        col = boxc.column()
+        col.prop(self, "cache_dir", text="Cache Folder")
+        row = col.row(align=True)
+        row.prop(self, "cache_max_gb", text="Size Cap (GB)")
         row.operator("ogc3dtiles.cache_trim", text="", icon="BRUSH_DATA")
-        boxc.prop(self, "cache_network_files")
-        boxc.prop(self, "mapped_drives_as_unc")
-        boxc.prop(self, "library_files", text="Libraries")
+        col.prop(self, "cache_network_files")
+        col.prop(self, "mapped_drives_as_unc")
+        row = col.row(align=True)
+        row.prop(self, "library_files", text="Libraries")
+        row.operator("ogc3dtiles.library_add_file", text="", icon="FILEBROWSER")
         import os
         from . import library as _library
         for p in _library.split_paths(self.library_files):
-            boxc.operator("ogc3dtiles.library_edit", text=f"Edit {os.path.basename(p)} in a text editor",
-                          icon="TEXT").path = p
-        boxc.operator("ogc3dtiles.library_add_file", text="Add library file…", icon="FILEBROWSER")
+            split = col.split(factor=0.4)
+            split.alignment = "RIGHT"
+            split.label(text="")
+            row = split.row()
+            row.label(text=os.path.basename(p), icon="TEXT")
+            sub = row.row()
+            sub.alignment = "RIGHT"
+            sub.operator("ogc3dtiles.library_edit", text="Edit", icon="GREASEPENCIL").path = p
 
         # ── Place search ───────────────────────────────────────────────────────
         boxp = layout.box()
         boxp.label(text="Place search (Scene Origin)", icon="VIEWZOOM")
-        boxp.prop(self, "photon_url", text="Geocoder")
-        boxp.prop(self, "terrain_tiles_url", text="Terrain tiles")
-        boxp.prop(self, "geoid_url", text="Geoid grid")
+        col = boxp.column()
+        col.prop(self, "photon_url", text="Geocoder")
+        col.prop(self, "terrain_tiles_url", text="Terrain Tiles")
+        col.prop(self, "geoid_url", text="Geoid Grid")
 
         # ── Beta features ──────────────────────────────────────────────────────
         boxb = layout.box()
         boxb.label(text="Beta features", icon="EXPERIMENTAL")
-        boxb.prop(self, "beta_phases")
-        sub = boxb.row()
+        col = boxb.column()
+        col.prop(self, "beta_material_controls")
+        col.prop(self, "beta_phases")
+        sub = col.row()
         sub.active = self.beta_phases
         sub.prop(self, "beta_phase_strokes")
-        boxb.prop(self, "beta_material_controls")
 
         # ── Developer, folded: backend choice, mesh path, wheel source, profiling ──
         head, body = layout.panel("ogc3d_prefs_developer", default_closed=True)

@@ -41,15 +41,20 @@ waits for the tiles of each frame, then renders it.
 Frames go to the scene's Output path, one file per frame, with the scene's output settings. ESC
 cancels. The sidebar shows the frame, the queue length and how long the scene has been quiet.
 
-### From the command line
+### F12, Ctrl+F12 and the command line
 
-`blender -b scene.blend -a` (or `-f 12` for one frame) waits for the tiles too: the add-on starts
-streaming for the scene camera, and before each frame renders, waits with the same Warm-up, Settle and
-Max wait. Each frame prints how long it took, or how many tiles were still loading when Max wait
-was reached. *Converge command-line renders* in the Render panel turns it off.
+Blender's own renders wait for the tiles too. Before each frame renders, the add-on streams for the
+scene camera as that frame has it, and waits with the same Settle and Max wait. Each frame prints how
+long it took, or how many tiles were still loading when Max wait was reached. *Wait for tiles in
+Blender renders* in the Render panel turns it off.
 
-F12 and Ctrl+F12 in the Blender window can't do this: Blender renders them on a separate thread, where
-the add-on can't load tiles. Use *Render converged animation* there.
+- **F12 and Ctrl+F12** need a stream that is running. While the render lasts the tiles follow the frame
+  being rendered; the viewport's view comes back when it ends.
+- **`blender -b scene.blend -a`** (or `-f 12` for one frame) starts streaming itself, with the Warm-up
+  before the first frame.
+
+With a render border (Ctrl+B in a camera view), a stream that follows a camera loads only the tiles of
+the part that renders.
 
 Tips:
 

@@ -831,11 +831,10 @@ class TilesSceneProps(PropertyGroup):
         default=10.0, min=0.0, max=600.0,
     )
     render_converge_cli: BoolProperty(
-        name="Converge command-line renders",
-        description="blender -b file.blend -a (or -f): stream for the scene camera and, before each "
-                    "frame renders, wait until its tiles have loaded (Warm-up, Settle time, Max wait). "
-                    "F12 and Ctrl+F12 in the Blender window render on a separate thread, where the "
-                    "add-on cannot load tiles: use Render converged animation there",
+        name="Wait for tiles in Blender renders",
+        description="F12, Ctrl+F12 and blender -b file.blend -a (or -f): before each frame renders, stream "
+                    "for the scene camera and wait until its tiles have loaded (Settle time, Max wait). "
+                    "In the window a stream must be running; the command line starts one (Warm-up)",
         default=True,
     )
     render_max_wait_s: FloatProperty(

@@ -906,6 +906,15 @@ def build_tile_from_payload(payload: dict, key: str, scene: bpy.types.Scene,
             me.normals_split_custom_set_from_vertices(np.ascontiguousarray(nrm, dtype=np.float32))
         except Exception:
             pass
+    elif n_f:
+        # No normals in the tile (Google Photorealistic, most photogrammetry): Blender averages each vertex's
+        # faces. Tiles end in a skirt, a near-vertical band that hides cracks between levels of detail; averaged
+        # in, it bends the normals along every tile edge and each tile shades like a pillow, most visible on
+        # flat water. Edges sharper than SKIRT_SHARP_DEG split the normals instead.
+        try:
+            me.set_sharp_from_angle(angle=float(np.radians(SKIRT_SHARP_DEG)))
+        except Exception:                       # noqa: BLE001
+            pass
     if not n_f and payload.get("points") and nrm is not None and len(nrm) == n_v:
         try:                                    # oriented disc splats
             na = me.attributes.new(NORMAL_ATTR, "FLOAT_VECTOR", "POINT")
@@ -993,6 +1002,9 @@ def build_tile_from_payload(payload: dict, key: str, scene: bpy.types.Scene,
     obj.hide_render = hidden
     obj.select_set(False)
     return obj.name, data_names
+
+
+SKIRT_SHARP_DEG = 50.0
 
 
 def apply_payload_offset(matrix_rows, payload):

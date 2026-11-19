@@ -25,6 +25,9 @@ main branch and not in a release zip yet.
   they live on the *Media: screenshots* and *Media: videos* releases, and `scripts/docs-media.mjs` pulls them
   before the site and the decks build.
 
+- **Tiles no longer shade like pillows.** Tiles without normals (Google Photorealistic 3D Tiles, most
+  photogrammetry) showed every tile's outline under a light, most of all on flat water: the skirt around
+  each tile bent the normals along its edges. Edges sharper than 50 degrees now split the normals.
 - **Globe navigation (beta prototype)**, a folded panel of the sidebar. The wheel zooms about the point under
   the cursor, middle drag orbits around it, Shift+middle drag grabs the globe; everything else stays Blender's.
   An *OGC3D Globe* Empty carries every tileset, and objects parented to it move with the planet. Far from the

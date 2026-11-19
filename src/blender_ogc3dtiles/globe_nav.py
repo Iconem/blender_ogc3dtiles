@@ -16,6 +16,13 @@ Everything else passes through to Blender. Objects parented to the Globe Empty m
 The point under the cursor comes from the viewport's depth buffer, copied on each redraw while the mode is on;
 where nothing is drawn, from a sphere through the scene origin.
 
+A thin frame around the 3D view shows that the mode is on (a tick box of the panel).
+
+Scene origin: the Globe remembers the origin its transform belongs to. When something else moves the origin (a
+place search, the origin fields, the first tileset of a Start), the Globe goes back to the identity at 1:1, so
+the new origin sits at the Blender origin as it does without the Globe; objects parented to the Globe keep their
+place on the Earth.
+
 Re-anchor: once the gestures stop, the Globe's transform is folded into a new scene origin under the view, and
 the loaded tiles are placed again from their ECEF matrices in double precision. Tile coordinates stay small
 however far the view has travelled. What you see does not move.
@@ -34,6 +41,10 @@ except ImportError:                                  # the test suite imports th
     Matrix = Quaternion = Vector = None
 
 GLOBE = "OGC3D Globe"
+ORIGIN_MARK = "ogc3dtiles_globe_origin"     # on the Globe: the scene origin its transform belongs to
+FRAME_SHARE = 0.05          # the frame drawn while the mode is on: this share of the region's shorter side
+FRAME_COLOUR = (0.02, 0.05, 0.10, 0.35)
+FRAME_LINE = (0.35, 0.62, 1.0, 0.85)        # a thin line along the inside of the frame
 D_FAR = 2000.0              # eye-to-cursor-point distance beyond which the wheel scales the Globe
 ZOOM_STEP = 1.2
 ORBIT_RAD_PER_PX = 0.0065
@@ -42,7 +53,7 @@ REANCHOR_IDLE_S = 0.4
 REANCHOR_MIN_M = 2000.0     # the view centre must be this far from the scene origin (metres on the ground)
 MIN_SCALE = 1e-8
 
-_nav = {"active": False, "draw": None, "depth": {}, "last_t": 0.0, "dirty": False, "drag": None,
+_nav = {"active": False, "draw": None, "draw_px": None, "depth": {}, "last_t": 0.0, "dirty": False, "drag": None,
         "last_view": None, "cap_ms": 0.0, "anchors": 0}
 
 
@@ -94,10 +105,59 @@ def globe(create_in=None):
     g.empty_display_size = 1.0
     g["ogc3dtiles_globe"] = True
     create_in.collection.objects.link(g)
+    _mark_origin(g, create_in.ogc3dtiles)
     for o in bpy.data.objects:
         if o.get("ogc3dtiles_root") and o.parent is None:
             adopt_root(o, fresh=False)
     return g
+
+
+def _mark_origin(g, props) -> None:
+    from .tileset.origin import origin_lla
+    if props.origin_valid:
+        g[ORIGIN_MARK] = [float(v) for v in origin_lla(props)]
+    elif ORIGIN_MARK in g:
+        del g[ORIGIN_MARK]
+
+
+def _local_frame(lla) -> bool:
+    return lla[0] >= 89.999 and lla[2] < -6.0e6          # ui._frame_is_local: a tileset that is not georeferenced
+
+
+def sync_origin(scene, force: bool = False) -> bool:
+    """Bring the Globe in line with the scene origin. Its transform only means something for the origin it was
+    made with (re-anchor moves both together). When the origin moved by another way, or with ``force``, the
+    Globe returns to the identity, 1:1, and the objects parented to it keep their place on the Earth.
+    Returns True when the Globe moved."""
+    from .tileset.origin import origin_lla
+    g = globe()
+    props = getattr(scene, "ogc3dtiles", None)
+    if g is None or props is None or not props.origin_valid:
+        return False
+    cur = tuple(float(v) for v in origin_lla(props))
+    try:
+        old = tuple(float(v) for v in g[ORIGIN_MARK])
+    except Exception:                                # noqa: BLE001 — a Globe from before the mark
+        old = None
+    moved = old is not None and (abs(old[0] - cur[0]) > 1e-9 or abs(old[1] - cur[1]) > 1e-9 or abs(old[2] - cur[2]) > 1e-4)
+    G0 = _np(g.matrix_world)
+    if not ((moved or force) and not np.allclose(G0, np.eye(4), rtol=0.0, atol=1e-9)):
+        g[ORIGIN_MARK] = list(cur)
+        return False
+    ref = old if old is not None else cur
+    geo = not (_local_frame(ref) or _local_frame(cur))
+    D = _E(cur) @ np.linalg.inv(_E(ref)) @ np.linalg.inv(G0) if geo else None
+    riders = [(o, _np(o.matrix_world)) for o in bpy.data.objects
+              if o.parent is not None and o.parent.name == GLOBE and not o.get("ogc3dtiles_root")] if D is not None else []
+    g.matrix_world = Matrix.Identity(4)
+    if riders:
+        bpy.context.view_layer.update()
+        for o, world in riders:
+            o.matrix_world = _mx(D @ world)
+    g[ORIGIN_MARK] = list(cur)
+    _nav["depth"] = {}
+    _nav["dirty"] = False
+    return True
 
 
 def adopt_root(root, fresh: bool) -> None:
@@ -157,6 +217,51 @@ def _capture():
         _nav["cap_ms"] = (time.perf_counter() - t0) * 1000.0
     except Exception as e:                           # noqa: BLE001 — never break the viewport's drawing
         _nav["cap_err"] = str(e)
+
+
+def _draw_frame():
+    """Draw callback (pixels): a thin translucent frame and a label, so the mode is visible."""
+    if not _nav["active"]:
+        return
+    try:
+        import blf
+        import gpu
+        from gpu_extras.batch import batch_for_shader
+        ctx = bpy.context
+        region = ctx.region
+        if region is None or not getattr(ctx.window_manager, "ogc3d_globe_frame", True):
+            return
+        w, h = region.width, region.height
+        t = max(4.0, FRAME_SHARE * min(w, h))
+        quads = [(0, 0, w, t), (0, h - t, w, h), (0, t, t, h - t), (w - t, t, w, h - t)]
+        verts, idx = [], []
+        for x0, y0, x1, y1 in quads:
+            n = len(verts)
+            verts += [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+            idx += [(n, n + 1, n + 2), (n, n + 2, n + 3)]
+        shader = gpu.shader.from_builtin("UNIFORM_COLOR")
+        batch = batch_for_shader(shader, "TRIS", {"pos": verts}, indices=idx)
+        gpu.state.blend_set("ALPHA")
+        shader.bind()
+        shader.uniform_float("color", FRAME_COLOUR)
+        batch.draw(shader)
+        px = max(1.0, round(1.5 * ctx.preferences.system.ui_scale))
+        line = [(t, t, w - t, t + px), (t, h - t - px, w - t, h - t), (t, t, t + px, h - t), (w - t - px, t, w - t, h - t)]
+        verts = [c for x0, y0, x1, y1 in line for c in ((x0, y0), (x1, y0), (x1, y1), (x0, y1))]
+        batch = batch_for_shader(shader, "TRIS", {"pos": verts}, indices=idx)
+        shader.uniform_float("color", FRAME_LINE)
+        batch.draw(shader)
+        gpu.state.blend_set("NONE")
+        size = 11.0 * ctx.preferences.system.ui_scale
+        if t >= size * 1.5:
+            text = "Globe navigation"
+            blf.size(0, size)
+            blf.color(0, 1.0, 1.0, 1.0, 0.8)
+            tw, th = blf.dimensions(0, text)
+            blf.position(0, (w - tw) / 2.0, t / 2.0 - th / 2.0, 0)       # at the bottom: the header covers the top
+            blf.draw(0, text)
+    except Exception as e:                           # noqa: BLE001 — never break the viewport's drawing
+        _nav["frame_err"] = str(e)
 
 
 def _ray(region, rv3d, x, y):
@@ -338,7 +443,7 @@ def grab_update(context, drag, region, rv3d, x, y):
 def reanchor(context, anchor_world) -> bool:
     """Make the point ``anchor_world`` the scene origin, without moving anything on screen. The Globe ends up as
     that point's east-north-up frame (times its scale); tiles are placed again from their ECEF matrices."""
-    from . import ui
+    from . import dataset_empties, ui
     from .tileset.origin import origin_lla, set_origin
     from .tileset.traversal import ecef_to_geodetic
     scene = context.scene
@@ -367,16 +472,22 @@ def reanchor(context, anchor_world) -> bool:
         par = o.parent
         if par is None or o.name in holders:
             continue
+        if dataset_empties.PROP in o:                      # a dataset's Empty: placed again below, as the tiles
+            continue
         if (par.name == GLOBE and o.name not in geo_roots) or par.name in geo_roots:
             keep.append((o, o.matrix_world.copy()))
 
     set_origin(props, lat, lon, h)
     g.matrix_world = _mx(G1)
+    _mark_origin(g, props)
     for name, ecef in holders.items():
         o = bpy.data.objects.get(name)
         if o is None:
             continue
         o.matrix_basis = _mx(E1 @ ecef if ecef is not None else D @ _np(o.matrix_basis))
+    for st in streams:
+        if st.get("frame") is None:
+            dataset_empties.refresh(st, (lat, lon, h))
     context.view_layer.update()
     for o, world in keep:
         o.matrix_world = world
@@ -440,9 +551,12 @@ class OGC3D_OT_GlobeNav(Operator):
         if context.scene.ogc3dtiles is None:
             return {"CANCELLED"}
         globe(create_in=context.scene)
+        sync_origin(context.scene)
         _nav.update(active=True, drag=None, dirty=False, depth={})
         if _nav["draw"] is None:
             _nav["draw"] = bpy.types.SpaceView3D.draw_handler_add(_capture, (), "WINDOW", "POST_VIEW")
+        if _nav["draw_px"] is None:
+            _nav["draw_px"] = bpy.types.SpaceView3D.draw_handler_add(_draw_frame, (), "WINDOW", "POST_PIXEL")
         self._timer = context.window_manager.event_timer_add(0.2, window=context.window)
         context.window_manager.modal_handler_add(self)
         for a in context.window.screen.areas:
@@ -451,9 +565,7 @@ class OGC3D_OT_GlobeNav(Operator):
 
     def _end(self, context):
         context.window_manager.event_timer_remove(self._timer)
-        if _nav["draw"] is not None:
-            bpy.types.SpaceView3D.draw_handler_remove(_nav["draw"], "WINDOW")
-            _nav["draw"] = None
+        _remove_draw()
         _nav.update(active=False, drag=None, depth={})
         for a in context.window.screen.areas:
             a.tag_redraw()
@@ -463,7 +575,12 @@ class OGC3D_OT_GlobeNav(Operator):
         if not _nav["active"]:
             return self._end(context)
         if event.type == "TIMER":
-            _maybe_reanchor(context)
+            if sync_origin(context.scene):             # the origin moved by a search or the fields
+                _nav["drag"] = None
+                for a in context.window.screen.areas:
+                    a.tag_redraw()
+            else:
+                _maybe_reanchor(context)
             return {"PASS_THROUGH"}
         drag = _nav["drag"]
         if drag is not None:
@@ -524,6 +641,13 @@ class OGC3D_OT_GlobeNav(Operator):
         area.tag_redraw()
 
 
+def _remove_draw():
+    for k in ("draw", "draw_px"):
+        if _nav[k] is not None:
+            bpy.types.SpaceView3D.draw_handler_remove(_nav[k], "WINDOW")
+            _nav[k] = None
+
+
 def _context_view(context):
     space = context.space_data
     if space is None or space.type != "VIEW_3D":
@@ -567,6 +691,15 @@ class OGC3D_OT_GlobeReanchor(Operator):
     bl_idname = "ogc3dtiles.globe_reanchor"
     bl_label = "Re-anchor Scene Origin"
 
+    @classmethod
+    def poll(cls, context):
+        # the point under the view comes from the depth Globe Navigation captures: without it the origin would
+        # go to the view's pivot, anywhere above or below the ground
+        if not _nav["active"]:
+            cls.poll_message_set("Turn Globe Navigation on first")
+            return False
+        return True
+
     def execute(self, context):
         cv = _context_view(context)
         if cv is None or globe(create_in=context.scene) is None:
@@ -579,6 +712,24 @@ class OGC3D_OT_GlobeReanchor(Operator):
             self.report({"WARNING"}, "No georeferenced scene origin to move")
             return {"CANCELLED"}
         context.area.tag_redraw()
+        return {"FINISHED"}
+
+
+class OGC3D_OT_GlobeReset(Operator):
+    """Put the Globe back in place: the scene origin at the Blender origin, north along +Y, 1:1, and the 3D views looking at it. The way out when the planet has gone out of sight"""
+    bl_idname = "ogc3dtiles.globe_reset"
+    bl_label = "Reset Globe"
+
+    def execute(self, context):
+        if globe() is None:
+            return {"CANCELLED"}
+        sync_origin(context.scene, force=True)
+        from . import ui
+        ui._look_at_origin(context)
+        for st in ui._state["streams"].values():
+            st["last_sig"] = None
+        for a in context.window.screen.areas:
+            a.tag_redraw()
         return {"FINISHED"}
 
 
@@ -636,21 +787,25 @@ class OGC3D_PT_GlobeNav(Panel):
         sub.operator("ogc3dtiles.globe_scale_reset", text="To 1:1")
         layout.operator("ogc3dtiles.globe_reanchor", icon="PIVOT_CURSOR")
         layout.operator("ogc3dtiles.globe_parent", icon="CON_CHILDOF")
+        layout.operator("ogc3dtiles.globe_reset", icon="LOOP_BACK")
+        layout.prop(context.window_manager, "ogc3d_globe_frame")
 
 
-_classes = (OGC3D_OT_GlobeNav, OGC3D_OT_GlobeScaleReset, OGC3D_OT_GlobeReanchor, OGC3D_OT_GlobeParent,
+_classes = (OGC3D_OT_GlobeNav, OGC3D_OT_GlobeScaleReset, OGC3D_OT_GlobeReanchor, OGC3D_OT_GlobeParent, OGC3D_OT_GlobeReset,
             OGC3D_PT_GlobeNav)
 
 
 def register():
     for c in _classes:
         bpy.utils.register_class(c)
+    bpy.types.WindowManager.ogc3d_globe_frame = bpy.props.BoolProperty(
+        name="Frame while active", default=True,
+        description="Draw a thin frame around the 3D view while Globe Navigation is on")
 
 
 def unregister():
     _nav["active"] = False
-    if _nav["draw"] is not None:
-        bpy.types.SpaceView3D.draw_handler_remove(_nav["draw"], "WINDOW")
-        _nav["draw"] = None
+    _remove_draw()
+    del bpy.types.WindowManager.ogc3d_globe_frame
     for c in reversed(_classes):
         bpy.utils.unregister_class(c)

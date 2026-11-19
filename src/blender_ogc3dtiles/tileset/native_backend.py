@@ -261,6 +261,14 @@ class _GlbPreparer:
             self._owner.tile_volumes[load_result.key] = volume_shape(tile.bounding_volume)
         except Exception:                     # noqa: BLE001
             pass
+        try:                                  # the dataset of an aggregate tileset this tile belongs to
+            ds = _dataset_of(tile, self._owner._dataset_cache)
+            if ds is not None:
+                self._owner.tile_dataset[load_result.key] = ds
+        except Exception as exc:              # noqa: BLE001
+            if not self._owner._dataset_warned:
+                self._owner._dataset_warned = True
+                print("[3DTiles/native] dataset of %s: %r" % (load_result.key, exc))
         if self._owner.read_metadata:
             try:                              # where the tile sits in the hierarchy
                 level, up = 0, tile.parent
@@ -287,6 +295,7 @@ class _GlbPreparer:
         if rt is not None:
             self._owner.tile_info.pop(rt.key, None)
             self._owner.tile_volumes.pop(rt.key, None)
+            self._owner.tile_dataset.pop(rt.key, None)
             with self._owner._lock:
                 self._owner._freed.append(rt.key)
             for p in [rt.glb_path] + list(rt.aux_files):
@@ -426,6 +435,39 @@ def _volume_excluder(base, boxes, mode, joined):
             return all(j.should_exclude(tile) for j in joined)
 
     return VolumeExcluder()
+
+
+def _flag(v) -> bool:
+    return bool(v() if callable(v) else v)
+
+
+def _dataset_of(tile, cache):
+    """(URL, ECEF centre) of the dataset a tile belongs to, or None. A dataset is the topmost external tileset
+    above the tile, and only when everything above it is a grouping tile without content: an aggregate
+    tileset.json, a tree of cells whose leaves are other tilesets. A tileset that pages its own hierarchy
+    through external files (Google Photorealistic 3D Tiles) has content above them and gets no dataset."""
+    top, up, n = None, tile.parent, 0
+    chain = []
+    while up is not None and n < 256:
+        chain.append(up)
+        up, n = up.parent, n + 1
+    # the last of the chain is cesium-native's own root, an external tile standing for the tileset.json itself
+    for i, t in enumerate(chain[:-1]):
+        if _flag(t.is_external_content):
+            top = i
+    if top is None:
+        return None
+    ext = chain[top]
+    url = ext.tile_id_string
+    url = str(url() if callable(url) else url)
+    if not url:
+        return None
+    hit = cache.get(url)
+    if hit is None:
+        ok = all(not _flag(t.is_render_content) for t in chain[top + 1:])
+        from ..dataset_empties import volume_centre
+        hit = cache[url] = (url, volume_centre(volume_shape(ext.bounding_volume))) if ok else False
+    return hit or None
 
 
 def volume_shape(bv):
@@ -581,6 +623,9 @@ class CesiumNativeBackend:
         self.read_metadata = bool(read_metadata)
         self.tile_info = {}                     # tile key -> {column: value} (feature_meta.TILE_COLUMNS)
         self.tile_volumes = {}                  # tile key -> volume_shape(), in ECEF
+        self.tile_dataset = {}                  # tile key -> (external tileset URL, its centre in ECEF)
+        self._dataset_cache = {}
+        self._dataset_warned = False
         self.voxel_grids = bool(voxel_grids)    # keep the whole grid of voxel tiles (Volume, lookup)
         self.voxel_exaggeration = float(voxel_exaggeration)
         self.direct_mesh = bool(direct_mesh)   # numpy -> bpy mesh instead of GLB re-import

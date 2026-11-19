@@ -419,6 +419,8 @@ class TilesetItem(PropertyGroup):
                            "this tileset when 'Override Max SSE' is ticked; lower = finer tiles. Live",
                            default=8.0, min=1.0, max=512.0, update=_on_item_sse)
     uid: StringProperty(default="", options={'HIDDEN'})
+    # dataset_empties: {external tileset URL: the 16 numbers of its Empty's own matrix}, as JSON
+    dataset_offsets: StringProperty(default="", options={'HIDDEN'})
     overlays: CollectionProperty(type=OverlayItem)
     active_overlay: IntProperty(default=0)
     use_clipping: BoolProperty(
@@ -695,6 +697,14 @@ class TilesSceneProps(PropertyGroup):
         name="Point radius (m)", description="Uniform point radius",
         default=0.08, min=0.001, max=50.0, update=_on_point_radius,
     )
+    dataset_empties: BoolProperty(
+        name="An Empty per dataset",
+        description="In a tileset that only gathers other tilesets (an aggregate of datasets), give each "
+                    "dataset an Empty under the tileset's root and parent its tiles to it. The Empty sits at "
+                    "the dataset's centre with Z up: its Location Z is a height offset, kept with the scene. "
+                    "Tiles are still selected where the dataset says it is. cesium-native backend; applies "
+                    "to tiles loaded from now on",
+        default=True)
     read_metadata: BoolProperty(
         name="Read feature metadata",
         description="Keep each tile's feature table: columns become vertex attributes "

@@ -1169,6 +1169,8 @@ def _start_stream_in_view():
 def _look_at_origin(context):
     """Point the 3D views at the new origin from 1.5 km, 60° down."""
     import mathutils
+    from .. import globe_nav
+    globe_nav.sync_origin(context.scene)
     for window in context.window_manager.windows:
         for area in window.screen.areas:
             if area.type != "VIEW_3D":
@@ -1324,12 +1326,17 @@ def _teardown_stream(st, remove_objects: bool):
         except Exception:
             pass
     st["backend"] = None
+    from .. import dataset_empties
     if remove_objects:
         root = bpy.data.objects.get(st.get("root_obj") or "")
         if root is not None:                         # clipping objects outlive the root
-            for o in [o for o in root.children if "tile_url" not in o and not o.get("tile_bbox")]:
+            for o in [o for o in root.children
+                      if "tile_url" not in o and not o.get("tile_bbox") and dataset_empties.PROP not in o]:
                 _unparent_clip_object(o)
-        remove_tiles([(rec.holder, rec.data) for rec in st["tiles"].values()], extra_objects=[root])
+        dataset_empties.save(bpy.context.scene, st)
+        remove_tiles([(rec.holder, rec.data) for rec in st["tiles"].values()],
+                     extra_objects=[root, *dataset_empties.empties(st)])
+        st.pop("datasets", None)
         st["tiles"].clear()
         from .. import clip_nodes
         clip_nodes.forget_groups(st["key"])
@@ -1445,11 +1452,16 @@ def stream_tick(context) -> bool:
     scene = context.scene
     props = scene.ogc3dtiles
     now = time.monotonic()
+    from .. import globe_nav
+    globe_nav.sync_origin(scene)                     # an origin moved by a search or the fields: the Globe follows
     changed = _sync_streams(scene, props, now)
     _update_view(scene, props)
     loaded = pending = visible = 0
     parts = []
     for st in _state["streams"].values():
+        if st.get("datasets"):
+            from .. import dataset_empties
+            dataset_empties.save(scene, st, now)       # the Empties the user moved, kept on the tileset's entry
         if st["backend"] is None:
             continue
         if st.get("paused"):
@@ -1817,6 +1829,10 @@ def _build_native_tile(scene, props, st, rt) -> bool:
             from ..tileset.native_backend import enu_from_ecef_matrix
             rec.ecef = np.linalg.solve(enu_from_ecef_matrix(*frame), ecef)
         st["dirty"] = True
+        ds = getattr(st["backend"], "tile_dataset", {}).get(rt.key) if props.dataset_empties else None
+        if ds is not None:
+            from .. import dataset_empties
+            dataset_empties.adopt(scene, st, root_obj, coll, r[0], ds, frame)
         info = getattr(st["backend"], "tile_info", {}).get(rt.key)
         if info:
             from ..io import set_tile_info
@@ -2201,6 +2217,10 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
                                              if it.overlays else "Raster overlays"))
             if it.use_overlays:
                 _draw_overlays(b, it, st)
+            n_ds = len(st.get("datasets") or ()) if st is not None else 0
+            if n_ds or not props.dataset_empties:      # only where it does something: an aggregate of datasets
+                layout.prop(props, "dataset_empties",
+                            text=f"An Empty per dataset ({n_ds})" if n_ds else "An Empty per dataset")
             b = layout.box()
             b.prop(it, "use_clipping", text=(f"Clipping ({len(it.clip_polygons)})"
                                              if it.clip_polygons else "Clipping"))

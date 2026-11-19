@@ -759,7 +759,7 @@ class OGC3D_PT_GlobeNav(Panel):
     bl_category = "3D Tiles"
     bl_label = "Globe Navigation (beta)"
     bl_idname = "OGC3D_PT_globe_nav"
-    bl_order = 8
+    bl_parent_id = "OGC3D_PT_origin"          # a folded section of Scene Origin: both move the origin
     bl_options = {"DEFAULT_CLOSED"}
 
     @classmethod

@@ -5,7 +5,7 @@ description: "The phases timeline and other experiments"
 
 ## Globe navigation
 
-A folded panel of the sidebar, *Globe Navigation (beta)*, for moving around a whole planet without the view
+A folded section of the sidebar's *Scene Origin* panel, *Globe Navigation (beta)*, for moving around a whole planet without the view
 running out of precision or of clipping range. Press **Globe Navigation**; a thin blue frame around the 3D
 view shows it is on, and the same button stops it.
 

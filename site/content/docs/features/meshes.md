@@ -15,6 +15,8 @@ Mesh tilesets are the most common kind: photogrammetry of a site, a city model, 
 3D Tiles. Add the `tileset.json` and press Start. Each tile becomes a Blender mesh with its own
 material and texture.
 
+![The sea off Nice on Google Photorealistic 3D Tiles in the Solid view. Left, before: every tile bulges like a pillow. Right, now: the water is flat, with only thin tile outlines left](/img/skirt_normals.jpg)
+
 ## What is read
 
 | | |
@@ -31,6 +33,10 @@ goes through Blender's glTF importer, which on some Blender versions does not re
 - **Level of detail**: *Max SSE* in LOD / Streaming. Lower is finer and heavier.
 - **Back faces**: most photogrammetry is single-sided. *Faces*, in Nodes: Material, is on *Force
   double-sided* by default, so cut or open meshes show their inside.
+- **Normals**: most photogrammetry, Google Photorealistic 3D Tiles included, comes without normals,
+  and Blender computes them. The skirt that hangs around each tile to hide cracks used to bend them
+  along the tile's edges, so every tile shaded like a pillow. Edges sharper than 50 degrees now split
+  the normals. The picture above shows the sea off Nice in the Solid view, before and after.
 - **Lighting**: photogrammetry carries its light in its textures.
   [Nodes: Material Shader](/features/nodes-material) mixes it with Blender's lamps.
 - **Edges and relief**: [Nodes: Compositor](/features/nodes-compositor) adds creases, ambient

@@ -24,6 +24,8 @@ terrain need it.
 2. Press **Install cesium-native-python library**, at the top.
 3. Restart Blender.
 
+![The add-on preferences: the cesium-native-python row with its version and Reinstall button on top, then the cache and library files, the place search services, and the beta features](/img/preferences.jpg)
+
 No compiler is needed: the button downloads the build that matches your Blender and your system
 (Linux x86_64, Windows x64, macOS arm64) and installs it into Blender's own Python.
 

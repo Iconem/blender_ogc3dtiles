@@ -30,6 +30,28 @@ Ion, globe and terrain entries need the cesium-native backend.
 - Each tileset has a root Empty, `3D Tiles · <name>`, and a collection, `Tiles · <name>`. Move, rotate
   or scale the Empty to place the tileset; streaming follows.
 
+## A tileset of tilesets
+
+A `tileset.json` can be nothing but a tree of grouping tiles whose leaves are other tilesets, one per
+dataset: every survey of a city, every dataset of a server. With the cesium-native backend each of
+those datasets gets its own Empty under the tileset's root, named after the dataset, and its tiles are
+parented to it. The grouping tiles get none.
+
+- The Empty appears with the dataset's first tile, at the dataset's centre, with its Z along the local
+  vertical. Its location, rotation and scale start at zero: what you type there is an offset.
+  **Location Z** is a height offset, for a dataset whose heights are above the geoid among others
+  above the ellipsoid.
+- The offset is kept on the tileset's entry, per dataset URL, and saved with the .blend. It comes back
+  after a Stop, a reload, or with a dataset that loads later.
+- Tiles are still chosen where the dataset says it is: level of detail and culling do not see the
+  offset. A few tens of metres change nothing you can see. With a large offset and the camera close,
+  tiles come in coarser or finer than asked and can be culled at the edges of the view; give such a
+  dataset its own entry in the list and move its root Empty instead, which streaming follows.
+- *An Empty per dataset*, under the tileset's boxes in the main panel, turns this off for the tiles
+  loaded from then on.
+- A tileset that pages its own hierarchy through external files, as Google Photorealistic 3D Tiles
+  does, has no datasets and gets no extra Empty.
+
 ## Level of detail
 
 **Max SSE** (LOD / Streaming panel) applies to every tileset, live. Lower is finer and heavier. Tick

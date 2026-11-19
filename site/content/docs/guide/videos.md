@@ -11,8 +11,8 @@ what the converged animation render does.
 
 <video src="/video/highlights.mp4" poster="/video/highlights.jpg" controls loop preload="none" muted playsinline style="width:100%;height:auto;aspect-ratio:auto 16/9;border-radius:8px"></video>
 
-Six of the rendered clips below in one 36 second reel: Giza, Venice, Tokyo, Notre-Dame, the three camera
-projections and the Colosseum clip box.
+Seven of the rendered clips below in one 42 second reel: Giza, Venice, Tokyo, Notre-Dame, the Bayon, the three
+camera projections and the Colosseum clip box.
 
 ## In the Blender window
 

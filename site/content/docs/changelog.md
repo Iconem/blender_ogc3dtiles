@@ -25,6 +25,16 @@ main branch and not in a release zip yet.
   they live on the *Media: screenshots* and *Media: videos* releases, and `scripts/docs-media.mjs` pulls them
   before the site and the decks build.
 
+- **An Empty per dataset in a tileset of tilesets** (cesium-native backend). When a `tileset.json` only gathers
+  other tilesets, each of them gets an Empty under the tileset's root, at its centre with Z up, and its tiles
+  are parented to it. Typing a Location Z on it shifts that one dataset in height (geoid against ellipsoid);
+  the offset is kept per dataset URL with the scene. Level of detail and culling do not see the offset. See
+  [A tileset of tilesets](/features/several-tilesets#a-tileset-of-tilesets).
+- **Globe navigation: a place search now shows the place.** With the Globe scaled or turned, a search or a new
+  scene origin left the view looking at nothing; the Globe now returns to 1:1 at the new origin, and objects
+  parented to it keep their place on the Earth. *Re-anchor Scene Origin* is greyed while Globe Navigation is
+  off, where it used the view's pivot instead of the ground. A thin frame around the 3D view shows the mode is
+  on. See [Globe navigation](/features/beta#globe-navigation).
 - **Tiles no longer shade like pillows.** Tiles without normals (Google Photorealistic 3D Tiles, most
   photogrammetry) showed every tile's outline under a light, most of all on flat water: the skirt around
   each tile bent the normals along its edges. Edges sharper than 50 degrees now split the normals.

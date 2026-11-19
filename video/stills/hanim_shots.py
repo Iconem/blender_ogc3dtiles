@@ -112,7 +112,10 @@ elif shot == "a_bayon_split":
     lo, hi = bounds(); c = (lo + hi) / 2; sz = min((hi - lo).length, 1500.0); ang = math.radians(-60)
     e0 = c + Vector((0.5 * sz * math.cos(ang), 0.5 * sz * math.sin(ang), 0.33 * sz)); tgt = c + Vector((0, 0, -0.08 * sz))
     e1 = tgt + (e0 - tgt) * 0.82
-    P.max_screen_space_error = 3; look_at(cam, e0, tgt); converge(200, min_wait=20)
+    # every tile the push-in needs loads here, from the widest view at the detail of the closest one; the stream is
+    # then paused, so no tile swaps for a finer one while the frames render (the first take popped)
+    P.max_screen_space_error = 3 * 0.8; look_at(cam, e0, tgt); converge(400, settle=3.0, min_wait=30)
+    for it_ in P.tilesets: it_.enabled = False
     sc.render.film_transparent = False; light_bg((0.97, 0.97, 0.97))
     d = os.path.join(OUT, "anim_" + shot); os.makedirs(d, exist_ok=True)
     W, H = sc.render.resolution_x, sc.render.resolution_y
@@ -120,17 +123,23 @@ elif shot == "a_bayon_split":
     def px(path):
         im = bpy.data.images.load(path); a = np.empty(W * H * 4, np.float32); im.pixels.foreach_get(a)
         bpy.data.images.remove(im); return a.reshape(H, W, 4)
-    N = 168; t0 = time.monotonic()
+    # two runs of this shot, PASS=eevee first: a 4 GB card does not hold the Cycles scene and EEVEE's textures at
+    # once (EEVEE crashed in GPU_texture_update right after the first Cycles frame)
+    N = 168; t0 = time.monotonic(); PASS = os.environ.get("PASS", "")
     for i in range(N):
         t = i / (N - 1)
         fp = os.path.join(d, "f_%04d.png" % i)
         if os.path.exists(fp) and os.path.getsize(fp) > 100000: continue     # resume after a timeout
-        look_at(cam, e0.lerp(e1, ease(t)), tgt); bpy.context.view_layer.update(); converge(25, settle=0.35)
+        look_at(cam, e0.lerp(e1, ease(t)), tgt); bpy.context.view_layer.update()
+        b_ = os.path.join(d, "albedo_%04d.png" % i)
+        if PASS == "eevee":
+            if os.path.exists(b_) and os.path.getsize(b_) > 100000: continue
+            eevee(16); relight(Albedo_Strength=1.0, Baked_Light=1.0)
+            P.comp_enabled = True; P.comp_edges = "EDL"; P.comp_edl_strength = 10.0; P.comp_ao = 0.0; P.comp_haze = 0.0
+            sc.render.filepath = b_; bpy.ops.render.render(write_still=True)
+            log("albedo %d/%d, %.0f s so far" % (i + 1, N, time.monotonic() - t0)); continue
         cycles(32); P.comp_enabled = False; relight(Albedo_Strength=0.0, Baked_Light=0.0)
         a_ = os.path.join(d, "clay.png"); sc.render.filepath = a_; bpy.ops.render.render(write_still=True)
-        eevee(16); relight(Albedo_Strength=1.0, Baked_Light=1.0)
-        P.comp_enabled = True; P.comp_edges = "EDL"; P.comp_edl_strength = 10.0; P.comp_ao = 0.0; P.comp_haze = 0.0
-        b_ = os.path.join(d, "albedo.png"); sc.render.filepath = b_; bpy.ops.render.render(write_still=True)
         A, B = px(a_), px(b_)
         p = 0.5 + 0.3 * math.sin(2 * math.pi * t)                          # the line sweeps and comes back: loops
         s = (u - 0.25 * v) - (p - 0.125)                                    # a diagonal leaning right
@@ -139,8 +148,8 @@ elif shot == "a_bayon_split":
         line = np.abs(s) * W < 1.5; out[line] = (1, 1, 1, 1)
         im = bpy.data.images.new("split", W, H, alpha=True); im.pixels.foreach_set(out.astype(np.float32).ravel())
         im.filepath_raw = os.path.join(d, "f_%04d.png" % i); im.file_format = "PNG"; im.save(); bpy.data.images.remove(im)
-        log("frame %d/%d, %.0f s so far" % (i + 1, N, time.monotonic() - t0))
-    for f_ in ("clay.png", "albedo.png"): os.remove(os.path.join(d, f_))
+        os.remove(b_); log("frame %d/%d, %.0f s so far" % (i + 1, N, time.monotonic() - t0))
+    if PASS != "eevee": os.remove(os.path.join(d, "clay.png"))
 elif shot == "a_venice":
     # Piazza San Marco in the Solid view, a slow dolly across the square
     at(45.43395, 12.33905); add("Venice flyover"); grey_world(1.0)

@@ -7,6 +7,13 @@ A few short clips, without sound. The first two are screen captures of Blender. 
 frame: on each frame the camera moves, the tiles for that view finish loading, and then the frame renders. That is
 what the converged animation render does.
 
+## Highlights
+
+<video src="/video/highlights.mp4" poster="/video/highlights.jpg" controls loop preload="none" muted playsinline style="width:100%;height:auto;aspect-ratio:auto 16/9;border-radius:8px"></video>
+
+Six of the rendered clips below in one 36 second reel: Giza, Venice, Tokyo, Notre-Dame, the three camera
+projections and the Colosseum clip box.
+
 ## In the Blender window
 
 <video src="/video/camera_split_rome.mp4" poster="/video/camera_split_rome.jpg" controls muted playsinline preload="none" style="width:100%;height:auto;aspect-ratio:auto 16/9;border-radius:8px"></video>
@@ -62,5 +69,26 @@ relit by the sun, on every tile at once.
 <video src="/video/canyon.mp4" poster="/video/canyon.jpg" autoplay loop muted playsinline style="width:100%;height:auto;aspect-ratio:auto 16/9;border-radius:8px"></video>
 
 **The Grand Canyon from Yavapai Point.** Google Photorealistic 3D Tiles in EEVEE.
+
+<video src="/video/notredame_tiles.mp4" poster="/video/notredame_tiles.jpg" autoplay loop muted playsinline style="width:100%;height:auto;aspect-ratio:auto 16/9;border-radius:8px"></video>
+
+**One colour per tile, Notre-Dame.** Left of the line: Google Photorealistic 3D Tiles in EEVEE. Right: the same
+tiles, each in its own colour. As the camera pushes in, the tiles split into smaller, more detailed ones.
+
+<video src="/video/camera_projections.mp4" poster="/video/camera_projections.jpg" autoplay loop muted playsinline style="width:100%;height:auto;aspect-ratio:auto 16/9;border-radius:8px"></video>
+
+**One camera, three projections, at the Colosseum.** Perspective, then orthographic straight down, then
+panoramic, in Cycles. The inset is a top view of the tiles that camera selected, each in its own colour, with
+its view volume in white: a pyramid, a box, then every direction around the camera.
+
+<video src="/video/colosseum_clip.mp4" poster="/video/colosseum_clip.jpg" autoplay loop muted playsinline style="width:100%;height:auto;aspect-ratio:auto 16/9;border-radius:8px"></video>
+
+**A clip box closes in on the Colosseum.** Google Photorealistic 3D Tiles in EEVEE. The box shrinks from the
+city to the amphitheatre, and the tiles are cut as it moves.
+
+<video src="/video/sanpietro_xray.mp4" poster="/video/sanpietro_xray.jpg" autoplay loop muted playsinline style="width:100%;height:auto;aspect-ratio:auto 16/9;border-radius:8px"></video>
+
+**X-ray on San Pietro.** The interior mesh seen from outside. X-ray fades in on the shared shader, and the nave
+and the chapels appear through the walls.
 
 The scripts that made these clips are in the repository (see [Screencasts](/dev/screencasts)).

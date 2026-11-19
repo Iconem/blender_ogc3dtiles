@@ -19,6 +19,7 @@ def anim(frames, step, wait=25.0, settle=0.35):
     open(os.path.join(d, "done.txt"), "w").write("%d frames" % frames)
 
 reset(); res(1280, 720)
+if hasattr(P, "render_converge_cli"): P.render_converge_cli = False   # these scripts converge themselves
 if shot == "a_gizeh":
     # Khafre and Khufu, Workbench with the normal matcap, a slow orbit around the pair
     add("Gizeh /"); P.origin_mode = "AUTO"; P.origin_valid = False; sky(38, 215)
@@ -169,6 +170,142 @@ elif shot == "a_tokyo":
     start(cam, 6, wait=360, min_wait=40)
     eevee(32)
     anim(144, lambda i, t: look_at(cam, eye(t), tgt), wait=40)
+elif shot in ("a_tiles", "a_cameras"):
+    # a_tiles: Notre-Dame, Google tiles in EEVEE against every tile in its own colour, split by a moving diagonal,
+    #   while the camera pushes in and the tiles refine.
+    # a_cameras: one camera, three projections (perspective, orthographic, panoramic), Cycles, with a top view inset
+    #   of the tiles it selected and its view volume.
+    import numpy as np
+    from mathutils import Quaternion
+    d = os.path.join(OUT, "anim_" + shot); os.makedirs(d, exist_ok=True)
+    W, H = 1280, 720
+    def px(path):
+        im = bpy.data.images.load(path); w_, h_ = im.size; a = np.empty(w_ * h_ * 4, np.float32); im.pixels.foreach_get(a)
+        bpy.data.images.remove(im); return a.reshape(h_, w_, 4)
+    def save(out, i):
+        im = bpy.data.images.new("comp", W, H, alpha=True); im.pixels.foreach_set(out.astype(np.float32).ravel())
+        im.filepath_raw = os.path.join(d, "f_%04d.png" % i); im.file_format = "PNG"; im.save(); bpy.data.images.remove(im)
+    def pass_(name, cam_):
+        sc.camera = cam_; q = os.path.join(d, name + ".png"); sc.render.filepath = q
+        bpy.ops.render.render(write_still=True); return px(q)
+    def rot(v, deg):
+        a = math.radians(deg); return Vector((v.x * math.cos(a) - v.y * math.sin(a), v.x * math.sin(a) + v.y * math.cos(a), v.z))
+    t0 = time.monotonic(); SSE_ = 10 if shot == "a_tiles" else 16      # horizon views: 6 never settles
+    if shot == "a_tiles":
+        at(48.85296, 2.35010); add(GOOGLE); sky(32, 200, 0.8)
+        tgt = Vector((0, 10, 25)); v0 = Vector((-20, -420, 260)) - tgt
+        def eye(t): return tgt + rot(v0, -20 + 40 * ease(t)) * (1.15 - 0.4 * ease(t))
+        cam = camera("Cam", eye(0), tgt, 32)
+        start(cam, SSE_, wait=300, min_wait=30)
+        yy, xx = np.mgrid[0:H, 0:W]; u = xx / W; v = yy / H
+        N = 168
+        for i in range(N):
+            t = i / (N - 1)
+            if os.path.exists(os.path.join(d, "f_%04d.png" % i)): continue
+            look_at(cam, eye(t), tgt); bpy.context.view_layer.update(); converge(40, settle=0.35)
+            eevee(32); A = pass_("beauty", cam)
+            tile_colours(); workbench("OBJECT"); B = pass_("tiles", cam)
+            p = 0.5 + 0.3 * math.sin(2 * math.pi * t)
+            s_ = (u - 0.25 * v) - (p - 0.125)
+            m = np.clip(s_ * W / 1.5, -1, 1) * 0.5 + 0.5                    # tiles on the right
+            out = A * (1 - m[..., None]) + B * m[..., None]; out[np.abs(s_) * W < 1.5] = (1, 1, 1, 1)
+            save(out, i); log("frame %d/%d, %.0f s so far" % (i + 1, N, time.monotonic() - t0))
+    else:
+        at(41.89021, 12.49223); add(GOOGLE); sky(40, 200, 0.8)
+        e_p = Vector((-480, -420, 160)); v_p = Vector((0, 0, 25)) - e_p
+        cam = camera("Cam", e_p, (0, 0, 25), 28)
+        start(cam, SSE_, wait=300, min_wait=30)
+        S, M = 400, 18; N = 168; seg = N // 3
+        down = Vector((0, 0, -1)).to_track_quat("-Z", "Y")
+        for i in range(N):
+            k, j = divmod(i, seg); t = j / (seg - 1)
+            if os.path.exists(os.path.join(d, "f_%04d.png" % i)): continue
+            cd = cam.data
+            if k == 0:                       # perspective: the view swings across the Colosseum
+                cd.type = "PERSP"; cd.lens = 28; look_at(cam, e_p, e_p + rot(v_p, -16 + 32 * ease(t)))
+                mc, ms, ml = Vector((650, 520, 0)), 3600, 1300; rx, ry = W, H
+            elif k == 1:                     # orthographic, straight down: zoom in and turn
+                cd.type = "ORTHO"; cd.ortho_scale = 760 - 360 * ease(t); cd.clip_end = 5000
+                cam.location = (0, 0, 1500); cam.rotation_quaternion = Quaternion((0, 0, 1), math.radians(25 * ease(t))) @ down
+                mc, ms, ml = Vector((0, 0, 0)), 1300, 1600; rx, ry = W, H
+            else:                            # panoramic: the camera walks up to the arena
+                cd.type = "PANO"
+                try: cd.panorama_type = "EQUIRECTANGULAR"
+                except Exception: cd.cycles.panorama_type = "EQUIRECTANGULAR"
+                e = Vector((-60, -330, 35)).lerp(Vector((-60, -150, 35)), ease(t)); look_at(cam, e, e + Vector((0, 1, 0)))
+                mc, ms, ml = e.copy(), 2600, 0; rx, ry = W, 640
+            res(rx, ry); bpy.context.view_layer.update()
+            converge(120 if j == 0 else 40, settle=0.35)
+            cycles(24); sc.render.film_transparent = False; A = pass_("view", cam)
+            tile_colours()
+            if k < 2:
+                segs = frustum_segs(cam, ml)
+            else:
+                c0 = cam.location.copy(); R = 220; st_ = math.pi / 24
+                segs = [(c0 + Vector((R * math.cos(a), R * math.sin(a), 0)), c0 + Vector((R * math.cos(a + st_), R * math.sin(a + st_), 0))) for a in [n * st_ for n in range(48)]]
+                segs += [(c0 + Vector(a) * 120, c0 + Vector(b) * 120) for a, b in [((-1,-1,0),(1,-1,0)),((1,-1,0),(1,1,0)),((1,1,0),(-1,1,0)),((-1,1,0),(-1,-1,0)),((-1,-1,0),(1,1,0)),((1,-1,0),(-1,1,0))]]
+            fr = tube_lines("Frustum", segs, colour=(1, 1, 1), radius=ms / 300)
+            tc = top_cam(mc, ms); workbench("OBJECT"); sc.display.shading.show_shadows = False
+            res(S, S); B = pass_("top", tc)
+            cu, mt = fr.data, fr.data.materials[0]; bpy.data.objects.remove(fr); bpy.data.curves.remove(cu); bpy.data.materials.remove(mt)
+            res(W, H)
+            out = np.empty((H, W, 4), np.float32); out[:] = (0.08, 0.08, 0.08, 1)
+            o_ = (H - A.shape[0]) // 2; out[o_:o_ + A.shape[0]] = A
+            y1, x1 = H - M, W - M                                           # top-right corner (rows from the bottom)
+            out[y1 - S - 3:y1 + 3, x1 - S - 3:x1 + 3] = (1, 1, 1, 1); out[y1 - S:y1, x1 - S:x1] = B
+            save(out, i); log("frame %d/%d, %.0f s so far" % (i + 1, N, time.monotonic() - t0))
+    for f_ in os.listdir(d):
+        if not f_.startswith("f_"): os.remove(os.path.join(d, f_))
+elif shot == "a_colosseum_clip":
+    # the Colosseum, Google tiles in EEVEE: a clip box closes in from the city to the amphitheatre
+    at(41.89021, 12.49223); it = add(GOOGLE); sky(40, 200, 0.8)
+    me = bpy.data.meshes.new("Clip box")
+    me.from_pydata([(x, y, z) for x in (-1, 1) for y in (-1, 1) for z in (0, 1)], [],
+                   [(0, 1, 3, 2), (4, 6, 7, 5), (0, 4, 5, 1), (2, 3, 7, 6), (0, 2, 6, 4), (1, 5, 7, 3)])
+    box = bpy.data.objects.new("Clip box", me); sc.collection.objects.link(box)
+    box.scale = (900, 800, 120); box.location = (0, 0, -30); box.hide_render = True
+    c = it.clip_polygons.add(); c.obj = box; c.shape = "BOX"
+    it.clip_mode = "KEEP_ANY"; it.use_clipping = True
+    tgt = Vector((0, 0, -10)); v0 = Vector((520, -560, 380)) - tgt
+    def eye(t):
+        a = math.radians(-14 + 28 * ease(t))
+        return tgt + Vector((v0.x * math.cos(a) - v0.y * math.sin(a), v0.x * math.sin(a) + v0.y * math.cos(a), v0.z))
+    cam = camera("Cam", eye(0), tgt, 42)
+    start(cam, 6, wait=300, min_wait=30)
+    eevee(32); sc.render.film_transparent = True
+    def step(i, t):
+        k = ease((t - 0.1) / 0.6)
+        box.scale = (900 + (190 - 900) * k, 800 + (160 - 800) * k, 120)
+        look_at(cam, eye(t), tgt)
+    anim(144, step, wait=40)
+elif shot == "a_xray":
+    # the San Pietro interior mesh from outside: X-ray fades in and the nave appears through the walls
+    at(41.90219, 12.45334); add("Interior 473M, quantized JPEG"); grey_world(1.0, (1, 1, 1))
+    cam = camera("Cam", (0, -600, 400), (0, 0, 0), 32)
+    start(cam, 6, wait=60, min_wait=25)
+    lo, hi = bounds(); c = (lo + hi) / 2; sz = (hi - lo).length
+    def eye(t):
+        a = math.radians(-80 + 50 * ease(t)); return c + Vector((0.75 * sz * math.cos(a), 0.75 * sz * math.sin(a), 0.55 * sz))
+    cam = camera("Cam", eye(0), c, 32); P.view_camera = cam; sc.camera = cam; P.max_screen_space_error = 4.0
+    converge(150, min_wait=20)
+    eevee(32); sc.render.film_transparent = True
+    def step(i, t):
+        relight(Albedo_Strength=1.0, Baked_Light=1.0, X_ray=ease((t - 0.15) / 0.35), X_ray_Falloff=2.0)
+        look_at(cam, eye(t), c)
+    anim(144, step)
+elif shot == "a_sacre":
+    # Sacre-Coeur, a point cloud with eye-dome lighting, a partial orbit
+    add("Sacre-Coeur exterior 406M"); P.origin_mode = "AUTO"; P.origin_valid = False; sky(35, 200)
+    cam = camera("Cam", (0, -900, 500), (0, 0, 0), 35)
+    start(cam, 3, wait=60, min_wait=40)
+    lo, hi = bounds(); c = (lo + hi) / 2; sz = min((hi - lo).length, 1500.0); tgt = c + Vector((0, 0, 0.03 * sz))
+    def eye(t):
+        a = math.radians(-95 + 70 * ease(t)); return c + Vector((0.68 * sz * math.cos(a), 0.68 * sz * math.sin(a), 0.38 * sz))
+    cam = camera("Cam", eye(0), tgt, 32); P.view_camera = cam; sc.camera = cam
+    converge(150, min_wait=30)
+    sc.render.film_transparent = False; eevee(16); light_bg(); sc.view_settings.view_transform = "Standard"
+    P.comp_enabled = True; P.comp_edges = "EDL"; P.comp_edl_strength = 4.0; P.comp_ao = 0.0; P.comp_haze = 0.0
+    anim(144, lambda i, t: look_at(cam, eye(t), tgt))
 else:
     raise SystemExit("unknown animation " + shot)
 open(os.path.join(OUT, shot + ".done"), "w").write("ok")

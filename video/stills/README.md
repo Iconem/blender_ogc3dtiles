@@ -26,5 +26,8 @@ Lessons:
 - Tile objects are meshes even for point clouds: read `o.data.vertices` for their positions.
 - Frame a scene from measured points (`world_to_camera_view` on the apexes and base corners, as in `gizeh_fit`),
   not from guessed distances.
+- A Google view that reaches the horizon never settles at Max SSE 6: more than 1,000 tiles were still loading
+  after 40 s a frame. At 10 to 16 every frame converges, in 6 to 10 s.
+- Point clouds with eye-dome lighting render with speckle (Sacre-Coeur, 406M points): known, not fixed yet.
 - A camera that moves slowly needs only a short settle per frame: the tiles of the next frame are mostly the
   same ones. The Giza clip renders at about 1 s a frame in Workbench; Google tiles in EEVEE take about 10 s.

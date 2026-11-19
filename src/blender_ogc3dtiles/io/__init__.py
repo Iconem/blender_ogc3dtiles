@@ -420,6 +420,8 @@ def ensure_root_empty(scene: bpy.types.Scene, name: str,
         obj.empty_display_type = "PLAIN_AXES"
         obj.empty_display_size = 10.0
         obj["ogc3dtiles_root"] = True
+        from .. import globe_nav                 # globe navigation: a new root rides the Globe Empty
+        globe_nav.adopt_root(obj, fresh=True)
     if coll.objects.get(obj.name) is None:
         coll.objects.link(obj)
     return obj

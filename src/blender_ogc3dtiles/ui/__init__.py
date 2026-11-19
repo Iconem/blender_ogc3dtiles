@@ -74,10 +74,11 @@ def _refresh_cesium_status():
 
 # ── Stream state ──────────────────────────────────────────────────────────────
 class _Rec:
-    __slots__ = ("holder", "data", "last_wanted", "visible", "tile", "count")
+    __slots__ = ("holder", "data", "last_wanted", "visible", "tile", "count", "ecef")
 
     def __init__(self, holder, data, tile=None):
         self.count = -1         # points + vertices, counted when the cap first needs it
+        self.ecef = None        # holder matrix in ECEF, float64: globe navigation places the tile again from it
         self.holder = holder
         self.data = data
         self.last_wanted = time.monotonic()
@@ -1781,6 +1782,7 @@ def _tick_python(scene, props, st, now) -> bool:
 
 def _build_native_tile(scene, props, st, rt) -> bool:
     """Create the Blender object for a native ReadyTile. Returns True on success."""
+    import numpy as np
     from ..tileset.native_backend import blender_matrix_for_tile
 
     root_obj, coll = _root_and_coll(scene, st)
@@ -1789,7 +1791,9 @@ def _build_native_tile(scene, props, st, rt) -> bool:
         # same content loaded a second time: without this the first object is
         # orphaned and stays visible over the finer tiles
         remove_tiles([(old.holder, old.data)])
-    m = blender_matrix_for_tile(rt.transform_ecef, *_frame(props, st), rt.rtc, rt.up_axis)
+    frame = _frame(props, st)
+    m = blender_matrix_for_tile(rt.transform_ecef, *frame, rt.rtc, rt.up_axis)
+    ecef = None
     t_imp = time.perf_counter()
     if rt.mesh_payload is not None:
         # build_tile_from_payload folds payload["offset"] into the matrix (float64)
@@ -1797,15 +1801,21 @@ def _build_native_tile(scene, props, st, rt) -> bool:
             builder = build_voxel_lookup if props.voxel_display == "PROJECT" else build_voxel_volume
         else:
             builder = build_tile_from_payload
+            from ..io import apply_payload_offset
+            ecef = np.asarray(apply_payload_offset(m.tolist(), rt.mesh_payload), dtype=np.float64)
         r = builder(rt.mesh_payload, rt.key, scene, root_obj, m.tolist(), hidden=True, coll=coll)
     else:
+        ecef = np.asarray(m, dtype=np.float64)
         r = import_glb_file(rt.glb_path, rt.key, scene, root_obj, m.tolist(), hidden=True, coll=coll)
     st["import_s"] = st.get("import_s", 0.0) + (time.perf_counter() - t_imp)
     st["import_n"] = st.get("import_n", 0) + 1
     if r:
         live = st.setdefault("live", {})
         live[rt.key] = live.get(rt.key, 0) + 1
-        st["tiles"][rt.key] = _Rec(r[0], r[1])
+        rec = st["tiles"][rt.key] = _Rec(r[0], r[1])
+        if ecef is not None:
+            from ..tileset.native_backend import enu_from_ecef_matrix
+            rec.ecef = np.linalg.solve(enu_from_ecef_matrix(*frame), ecef)
         st["dirty"] = True
         info = getattr(st["backend"], "tile_info", {}).get(rt.key)
         if info:

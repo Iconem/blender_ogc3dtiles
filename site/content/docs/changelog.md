@@ -25,6 +25,11 @@ main branch and not in a release zip yet.
   they live on the *Media: screenshots* and *Media: videos* releases, and `scripts/docs-media.mjs` pulls them
   before the site and the decks build.
 
+- **Globe navigation (beta prototype)**, a folded panel of the sidebar. The wheel zooms about the point under
+  the cursor, middle drag orbits around it, Shift+middle drag grabs the globe; everything else stays Blender's.
+  An *OGC3D Globe* Empty carries every tileset, and objects parented to it move with the planet. Far from the
+  ground the wheel scales that Empty instead of moving the view (*To 1:1* undoes it before a render). When the
+  gestures stop, the scene origin moves under the view and the tiles are placed again in double precision.
 - **Blender's own renders wait for their tiles: F12, Ctrl+F12 and the command line.** Before each frame
   renders, the add-on streams for the scene camera and waits until its tiles have loaded, with the Render
   panel's Settle and Max wait. A frame that reaches Max wait says how many tiles were still loading. In

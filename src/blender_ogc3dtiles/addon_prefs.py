@@ -192,6 +192,13 @@ class OGC3DTilesPreferences(AddonPreferences):
 
         # ── cesium-native backend: status, and the install button while it is missing ──
         ok, status = probe_cesium()
+        # centred in a column of fixed width, as Blender's own preference pages (CenterAlignMixIn)
+        if context.region.width > 350 * context.preferences.system.ui_scale:
+            row = layout.row()
+            row.label(text="")
+            layout = row.column()
+            layout.ui_units_x = 50
+            row.label(text="")
         layout.use_property_split = True
         layout.use_property_decorate = False
         box = layout.box()

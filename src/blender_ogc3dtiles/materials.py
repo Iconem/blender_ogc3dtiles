@@ -1157,6 +1157,16 @@ def draw_panel(layout, props):
                          slider=True)
     layout.operator("ogc3dtiles.open_nodes", text="Open a tile's material",
                     icon="MATERIAL").kind = "TILE"
+    box = layout.box()
+    box.prop(props, "xray", text="X-ray points and splats")
+    if props.xray:
+        col = box.column(align=True)
+        col.prop(props, "xray_strength")
+        col.prop(props, "xray_radius")
+        row = col.row(align=True)
+        row.prop(props, "xray_tint_amount")
+        row.prop(props, "xray_tint", text="")
+        box.label(text="Use a dark background", icon="INFO")
 
 
 _MAX_LEGEND_ROWS = 32

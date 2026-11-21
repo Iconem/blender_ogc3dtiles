@@ -303,10 +303,10 @@ elif shot == "a_xray":
         look_at(cam, eye(t), c)
     anim(144, step)
 elif shot == "a_splat_xray":
-    # a Gaussian splat scene, a church in a forest: the splats, then the add-on's X-ray on a dark background, the
-    # points in their own colours and then in one tint
+    # Kirants monastery, Gaussian splats in a forest: the splats, then the add-on's X-ray on a dark background, the
+    # points in their own colours and then in one tint, joined by diagonal wipes
     import numpy as np
-    add("Hayravank"); P.origin_mode = "AUTO"; P.origin_valid = False; sky(35, 200)
+    add("Kirants"); P.origin_mode = "AUTO"; P.origin_valid = False; sky(35, 200)
     cam = camera("Cam", (0, -600, 400), (0, 0, 0), 32); start(cam, 8, wait=90, min_wait=25)
     lo, hi = bounds(); c = (lo + hi) / 2; sz = (hi - lo).length
     f = 0.22; a0 = math.radians(-60); e0 = c + Vector((f * sz * math.cos(a0), f * sz * math.sin(a0), 0.6 * f * sz))
@@ -329,12 +329,46 @@ elif shot == "a_splat_xray":
     look_at(cam, eye(0), C); converge(240, min_wait=20)
     eevee(32); sc.render.film_transparent = False; light_bg((0.006, 0.008, 0.014))
     P.xray_radius = 0.05
-    def step(i, t):
-        on = t >= 0.22
-        if P.xray != on: P.xray = on
-        k = ease((t - 0.6) / 0.2); P.xray_tint_amount = k; P.xray_strength = 0.3 - 0.18 * k
-        look_at(cam, eye(t), C)
-    anim(int(os.environ.get("FRAMES", 192)), step)
+    # three looks joined by two diagonal wipes: the splats, X-ray in their own colours, X-ray in one tint. Each frame
+    # renders the one or two looks on screen, the wipe joins them (as in a_bayon_split)
+    d = os.path.join(OUT, "anim_" + shot); os.makedirs(d, exist_ok=True)
+    W, H = sc.render.resolution_x, sc.render.resolution_y
+    yy, xx = np.mgrid[0:H, 0:W]; u = xx / W; v = yy / H                 # v from the bottom (Blender pixel order)
+    def px(path):
+        im = bpy.data.images.load(path); a = np.empty(W * H * 4, np.float32); im.pixels.foreach_get(a)
+        bpy.data.images.remove(im); return a.reshape(H, W, 4)
+    LOOKS = {"splats": (False, 0.0, 0.3), "xray": (True, 0.0, 0.3), "tint": (True, 1.0, 0.12)}
+    WIPES = (("splats", "xray", 0.18, 0.40), ("xray", "tint", 0.58, 0.80))
+    def looks(t):
+        for a_, b_, t0_, t1_ in WIPES:
+            if t < t0_: return [(a_, 0.0)]
+            if t < t1_: return [(a_, 0.0), (b_, ease((t - t0_) / (t1_ - t0_)))]
+        return [(WIPES[-1][1], 0.0)]
+    N = int(os.environ.get("FRAMES", 192)); t0 = time.monotonic()
+    for i in range(N):
+        t = i / (N - 1); look_at(cam, eye(t), C); bpy.context.view_layer.update(); converge(25, settle=0.35)
+        imgs = []
+        for name, k in looks(t):
+            on, tint, strength = LOOKS[name]
+            if P.xray != on: P.xray = on
+            P.xray_tint_amount = tint; P.xray_strength = strength
+            f = os.path.join(d, "look_%d.png" % len(imgs)); sc.render.filepath = f
+            bpy.ops.render.render(write_still=True); imgs.append((f, k))
+        out = px(imgs[0][0])
+        if len(imgs) == 2:
+            B, k = px(imgs[1][0]), imgs[1][1]
+            q = -0.15 + 1.4 * k                                         # the line crosses the whole frame
+            s_ = (u + 0.35 * (1 - v)) / 1.35 - q                        # a diagonal from the top left corner
+            m = np.clip(-s_ * W / 2.0, -1, 1) * 0.5 + 0.5                # 2 px soft edge, the new look behind the line
+            out = out * (1 - m[..., None]) + B * m[..., None]
+            glow = np.exp(-(s_ * W / 2.5) ** 2)[..., None] * 0.8        # a thin light line
+            out[..., :3] = out[..., :3] + glow * (1 - out[..., :3])
+        im = bpy.data.images.new("wipe", W, H, alpha=True); im.pixels.foreach_set(out.astype(np.float32).ravel())
+        im.filepath_raw = os.path.join(d, "f_%04d.png" % i); im.file_format = "PNG"; im.save(); bpy.data.images.remove(im)
+        log("frame %d/%d %s, %.0f s so far" % (i + 1, N, [n for n, _ in looks(t)], time.monotonic() - t0))
+    for f in ("look_0.png", "look_1.png"):
+        if os.path.exists(os.path.join(d, f)): os.remove(os.path.join(d, f))
+    open(os.path.join(d, "done.txt"), "w").write("%d frames" % N)
     if os.environ.get("TESTOFF"):
         P.xray = False; look_at(cam, eye(0), C); bpy.context.view_layer.update(); render("off_again")
 elif shot == "a_sacre":

@@ -28,22 +28,20 @@ the **Nodes: Geometry** panel: how each point is drawn, and how large.
 If points look too sparse or too fat, change *Point scale* first. *Min px* and *Max px* are 2 and 6 by
 default.
 
-## Lit points
+## Lighting
 
-Points show their colours as they are, without any light: a scan already carries the light it was
-captured in, and the cloud needs no lamp. That is why they look the same in Material Preview and in
-a render, in EEVEE and in Cycles, whatever the lighting.
-
-**Lit points** shades them with the scene's lights instead. A point has no surface of its own, so
-each one is shaded as the small sphere, tetrahedron or disc it is drawn as: the sun and the lamps
-act on the cloud and it casts shadows, with a grainier look. *Disc splats* gives the best result on
-tiles that carry normals, since the discs then follow the scanned surface.
+Points are shaded by the scene's lights, like mesh tiles: their colour is the surface colour of a
+matte material, and the sun, the lamps and the world act on the cloud, which casts and receives
+shadows. A point has no surface of its own, so each one is shaded as the small sphere, tetrahedron
+or disc it is drawn as. *Disc splats* gives the smoothest result on tiles that carry normals, since
+the discs then follow the scanned surface. Files saved with an older version, where points showed
+their colours without any light, are shaded the same way when opened.
 
 ## X-ray
 
-![A Gaussian splat scene of a church in a forest: the splats, and the same view with X-ray on, in the splats' own colours and tinted](/img/xray_splats.jpg)
+![Gaussian splats of Kirants monastery: the splats, and the same view with X-ray on, in the splats' own colours and tinted](/img/xray_splats.jpg)
 
-**X-ray** shows point clouds and Gaussian splats as a radiograph: every point adds a little light
+**X-ray points and splats**, in the *Nodes: Material* panel, shows point clouds and Gaussian splats as a radiograph: every point adds a little light
 and hides nothing. Where many points line up along the view (a wall seen edge-on, a vault, the far
 side of a building) the light adds up, so the structure reads through itself.
 
@@ -73,6 +71,20 @@ Points keep their own colour. To colour them by class or by intensity, see
 [Nodes: Metadata](/features/nodes-metadata); to drape a map on them, see
 [Raster overlays](/features/raster-overlays). The `OGC3D Points` node group is shown in
 [Nodes: Geometry](/features/nodes-geometry).
+
+## A cloud that stays sparse from afar
+
+From far away a point cloud shows only the tiles near the top of its tree, so those tiles must hold
+a thinned-out copy of the whole cloud: that is what the levels of detail of a point cloud are. Some
+tilers leave them nearly empty and put every point in the deepest tiles. The cloud then looks like a
+sparse scatter of dots until the camera is close enough to load those, and getting there means
+loading tens of thousands of small tiles. No viewer can fix this; the tileset has to be made again.
+
+To check a tileset, count the points in its first levels: with Potree-style tilers, the root tile
+alone usually holds thousands to tens of thousands of points. One case found: a
+cloud of more than 150 million points held 33 points in its root tile and fewer than a million in
+its first five levels. Its 40,000 tiles of a few thousand points each were also each in a separate
+`tileset.json`, which adds one download per tile and one more wait at each level.
 
 ## How it works
 

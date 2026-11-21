@@ -8,12 +8,13 @@ main branch and not in a release zip yet.
 
 ## Unreleased
 
-- **X-ray for point clouds and Gaussian splats** (Nodes: Geometry panel). Every point adds a little light and
+- **X-ray for point clouds and Gaussian splats** (Nodes: Material panel). Every point adds a little light and
   hides nothing, so walls seen edge-on, vaults and the far side of a building show through, as on a
   radiograph. Strength, point radius and a tint; needs a dark background. See
   [X-ray](/features/point-clouds#x-ray), and the new clip on the [Videos](/guide/videos) page.
-- **Lit points**: point clouds can be shaded by the scene's lights. Off by default, as before: points show
-  their own colours with no light. See [Lit points](/features/point-clouds#lit-points).
+- **Point clouds are shaded by the scene's lights**, as mesh tiles are: sun, lamps, world and shadows act on
+  them. Before, their colours were shown without any light. Files saved with an older version are shaded
+  the same way when opened. See [Lighting](/features/point-clouds#lighting).
 - Attenuated point size now stays between 2 and 6 px on screen by default (it was 1 to 3 px).
 - **A moved dataset has a selection of its own.** In a tileset of tilesets, each dataset moved by its Empty
   is selected in a separate pass for a camera moved the other way, limited to that dataset, and the main

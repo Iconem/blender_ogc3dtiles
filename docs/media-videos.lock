@@ -1,8 +1,8 @@
 {
   "release": "media-videos",
-  "asset": "videos-a053d3d30ea2.tar",
-  "sha256": "a053d3d30ea2a0ead5b7e5356e4596a7e8d3dd093f5c768a7712ee348c0f47f1",
-  "size": 66949120,
+  "asset": "videos-e82e319538cd.tar",
+  "sha256": "e82e319538cdb85743bfb987f438e04598fff32455f00c7379e45b0ed52d0352",
+  "size": 64501760,
   "files": 34,
   "pushed": "2026-11-21"
 }

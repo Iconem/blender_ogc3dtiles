@@ -2502,7 +2502,6 @@ class OGC3D_PT_DisplayPanel(_OGC3DSidebar, Panel):
         row.prop(props, "point_display", text="Points")
         op = row.operator("ogc3dtiles.open_nodes", text="", icon="NODETREE")
         op.kind = "POINTS"
-        layout.prop(props, "point_lit")
         layout.prop(props, "point_radius_mode", text="Radius")
         if props.point_radius_mode == "UNIFORM":
             layout.prop(props, "point_radius", text="Radius m")
@@ -2531,16 +2530,6 @@ class OGC3D_PT_DisplayPanel(_OGC3DSidebar, Panel):
             layout.label(text="Discs follow glTF normals, else face the view", icon="INFO")
         else:
             layout.label(text="Colours in Material Preview / Rendered", icon="INFO")
-        box = layout.box()
-        box.prop(props, "xray")
-        if props.xray:
-            col = box.column(align=True)
-            col.prop(props, "xray_strength")
-            col.prop(props, "xray_radius")
-            row = col.row(align=True)
-            row.prop(props, "xray_tint_amount")
-            row.prop(props, "xray_tint", text="")
-            box.label(text="Use a dark background", icon="INFO")
         layout.prop(props, "hide_relation_lines", text="Hide relation lines")
 
 

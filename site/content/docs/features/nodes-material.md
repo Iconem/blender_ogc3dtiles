@@ -49,9 +49,9 @@ In Rendered shading the tiles are lit by three things, and two of them are not y
 
 For lamps only, set *Baked Light* to 0 and the world's Surface strength to 0 (World properties).
 
-Without Shared shader nodes there is no Baked Light: mesh tiles are plain lit materials. Two cases
-still emit their colour whatever the lamps: point clouds, and tiles that declare themselves unlit,
-which Google Photorealistic 3D Tiles do.
+Without Shared shader nodes there is no Baked Light: mesh and point tiles are plain lit materials.
+One case still emits its colour whatever the lamps: tiles that declare themselves unlit, which
+Google Photorealistic 3D Tiles do.
 
 ## X-ray
 

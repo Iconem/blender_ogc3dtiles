@@ -38,7 +38,7 @@ else:
     obs=[o for o in bpy.context.scene.objects if "tile_url" in o]
     cs=[o.matrix_world @ (sum((Vector(q) for q in o.bound_box),Vector())/8) for o in obs]
     if len(cs)>20: c=[statistics.median(p[i] for p in cs) for i in range(3)]
-    END={"Hayravank":40.0,"IGN":330.0}.get(tag, size*0.28)
+    END={"Kirants":40.0,"IGN":330.0}.get(tag, size*0.28)
     if ign: c=[-263.0,-229.0,mn[2]+110]
     print("target",[round(v,1) for v in c],"end",END)
     def fn(i,M):

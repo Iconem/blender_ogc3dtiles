@@ -290,7 +290,7 @@ entries and point intensity. Section 4 lists what to do next.
 - The frame-stepped screencast scripts are in `video/evsim/` with a README that
   compares them with `video/harness/`. Their 14 clips are on the `videos-2026-11`
   draft release with workflow prefixes (`evsim_`, `drawnptr_`, `scripted_`).
-  Three of them show private-library datasets (Geghard, Hayravank, Bayon): Jonathan
+  Three of them show private-library datasets (Geghard, Kirants, Bayon): Jonathan
   decides whether they stay when the release is published. The Google URL field is
   blurred in every Rome clip.
 - The add-on's HTTP cache, `%LOCALAPPDATA%\blender_ogc3dtiles\cache\http-cache.sqlite`,

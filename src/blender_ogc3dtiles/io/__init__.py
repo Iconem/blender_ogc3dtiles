@@ -580,7 +580,8 @@ def _material_from_payload(mp: dict, img, key: str):
 
 
 def _wire_point_colors(mat):
-    """Point clouds: unlit vertex colours. Attribute node (not Color Attribute)
+    """Point clouds: vertex colours as the surface colour, shaded by the scene's lights like any other
+    surface. Attribute node (not Color Attribute)
     so it also resolves on the point cloud produced by the Mesh→Points
     modifier; a second lookup of type Instancer reads the same attribute from
     the instance domain for disc splats (points instanced, not realised).
@@ -593,24 +594,15 @@ def _wire_point_colors(mat):
     attr.attribute_name = "Col"
     attr.attribute_type = "GEOMETRY"
     attr.location = (-600, 0)
-    bsdf.inputs["Base Color"].default_value = (0.0, 0.0, 0.0, 1.0)
-    nt.links.new(attr.outputs["Color"], bsdf.inputs["Emission Color"])
-    bsdf.inputs["Emission Strength"].default_value = 1.0
+    nt.links.new(attr.outputs["Color"], bsdf.inputs["Base Color"])
     _ensure_instancer_color(mat)
-    set_point_lit(mat, _scene_point_lit())
+    set_point_lit(mat)
 
 
-def _scene_point_lit() -> bool:
-    try:
-        return bool(bpy.context.scene.ogc3dtiles.point_lit)
-    except Exception:                                  # noqa: BLE001
-        return False
-
-
-def set_point_lit(mat, lit: bool) -> bool:
-    """Point colours as light (unlit: a scan carries the light it was captured in) or as a surface colour
-    that the scene's lights shade. Points have no normals of their own: each one is shaded as the small
-    sphere, tetrahedron or disc it is drawn as."""
+def set_point_lit(mat, lit: bool = True) -> bool:
+    """Point colours as a surface colour that the scene's lights shade (lit), or as light (unlit, kept only
+    to read files of older versions, which wired them to Emission). Points have no normals of their own:
+    each one is shaded as the small sphere, tetrahedron or disc it is drawn as."""
     nt = mat.node_tree if mat and mat.use_nodes else None
     bsdf = _node_of_type(nt, "BSDF_PRINCIPLED") if nt is not None else None
     if bsdf is None:
@@ -633,18 +625,6 @@ def set_point_lit(mat, lit: bool) -> bool:
         base.default_value = (0.0, 0.0, 0.0, 1.0)
         bsdf.inputs["Emission Strength"].default_value = 1.0
     return True
-
-
-def apply_point_lit(lit: bool) -> int:
-    """Every point tile's material, live (Gaussian splats keep their own shading)."""
-    n = 0
-    for o in bpy.data.objects:
-        mod = o.modifiers.get("Points") if o.type == "MESH" else None
-        if mod is None or o.get("splats"):
-            continue
-        for mat in o.data.materials:
-            n += bool(set_point_lit(mat, lit))
-    return n
 
 
 def _ensure_instancer_color(mat) -> bool:
@@ -1735,8 +1715,8 @@ def apply_point_display(mode: str) -> int:
         mod.node_group = ng
         mat = o.data.materials[0] if o.data.materials else None
         if mat is not None:
-            if _ensure_instancer_color(mat):
-                set_point_lit(mat, _scene_point_lit())
+            _ensure_instancer_color(mat)
+            set_point_lit(mat)
         _set_points_inputs(mod, ng, o.get("point_radius", 0.05), mat)
         o.update_tag()
         n += 1
@@ -1874,6 +1854,11 @@ def _upgrade_points_groups(_dummy=None):
         for display, name in _GROUP_FOR_MODE.items():
             if bpy.data.node_groups.get(name) is not None:
                 _points_nodegroup(display)
+        # point colours were wired to Emission (unlit) before: the scene's lights now shade them
+        for o in bpy.data.objects:
+            if o.type == "MESH" and o.modifiers.get("Points") is not None and not o.get("splats"):
+                for mat in o.data.materials:
+                    set_point_lit(mat)
         if bpy.data.objects.get(VIEW_PROXY) is not None:
             ensure_view_proxy(bpy.context.scene)
     except Exception as e:                           # noqa: BLE001

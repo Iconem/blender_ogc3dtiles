@@ -204,11 +204,6 @@ def _on_xray_params(self, context):
     xray.update_params(self)
 
 
-def _on_point_lit(self, context):
-    from ..io import apply_point_lit
-    apply_point_lit(self.point_lit)
-
-
 def _on_point_display(self, context):
     from ..io import apply_point_display
     apply_point_display(self.point_display)
@@ -706,16 +701,6 @@ class TilesSceneProps(PropertyGroup):
         name="Tint amount",
         description="0: the points keep their own colours. 1: one colour for all, as on a radiograph",
         default=0.0, min=0.0, max=1.0, subtype="FACTOR", update=_on_xray_params,
-    )
-    point_lit: BoolProperty(
-        name="Lit points",
-        description="Shade points with the scene's lights instead of showing their colours as they are. "
-                    "Off, a scan keeps the light it was captured in and needs no lamp. On, each point is "
-                    "shaded as the small sphere, tetrahedron or disc it is drawn as: lamps, sun and shadows "
-                    "act on the cloud, with a grainier look. Disc splats follow the normals of the tile "
-                    "when it has some. Live",
-        default=False,
-        update=_on_point_lit,
     )
     point_radius_mode: EnumProperty(
         name="Point radius",

@@ -8,7 +8,7 @@ binding fix reaches users without a new add-on release. The extensions platform 
 `blender --command extension build --split-platforms` writes one zip per platform, each with its own wheel.
 
 One Blender line ships one Python, and a wheel is built for one Python: `--python` picks the wheels (cp313 is
-Blender 5.1 and later, cp311 is Blender 4.2 to 5.0) and sets `blender_version_min` and `blender_version_max`
+Blender 5.1 and later, cp311 is Blender 5.0: the platform builds start there) and sets `blender_version_min` and `blender_version_max`
 to match, so the two sets can sit side by side on the platform. Platforms without a wheel on the release
 (macOS Intel, Windows and Linux on ARM) are left out. `wheel_install.py`, the module that downloads a wheel
 from the preferences, is left out too: an extension there may not fetch code.
@@ -29,8 +29,8 @@ SRC = ROOT / "src" / "blender_ogc3dtiles"
 # wheel platform tag (substring) -> Blender platform
 PLATFORMS = (("win_amd64", "windows-x64"), ("manylinux", "linux-x64"), ("macosx", "macos-arm64"),
              ("win_arm64", "windows-arm64"))
-# first Blender release on each Python
-BLENDER_MIN = {"cp311": "4.2.0", "cp313": "5.1.0"}
+# first Blender release each set is listed for (cp311 also runs 4.2 to 4.5, not listed)
+BLENDER_MIN = {"cp311": "5.0.0", "cp313": "5.1.0"}
 # first Blender release that no longer runs it (blender_version_max is exclusive)
 BLENDER_MAX = {"cp311": "5.1.0"}
 

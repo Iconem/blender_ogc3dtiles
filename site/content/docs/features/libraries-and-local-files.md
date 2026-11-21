@@ -47,6 +47,8 @@ one, share a team one on the NAS: the preferences take several files, separated 
 
 - The **bookmark button** under the tileset list adds an entry from a library, through a search box.
   It can show only meshes, point clouds, splats or voxels.
+- With no library file chosen yet, the bookmark button and *Save to library* open a small message
+  with a button to the add-on preferences, where the file is picked or created.
 - **Save to library** writes the selected entry under its name: URL, type, ion id and token, SSE, its
   overlays and their keys. An entry of the same name is replaced.
 - **Edit ... in a text editor**, in the preferences, opens a library file in the program your system

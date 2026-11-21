@@ -91,4 +91,9 @@ city to the amphitheatre, and the tiles are cut as it moves.
 **X-ray on San Pietro.** The interior mesh seen from outside. X-ray fades in on the shared shader, and the nave
 and the chapels appear through the walls.
 
+<video src="/video/splat_xray.mp4" poster="/video/splat_xray.jpg" autoplay loop muted playsinline style="width:100%;height:auto;aspect-ratio:auto 16/9;border-radius:8px"></video>
+
+**X-ray on Gaussian splats.** A church in a forest, as splat tiles in EEVEE. X-ray turns every splat into a
+point of light, first in its own colour, then in one tint.
+
 The scripts that made these clips are in the repository (see [Screencasts](/dev/screencasts)).

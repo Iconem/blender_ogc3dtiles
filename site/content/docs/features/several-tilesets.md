@@ -44,11 +44,17 @@ parented to it. The grouping tiles get none.
 - The offset is kept on the tileset's entry, per dataset URL, and saved with the .blend. It comes back
   after a Stop, a reload, or with a dataset that loads later.
 - Level of detail and culling follow the offset. cesium-native only knows where the dataset says it
-  is, so a moved dataset is also selected for a camera moved the other way, as one more view of the
-  same stream. Measured on a splat dataset moved up 100 m under a camera 200 m above it, looking
-  towards the horizon: without that view 45% of the splats that should be on screen were missing,
-  with it none. The price is some detail in excess, since the tiles of the unmoved view load too.
-  Up to six different offsets are followed per tileset, those of the datasets with most tiles first.
+  is, so a moved dataset is selected for a camera moved the other way. Cesium for Unreal and Cesium
+  for Unity do the same for a tileset that was moved: the camera goes into the tileset's frame, the
+  tiles stay where they are. Here each moved dataset gets a selection pass of its own, limited to
+  that dataset, and the main pass leaves it out: nothing is loaded for the place the dataset is no
+  longer at. Measured on two splat datasets side by side, one moved 100 m up or down under a camera
+  looking towards the horizon: the moved one shows exactly the tiles a camera moved the other way
+  would get, and the other one does not change. Without this, 45% of the splats that should be on
+  screen were missing in the same test.
+- Datasets sharing the same offset share one pass, and up to 32 different offsets are followed per
+  tileset, those of the datasets with most tiles first. A scaled dataset keeps the level of detail
+  of its original size.
 - The names of the Empties also serve the scene origin: its *Dataset* mode puts the origin at the
   dataset picked by name. See [Scene origin](/features/scene-origin#dataset).
 - *An Empty per dataset*, under the tileset's boxes in the main panel, turns this off for the tiles

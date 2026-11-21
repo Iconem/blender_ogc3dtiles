@@ -194,6 +194,21 @@ def _on_relight_gold(self, context):
     materials.set_gold_enabled(self.relight_gold)
 
 
+def _on_xray(self, context):
+    from .. import xray
+    xray.apply(context.scene)
+
+
+def _on_xray_params(self, context):
+    from .. import xray
+    xray.update_params(self)
+
+
+def _on_point_lit(self, context):
+    from ..io import apply_point_lit
+    apply_point_lit(self.point_lit)
+
+
 def _on_point_display(self, context):
     from ..io import apply_point_display
     apply_point_display(self.point_display)
@@ -665,6 +680,43 @@ class TilesSceneProps(PropertyGroup):
         default="POINTS",
         update=_on_point_display,
     )
+    xray: BoolProperty(
+        name="X-ray",
+        description="Show point clouds and Gaussian splats as an X-ray: every point adds a little light "
+                    "and hides nothing, so walls seen edge-on, vaults and the far side of a building "
+                    "show through. Needs a dark background (World colour, or a transparent film over "
+                    "black); best in Eevee. Live",
+        default=False,
+        update=_on_xray,
+    )
+    xray_strength: FloatProperty(
+        name="Strength",
+        description="Light added by each point. Lower it where the cloud is dense and burns to white",
+        default=0.3, min=0.001, soft_max=2.0, max=50.0, precision=3, update=_on_xray_params,
+    )
+    xray_radius: FloatProperty(
+        name="Point radius (m)", description="Radius of the X-ray points",
+        default=0.05, min=0.001, soft_max=1.0, max=50.0, precision=3, update=_on_xray_params,
+    )
+    xray_tint: FloatVectorProperty(
+        name="Tint", subtype="COLOR", size=3, min=0.0, max=1.0, default=(0.55, 0.8, 1.0),
+        description="Colour of the X-ray when Tint amount is above 0", update=_on_xray_params,
+    )
+    xray_tint_amount: FloatProperty(
+        name="Tint amount",
+        description="0: the points keep their own colours. 1: one colour for all, as on a radiograph",
+        default=0.0, min=0.0, max=1.0, subtype="FACTOR", update=_on_xray_params,
+    )
+    point_lit: BoolProperty(
+        name="Lit points",
+        description="Shade points with the scene's lights instead of showing their colours as they are. "
+                    "Off, a scan keeps the light it was captured in and needs no lamp. On, each point is "
+                    "shaded as the small sphere, tetrahedron or disc it is drawn as: lamps, sun and shadows "
+                    "act on the cloud, with a grainier look. Disc splats follow the normals of the tile "
+                    "when it has some. Live",
+        default=False,
+        update=_on_point_lit,
+    )
     point_radius_mode: EnumProperty(
         name="Point radius",
         description="How the display radius of points is chosen",
@@ -688,11 +740,11 @@ class TilesSceneProps(PropertyGroup):
     )
     point_adapt_min_px: FloatProperty(
         name="Min size (px)", description="Attenuated mode: points never smaller than this on screen",
-        default=1.0, min=0.0, max=64.0, update=_on_point_radius,
+        default=2.0, min=0.0, max=64.0, update=_on_point_radius,
     )
     point_adapt_max_px: FloatProperty(
         name="Max size (px)", description="Attenuated mode: points never larger than this on screen",
-        default=3.0, min=0.5, max=256.0, update=_on_point_radius,
+        default=6.0, min=0.5, max=256.0, update=_on_point_radius,
     )
     point_px: FloatProperty(
         name="Point size (px)", description="Screen mode: point diameter in pixels",

@@ -5,7 +5,7 @@ description: "The phases timeline and other experiments"
 
 ## Globe navigation
 
-A folded section of the sidebar's *Scene Origin* panel, *Globe Navigation (beta)*, for moving around a whole planet without the view
+A section of the sidebar's *Scene Origin* panel, *Globe Navigation (beta)*, for moving around a whole planet without the view
 running out of precision or of clipping range. Press **Globe Navigation**; a thin blue frame around the 3D
 view shows it is on, and the same button stops it.
 
@@ -27,6 +27,11 @@ Everything else stays Blender's own navigation.
 - When the gestures stop, the scene origin moves under the view and the tiles are placed again in
   double precision. **Re-anchor Scene Origin** does it at once; it is greyed while Globe Navigation
   is off.
+- Re-anchoring changes nothing on screen, so after a long way on the globe the ground under the view
+  is no longer level in Blender: its vertical leans away from +Z by the angle travelled (0.09° per
+  10 km). The panel shows that angle, and **Reset** next to it puts the origin under the view with
+  +Z up and +Y north, turning the view with it. Do this before adding lights, physics or anything
+  else that needs a true vertical.
 - A place search, or a new scene origin typed in the Scene Origin panel, puts the Globe back in place
   at 1:1 with the view on the new origin. **Reset Globe** does the same for the current origin, when
   the planet has gone out of sight.

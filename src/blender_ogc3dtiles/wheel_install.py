@@ -15,6 +15,42 @@ def _get_prefs(context):
     return get(context)
 
 
+def install_target():
+    """Where pip must install, or None for Blender's own site-packages. A Blender under Program Files (or any
+    folder the user can't write to) makes pip fall back to the per-user site-packages, which Blender never
+    reads: the install "succeeds" and the module is not there after a restart. The user's scripts/modules
+    folder is writable and on Blender's path."""
+    import os
+    import sysconfig
+    import tempfile
+    import bpy
+    try:
+        fd, probe = tempfile.mkstemp(dir=sysconfig.get_paths()["purelib"])
+        os.close(fd)
+        os.remove(probe)
+        return None
+    except OSError:
+        return bpy.utils.user_resource("SCRIPTS", path="modules", create=True)
+
+
+def target_args(target) -> list:
+    return ["--target", target, "--upgrade"] if target else []
+
+
+def found_after_install(target) -> bool:
+    """Can this Blender import the module pip just installed?"""
+    import importlib
+    import importlib.util
+    import sys
+    if target and target not in sys.path:
+        sys.path.append(target)
+    importlib.invalidate_caches()
+    try:
+        return "cesium" in sys.modules or importlib.util.find_spec("cesium") is not None
+    except (ImportError, ValueError):
+        return False
+
+
 class OGC3D_OT_InstallCesium(Operator):
     """Install or rebuild cesium-native-python using uv"""
     bl_idname = "ogc3dtiles.install_cesium"
@@ -29,13 +65,14 @@ class OGC3D_OT_InstallCesium(Operator):
         src   = prefs.cesium_install_path.strip()
         # Always use Blender's own Python (sys.executable) to install
         # into Blender's site-packages. uv would try to find a venv.
+        target = install_target()
         if src and os.path.isdir(src):
             cmd = [sys.executable, "-m", "pip", "install", src,
-                   "--no-build-isolation", "-v"]
+                   "--no-build-isolation", "-v", *target_args(target)]
             msg = f"pip: building cesium from {src}"
         else:
             cmd = [sys.executable, "-m", "pip", "install",
-                   "git+https://github.com/calebbuffa/cesium-native-python.git"]
+                   "git+https://github.com/calebbuffa/cesium-native-python.git", *target_args(target)]
             msg = "pip: installing cesium-native-python from GitHub"
 
         self.report({"INFO"}, msg)
@@ -48,7 +85,10 @@ class OGC3D_OT_InstallCesium(Operator):
                 text=True, **kwargs,
             )
             stdout, _ = proc.communicate(timeout=600)
-            if proc.returncode == 0:
+            if proc.returncode == 0 and not found_after_install(target):
+                self.report({"ERROR"}, "pip finished but this Blender does not find the module. See the System Console")
+                print(stdout)
+            elif proc.returncode == 0:
                 self.report({"INFO"}, "cesium-native-python installed. Reload Blender.")
             else:
                 self.report({"ERROR"}, f"Build failed (rc={proc.returncode}). Check System Console.")
@@ -130,7 +170,8 @@ class OGC3D_OT_InstallCesiumWheel(Operator):
         except Exception as e:                        # noqa: BLE001
             self.report({"ERROR"}, f"Download failed: {e}")
             return {"CANCELLED"}
-        cmd = [sys.executable, "-m", "pip", "install", "--no-deps", "--force-reinstall", path]
+        target = install_target()
+        cmd = [sys.executable, "-m", "pip", "install", "--no-deps", "--force-reinstall", *target_args(target), path]
         kwargs: dict = {}
         if sys.platform == "win32":
             kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
@@ -148,6 +189,11 @@ class OGC3D_OT_InstallCesiumWheel(Operator):
             import numpy  # noqa: F401 — the wheel's only runtime dependency
         except ImportError:
             subprocess.run([sys.executable, "-m", "pip", "install", "numpy"], **kwargs)
+        if not found_after_install(target):
+            print(proc.stdout)
+            self.report({"ERROR"}, f"pip installed {name} but this Blender does not find the module "
+                                   f"(Python {sys.version.split()[0]}). See the System Console")
+            return {"CANCELLED"}
         self.report({"INFO"}, f"Installed {name} from {repo} {rel.get('tag_name')}. "
                               "Restart Blender (or Reload Module) to use the native backend.")
         return {"FINISHED"}

@@ -73,7 +73,7 @@ jobs:
           gh release upload "$TAG" "$ZIP" --clobber
 
   # Zips with the wheel inside, for extensions.blender.org: one per platform, for each Python Blender ships
-  # (cp311: Blender 4.2 to 5.0, cp313: 5.1 and later). Run by hand: Actions > release extension > Run workflow.
+  # (cp311: Blender 5.0, cp313: 5.1 and later). Run by hand: Actions > release extension > Run workflow.
   platform-zips:
     if: github.event_name == 'workflow_dispatch' && inputs.platform_zips
     runs-on: ubuntu-latest

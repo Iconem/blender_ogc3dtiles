@@ -8,6 +8,28 @@ main branch and not in a release zip yet.
 
 ## Unreleased
 
+- **X-ray for point clouds and Gaussian splats** (Nodes: Geometry panel). Every point adds a little light and
+  hides nothing, so walls seen edge-on, vaults and the far side of a building show through, as on a
+  radiograph. Strength, point radius and a tint; needs a dark background. See
+  [X-ray](/features/point-clouds#x-ray), and the new clip on the [Videos](/guide/videos) page.
+- **Lit points**: point clouds can be shaded by the scene's lights. Off by default, as before: points show
+  their own colours with no light. See [Lit points](/features/point-clouds#lit-points).
+- Attenuated point size now stays between 2 and 6 px on screen by default (it was 1 to 3 px).
+- **A moved dataset has a selection of its own.** In a tileset of tilesets, each dataset moved by its Empty
+  is selected in a separate pass for a camera moved the other way, limited to that dataset, and the main
+  pass leaves it out. Nothing loads any more for the place the dataset was at, and 32 different offsets are
+  followed instead of 6. This is how Cesium for Unreal and Unity handle a moved tileset.
+- **Globe navigation: Reset Vertical.** The panel shows how far the ground under the view leans from
+  Blender's +Z after a long way on the globe, and *Reset* levels it without changing the picture. The
+  section is now unfolded in the Scene Origin panel.
+- **Tileset libraries**: with no library file chosen, the bookmark button and *Save to library* now open a
+  message with a button to the preferences, instead of a line in the status bar. Long names in the picker
+  no longer push their row to the left of the others.
+- **Installing the backend where Blender's folder is read-only** (Program Files, a system package): the wheel
+  now goes to the Blender user folder and the install is checked. Before, it reported a success and the
+  backend was still missing after a restart.
+- Platform zips for extensions.blender.org start at Blender 5.0.
+
 - **Tile bounds** (LOD / Streaming panel): a wire outline around every visible tile, drawn in the 3D
   view only, in one colour or a random colour per tile. *Tile objects* outlines what each tile
   holds, splats included, which Blender's own Bounds display skips; *3D Tiles volumes* outlines the
@@ -28,9 +50,8 @@ main branch and not in a release zip yet.
 - **An Empty per dataset in a tileset of tilesets** (cesium-native backend). When a `tileset.json` only gathers
   other tilesets, each of them gets an Empty under the tileset's root, at its centre with Z up, and its tiles
   are parented to it. Typing a Location Z on it shifts that one dataset in height (geoid against ellipsoid);
-  the offset is kept per dataset URL with the scene. Level of detail and culling follow the offset: a moved
-  dataset is also selected for a camera moved the other way (without it, a 100 m offset under a low camera
-  lost 45% of the splats on screen). See [A tileset of tilesets](/features/several-tilesets#a-tileset-of-tilesets).
+  the offset is kept per dataset URL with the scene. Level of detail and culling follow the offset (without
+  that, a 100 m offset under a low camera lost 45% of the splats on screen). See [A tileset of tilesets](/features/several-tilesets#a-tileset-of-tilesets).
 - **Scene origin: a *Dataset* mode.** The origin goes to a dataset of such a tileset, picked by the name of
   its Empty.
 - A tileset path on a mapped network drive is stored as its share path when typed or pasted too, not only

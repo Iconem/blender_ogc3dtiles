@@ -14,8 +14,10 @@ height offset along the vertical (a dataset in geoid heights among ellipsoidal o
 URL on the tileset's entry, so it comes back after a Stop, a reload or a restart of Blender.
 
 cesium-native selects tiles where the dataset says it is, so a moved dataset is selected for a camera moved the
-other way: view_offsets() gives, for each distinct U, the matrix that takes the camera there, and the backend
-adds one view per matrix. Level of detail and culling then match what is on screen.
+other way, which is how Cesium for Unreal and Unity handle a tileset that was moved: view_offsets() gives, for
+each distinct U, the matrix that takes the camera there and the datasets it is for. The backend runs one more
+selection per matrix, restricted to those datasets, and keeps them out of the main one. Level of detail and
+culling then match what is on screen, and nothing is loaded twice.
 """
 from __future__ import annotations
 
@@ -156,13 +158,13 @@ def save(scene, st, now: float | None = None) -> None:
         item.dataset_offsets = text
 
 
-MAX_OFFSET_VIEWS = 6
+MAX_OFFSET_VIEWS = 32
 
 
 def view_offsets(st):
-    """([4x4 ECEF matrices], signature). One matrix per distinct offset among the moved Empties (those with the
-    most tiles first, at most MAX_OFFSET_VIEWS): applied to the camera, it gives the camera that sees the
-    dataset's own position as the real camera sees the moved one."""
+    """([(4x4 ECEF matrix, URLs)], signature). One entry per distinct offset among the moved Empties (at most
+    MAX_OFFSET_VIEWS, those with the most tiles first), with the datasets that share it. The matrix applied to
+    the camera gives the camera that sees the dataset's own position as the real camera sees the moved one."""
     names = st.get("datasets")
     if not names:
         return [], ()
@@ -170,19 +172,19 @@ def view_offsets(st):
     from .tileset.traversal import ecef_to_geodetic
     ident = Matrix.Identity(4)
     moved = []
-    for name in names.values():
+    for url, name in names.items():
         e = bpy.data.objects.get(name)
         if e is None or CENTRE not in e:
             continue
         m = e.matrix_basis
         if all(abs(m[i][j] - ident[i][j]) < 1e-6 for i in range(3) for j in range(4)):
             continue
-        moved.append((len(e.children), e))
+        moved.append((len(e.children), url, e))
     if not moved:
         return [], ()
     moved.sort(key=lambda x: -x[0])
-    out, seen = [], []
-    for _n, e in moved:
+    out = {}                                               # rounded matrix -> [matrix, URLs]
+    for _n, url, e in moved:
         c = np.asarray(tuple(e[CENTRE]), dtype=np.float64)
         if float(np.linalg.norm(c)) < 6.0e6:
             Bd = np.eye(4)
@@ -195,13 +197,12 @@ def view_offsets(st):
         except np.linalg.LinAlgError:
             continue
         key = tuple(np.round(inv[:3, :], 3).ravel())
-        if key in seen:
-            continue
-        seen.append(key)
-        out.append(inv)
-        if len(out) >= MAX_OFFSET_VIEWS:
-            break
-    return out, tuple(seen)
+        if key in out:
+            out[key][1].append(url)
+        elif len(out) < MAX_OFFSET_VIEWS:
+            out[key] = [inv, [url]]
+    return ([(m, tuple(sorted(urls))) for m, urls in out.values()],
+            tuple((k, tuple(sorted(v[1]))) for k, v in out.items()))
 
 
 def find(name: str):

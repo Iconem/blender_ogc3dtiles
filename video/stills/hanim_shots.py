@@ -302,6 +302,41 @@ elif shot == "a_xray":
         relight(Albedo_Strength=1.0, Baked_Light=1.0, X_ray=ease((t - 0.15) / 0.35), X_ray_Falloff=2.0)
         look_at(cam, eye(t), c)
     anim(144, step)
+elif shot == "a_splat_xray":
+    # a Gaussian splat scene, a church in a forest: the splats, then the add-on's X-ray on a dark background, the
+    # points in their own colours and then in one tint
+    import numpy as np
+    add("Hayravank"); P.origin_mode = "AUTO"; P.origin_valid = False; sky(35, 200)
+    cam = camera("Cam", (0, -600, 400), (0, 0, 0), 32); start(cam, 8, wait=90, min_wait=25)
+    lo, hi = bounds(); c = (lo + hi) / 2; sz = (hi - lo).length
+    f = 0.22; a0 = math.radians(-60); e0 = c + Vector((f * sz * math.cos(a0), f * sz * math.sin(a0), 0.6 * f * sz))
+    look_at(cam, e0, c); bpy.context.view_layer.update()
+    # the church: first the ray through where it shows in this framing, then the nearest dense splats along the
+    # ray through the middle of a closer frame
+    u, v = 0.585, 0.36; sw = cam.data.sensor_width
+    d = cam.matrix_world.to_3x3() @ Vector(((u - 0.5) * sw / cam.data.lens, (0.5 - v) * sw / cam.data.lens * 720 / 1280, -1.0))
+    T = e0 + d * ((c.z - e0.z) / d.z); A = T + Vector((0, 0, 10)); look_at(cam, A + (e0 - T) * 0.55, A)
+    P.max_screen_space_error = 3.0; converge(240, min_wait=25); bpy.context.view_layer.update()
+    E = np.array(cam.matrix_world.translation); Dv = np.array(cam.matrix_world.to_3x3() @ Vector((0, 0, -1))); deps = []
+    for o in tiles():
+        co = np.empty(len(o.data.vertices) * 3, np.float32); o.data.vertices.foreach_get("co", co); M = np.array(o.matrix_world)
+        w = co.reshape(-1, 3) @ M[:3, :3].T + M[:3, 3] - E; dz = w @ Dv
+        deps.append(dz[(np.linalg.norm(w - np.outer(dz, Dv), axis=1) < 2.5) & (dz > 1)])
+    dep = float(np.percentile(np.concatenate(deps), 25)); C = Vector((E + Dv * dep).tolist()) - Vector((0, 0, 7))
+    back = Vector((-Dv).tolist()); R = 1.6 * dep; h = back.z * R; rad = math.hypot(back.x, back.y) * R; az0 = math.atan2(back.y, back.x)
+    def eye(t):
+        az = az0 + math.radians(-35 + 70 * ease(t)); return C + Vector((rad * math.cos(az), rad * math.sin(az), h))
+    look_at(cam, eye(0), C); converge(240, min_wait=20)
+    eevee(32); sc.render.film_transparent = False; light_bg((0.006, 0.008, 0.014))
+    P.xray_radius = 0.05
+    def step(i, t):
+        on = t >= 0.22
+        if P.xray != on: P.xray = on
+        k = ease((t - 0.6) / 0.2); P.xray_tint_amount = k; P.xray_strength = 0.3 - 0.18 * k
+        look_at(cam, eye(t), C)
+    anim(int(os.environ.get("FRAMES", 192)), step)
+    if os.environ.get("TESTOFF"):
+        P.xray = False; look_at(cam, eye(0), C); bpy.context.view_layer.update(); render("off_again")
 elif shot == "a_sacre":
     # Sacre-Coeur, a point cloud with eye-dome lighting, a partial orbit
     add("Sacre-Coeur exterior 406M"); P.origin_mode = "AUTO"; P.origin_valid = False; sky(35, 200)

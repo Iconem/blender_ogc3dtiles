@@ -125,8 +125,32 @@ def _library_paths():
     return [bpy.path.abspath(p) for p in library.split_paths(addon_pref("library_files", ""))]
 
 
+LIB_LABEL_CHARS = 74        # a longer label is clipped by Blender and loses its left margin: rows then misalign
+
+
 def _entry_label(entry) -> str:
-    return f"{entry['group']} / {entry['name']}" if entry.get("group") else entry["name"]
+    text = f"{entry['group']} / {entry['name']}" if entry.get("group") else entry["name"]
+    if len(text) > LIB_LABEL_CHARS:
+        head = (LIB_LABEL_CHARS - 1) * 2 // 3
+        text = text[:head].rstrip() + "…" + text[-(LIB_LABEL_CHARS - 1 - head):].lstrip()
+    return text
+
+
+def _no_library(op, context):
+    """No library file is set: say so where the user is looking (a status-bar report goes unseen), with the
+    way to the preferences."""
+    module = __package__.rsplit(".", 1)[0]
+
+    def draw(self, _context):
+        col = self.layout.column()
+        col.label(text="Tilesets are picked from, and saved to, a library: a .json file.")
+        col.label(text="Choose or create one under Tileset libraries in the add-on preferences.")
+        col.separator()
+        col.operator("preferences.addon_show", text="Open the Preferences", icon="PREFERENCES").module = module
+
+    context.window_manager.popup_menu(draw, title="No tileset library yet", icon="BOOKMARKS")
+    op.report({"WARNING"}, "No tileset library: add one in the add-on preferences")
+    return {"CANCELLED"}
 
 
 def _matching_entries(query, kinds=()) -> list:
@@ -191,8 +215,7 @@ class OGC3D_OT_LibraryAdd(Operator):
 
     def invoke(self, context, event):
         if not _library_paths():
-            self.report({"WARNING"}, "No tileset library: add one in the add-on preferences")
-            return {"CANCELLED"}
+            return _no_library(self, context)
         _lib_rows[:] = library.read_all(_library_paths())
         rows = context.window_manager.ogc3d_lib_rows
         rows.clear()
@@ -244,8 +267,7 @@ class OGC3D_OT_LibrarySave(Operator):
 
     def invoke(self, context, event):
         if not _library_paths():
-            self.report({"WARNING"}, "No tileset library: add one in the add-on preferences")
-            return {"CANCELLED"}
+            return _no_library(self, context)
         return context.window_manager.invoke_props_dialog(self)
 
     def execute(self, context):

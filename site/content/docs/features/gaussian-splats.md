@@ -16,7 +16,8 @@ splats show from far away, finer ones as you get closer.
 - It needs the cesium-native backend.
 
 Scene origin, clipping, rendering and converged animations work as for other tilesets. Raster
-overlays are not draped on splats.
+overlays are not draped on splats. [X-ray](/features/point-clouds#x-ray) shows a splat scene as a
+radiograph, each splat as a point of light.
 
 ![Bernini's baldacchino in San Pietro, Gaussian splat tiles rendered in Cycles](/img/splats_baldacchino.jpg)
 

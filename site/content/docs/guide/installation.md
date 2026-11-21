@@ -52,6 +52,10 @@ blender --command extension validate dist/ogc_3dtiles_streaming-0.6.4.zip
   [jo-chemla fork](https://github.com/jo-chemla/cesium-native-python/releases), whose CI builds
   wheels for CPython 3.11 to 3.13. The repository can be changed in the preferences' folded *Developer* section,
   with *Build* next to a source folder for a local checkout.
+- When Blender's own folder cannot be written to (installed under Program Files, or by a system
+  package), the wheel goes to your Blender user folder, `scripts/modules`, which Blender reads at
+  start. Before, pip put it in a per-user Python folder Blender never reads: the install reported a
+  success and the backend was still missing after a restart.
 - Windows: Blender 4.2 to 4.5 bundle an old Microsoft C++ runtime. The released Windows wheels are
   built to work with it, on 4.5 and 5.x alike. A wheel built differently is refused on Blender older
   than 5.0, with a message, instead of crashing.

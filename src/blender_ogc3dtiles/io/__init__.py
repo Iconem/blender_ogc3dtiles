@@ -597,6 +597,54 @@ def _wire_point_colors(mat):
     nt.links.new(attr.outputs["Color"], bsdf.inputs["Emission Color"])
     bsdf.inputs["Emission Strength"].default_value = 1.0
     _ensure_instancer_color(mat)
+    set_point_lit(mat, _scene_point_lit())
+
+
+def _scene_point_lit() -> bool:
+    try:
+        return bool(bpy.context.scene.ogc3dtiles.point_lit)
+    except Exception:                                  # noqa: BLE001
+        return False
+
+
+def set_point_lit(mat, lit: bool) -> bool:
+    """Point colours as light (unlit: a scan carries the light it was captured in) or as a surface colour
+    that the scene's lights shade. Points have no normals of their own: each one is shaded as the small
+    sphere, tetrahedron or disc it is drawn as."""
+    nt = mat.node_tree if mat and mat.use_nodes else None
+    bsdf = _node_of_type(nt, "BSDF_PRINCIPLED") if nt is not None else None
+    if bsdf is None:
+        return False
+    em, base = bsdf.inputs["Emission Color"], bsdf.inputs["Base Color"]
+    link = next((l for sock in (em, base) for l in sock.links
+                 if l.from_node.type in ("ATTRIBUTE", "MIX")), None)
+    if link is None:
+        return False
+    src, want = link.from_socket, (base if lit else em)
+    if link.to_socket != want:
+        nt.links.remove(link)
+        nt.links.new(src, want)
+    if lit:
+        bsdf.inputs["Emission Strength"].default_value = 0.0
+        bsdf.inputs["Roughness"].default_value = 1.0
+        if "Specular IOR Level" in bsdf.inputs:
+            bsdf.inputs["Specular IOR Level"].default_value = 0.0
+    else:
+        base.default_value = (0.0, 0.0, 0.0, 1.0)
+        bsdf.inputs["Emission Strength"].default_value = 1.0
+    return True
+
+
+def apply_point_lit(lit: bool) -> int:
+    """Every point tile's material, live (Gaussian splats keep their own shading)."""
+    n = 0
+    for o in bpy.data.objects:
+        mod = o.modifiers.get("Points") if o.type == "MESH" else None
+        if mod is None or o.get("splats"):
+            continue
+        for mat in o.data.materials:
+            n += bool(set_point_lit(mat, lit))
+    return n
 
 
 def _ensure_instancer_color(mat) -> bool:
@@ -997,6 +1045,9 @@ def build_tile_from_payload(payload: dict, key: str, scene: bpy.types.Scene,
         from ..materials import apply_relight
         for m in me.materials:
             apply_relight(m)
+    if getattr(scene.ogc3dtiles, "xray", False) and (payload.get("points") or payload.get("splats")):
+        from .. import xray
+        xray.show(obj)
     _new_tile_hooks(scene, [obj], list(me.materials))
     obj.hide_viewport = hidden
     obj.hide_render = hidden
@@ -1679,12 +1730,13 @@ def apply_point_display(mode: str) -> int:
     n = 0
     for o in bpy.data.objects:
         mod = o.modifiers.get("Points") if o.type == "MESH" else None
-        if mod is None or mod.type != "NODES" or mod.node_group is ng or o.get("splats"):
+        if mod is None or mod.type != "NODES" or mod.node_group is ng or o.get("splats") or o.get("ogc3d_xray"):
             continue
         mod.node_group = ng
         mat = o.data.materials[0] if o.data.materials else None
         if mat is not None:
-            _ensure_instancer_color(mat)
+            if _ensure_instancer_color(mat):
+                set_point_lit(mat, _scene_point_lit())
         _set_points_inputs(mod, ng, o.get("point_radius", 0.05), mat)
         o.update_tag()
         n += 1

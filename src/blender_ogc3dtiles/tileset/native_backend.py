@@ -441,6 +441,51 @@ def _flag(v) -> bool:
     return bool(v() if callable(v) else v)
 
 
+def _tile_url(tile) -> str:
+    u = tile.tile_id_string
+    return str(u() if callable(u) else u)
+
+
+def _dataset_excluder(base):
+    """ITileExcluder that gives each moved dataset a selection of its own (dataset_empties). cesium-native
+    selects once per view group; before each pass the backend says whose pass it is:
+
+      only = None       the main pass, for the real camera: the moved datasets are left out
+      only = {URLs}     the pass of a camera moved the other way: nothing but these datasets
+
+    A dataset is cut at its external tile, so what is left out is never visited, let alone loaded."""
+
+    class DatasetExcluder(base):
+        def __init__(self):
+            super().__init__()
+            self.moved = frozenset()            # URLs of every moved dataset
+            self.known = {}                     # the backend's dataset cache: URL -> (URL, centre) or False
+            self.only = None
+
+        def start_new_frame(self):
+            pass
+
+        def should_exclude(self, tile):
+            url = _tile_url(tile)
+            only = self.only
+            if only is None:
+                return url in self.moved
+            if url in only:
+                return False
+            if self.known.get(url):
+                return True                     # another dataset
+            if _flag(tile.is_empty_content) or _flag(tile.is_render_content):
+                return False                    # a grouping tile, or a loaded tile: reached through its dataset
+            up, n = tile.parent, 0              # not loaded yet: inside one of these datasets, or another one?
+            while up is not None and n < 256:
+                if _tile_url(up) in only:
+                    return False
+                up, n = up.parent, n + 1
+            return True
+
+    return DatasetExcluder()
+
+
 def _dataset_of(tile, cache):
     """(URL, ECEF centre) of the dataset a tile belongs to, or None. A dataset is the topmost external tileset
     above the tile, and only when everything above it is a grouping tile without content: an aggregate
@@ -649,6 +694,8 @@ class CesiumNativeBackend:
         self._overlay_events = []
         self._overlays = {}                     # uid -> RasterOverlay
         self._excluders = {}                    # uid -> RasterizedPolygonsTileExcluder
+        self._ds_excluder = None                # _dataset_excluder, while a dataset is moved
+        self._ds_groups = {}                    # frozenset of dataset URLs -> TilesetViewGroup
         self._globe = False                     # procedural ellipsoid tileset
         self._rendered = set()
         self._counter = 0
@@ -773,9 +820,13 @@ class CesiumNativeBackend:
             if boxes or joined:
                 made["boxes"] = _volume_excluder(sel.ITileExcluder, boxes, mode, joined)
             self._excluders = made
-            self._tileset.options.excluders = list(made.values())
+            self._apply_excluders()
         except Exception as exc:          # noqa: BLE001
             print("[3DTiles/native] excluders update failed: %r" % (exc,))
+
+    def _apply_excluders(self):
+        extra = [self._ds_excluder] if self._ds_excluder is not None else []
+        self._tileset.options.excluders = list(self._excluders.values()) + extra
 
     def pop_overlay_events(self):
         with self._lock:
@@ -801,8 +852,9 @@ class CesiumNativeBackend:
         ``faces`` = [(direction, up)] of a panoramic camera's cube faces: one
         90 degree ViewState each, viewport_w x viewport_h px, and cesium-native
         selects for their union.
-        ``offsets`` = 4x4 ECEF matrices: every view again with the camera moved by each, for datasets shown
-        away from where they are (dataset_empties.view_offsets)."""
+        ``offsets`` = [(4x4 ECEF matrix, dataset URLs)] for datasets shown away from where they are
+        (dataset_empties.view_offsets): each gets a selection of its own, for the camera moved by its matrix,
+        and the main selection leaves those datasets out."""
         if self._tileset is None:
             return NativeViewResult([], [], {})
         sel = self._cs.tiles.selection
@@ -819,43 +871,75 @@ class CesiumNativeBackend:
             views = [sel.ViewState(*args, -hw, hw, -hh, hh)]
         else:
             views = [sel.ViewState(*args, float(hfov), float(vfov))]
-        for M in offsets or ():
+        def moved_views(M):
             R = M[:3, :3]
+            out = []
             for d, u in (faces or [(args[1], args[2])]):
                 p2 = R @ args[0] + M[:3, 3]
                 d2 = R @ np.asarray(d, np.float64)
                 u2 = R @ np.asarray(u, np.float64)
                 d2, u2 = d2 / np.linalg.norm(d2), u2 / np.linalg.norm(u2)
                 if faces:
-                    views.append(sel.ViewState(p2, d2, u2, args[3], math.pi / 2.0, math.pi / 2.0))
+                    out.append(sel.ViewState(p2, d2, u2, args[3], math.pi / 2.0, math.pi / 2.0))
                 elif ortho is not None:
-                    views.append(sel.ViewState(p2, d2, u2, args[3], -hw, hw, -hh, hh))
+                    out.append(sel.ViewState(p2, d2, u2, args[3], -hw, hw, -hh, hh))
                 else:
-                    views.append(sel.ViewState(p2, d2, u2, args[3], float(hfov), float(vfov)))
-        vg = self._tileset.default_view_group
-        res = self._tileset.update_view_group(vg, views, float(dt))
-        self._tileset.load_tiles()
+                    out.append(sel.ViewState(p2, d2, u2, args[3], float(hfov), float(vfov)))
+            return out
+
+        passes = [(self._tileset.default_view_group, views, None)]
+        offsets = list(offsets or ())
+        try:
+            if offsets and self._ds_excluder is None:
+                self._ds_excluder = _dataset_excluder(sel.ITileExcluder)
+                self._ds_excluder.known = self._dataset_cache
+                self._apply_excluders()
+            elif not offsets and self._ds_excluder is not None:
+                self._ds_excluder = None
+                self._ds_groups = {}
+                self._apply_excluders()
+            if offsets:
+                groups = {}
+                for M, urls in offsets:
+                    urls = frozenset(urls)
+                    groups[urls] = self._ds_groups.get(urls) or sel.TilesetViewGroup()
+                    passes.append((groups[urls], moved_views(np.asarray(M, np.float64)), urls))
+                self._ds_groups = groups        # the groups of offsets that are gone are dropped
+                self._ds_excluder.moved = frozenset().union(*groups)
+        except Exception as exc:                # noqa: BLE001
+            print("[3DTiles/native] moved datasets: %r" % (exc,))
+            passes = passes[:1]
         keys = []
-        for t in res.tiles_to_render:
-            rc = t.content.render_content
-            if rc is None:
-                continue
-            rr = rc.render_resources
-            if isinstance(rr, ReadyTile):
-                keys.append(rr.key)
+        tot = {"tiles_visited": 0, "tiles_culled": 0, "to_render": 0, "worker_queue": 0, "main_queue": 0}
+        for n, (vg, vs, only) in enumerate(passes):
+            if self._ds_excluder is not None:
+                self._ds_excluder.only = only
+            res = self._tileset.update_view_group(vg, vs, float(dt) if n == 0 else 0.0)
+            for t in res.tiles_to_render:
+                rc = t.content.render_content
+                if rc is None:
+                    continue
+                rr = rc.render_resources
+                if isinstance(rr, ReadyTile):
+                    keys.append(rr.key)
+            tot["tiles_visited"] += res.tiles_visited
+            tot["tiles_culled"] += res.tiles_culled
+            tot["to_render"] += len(res.tiles_to_render)
+            tot["worker_queue"] += res.worker_thread_tile_load_queue_length
+            tot["main_queue"] += res.main_thread_tile_load_queue_length
+        if self._ds_excluder is not None:
+            self._ds_excluder.only = None
+        self._tileset.load_tiles()
         now = set(keys)
         to_unload = sorted(self._rendered - now)
         self._rendered = now
-        stats = {
-            "tiles_visited": res.tiles_visited,
-            "tiles_culled": res.tiles_culled,
-            "to_render": len(res.tiles_to_render),
-            "worker_queue": res.worker_thread_tile_load_queue_length,
-            "main_queue": res.main_thread_tile_load_queue_length,
+        stats = dict(tot)
+        stats.update({
             "loaded": self._tileset.number_of_tiles_loaded,
             "bytes": self._tileset.total_data_bytes,
             "progress": self._tileset.compute_load_progress(),
-        }
+            "passes": len(passes),
+        })
         return NativeViewResult(keys, to_unload, stats)
 
     def pop_ready(self):

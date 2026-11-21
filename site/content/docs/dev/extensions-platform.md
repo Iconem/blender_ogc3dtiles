@@ -17,7 +17,10 @@ rather than code.
 
 `scripts/build_platform_zips.py --blender <blender> --python cp313` builds the second kind into
 `dist/platform/cp313/`. A wheel is built for one Python, and Blender ships one Python per release line, so
-there are two sets: `cp311` for Blender 4.2 to 5.0 and `cp313` for 5.1 and later. Each manifest carries the
+there are two sets: `cp311` for Blender 5.0 and `cp313` for 5.1 and later. The platform builds start at
+Blender 5.0; the GitHub zip still installs on 4.2 and later. One build serves every feature: what a Blender
+version lacks is decided when the add-on runs (Gaussian splats are native from 5.3 and show as points
+before), so there is no need for a build per feature. Each manifest carries the
 matching `blender_version_min` and `blender_version_max`, so the platform serves the right one. Six zips in
 all; macOS Intel and the ARM builds of Windows and Linux have no wheel.
 

@@ -366,6 +366,15 @@ class _View:
             self.rv3d.view_distance /= k
             self.space.clip_end = max(self.space.clip_end, 4.0 * self.rv3d.view_distance)
 
+    def transform(self, T):
+        """Move the view rigidly by the 4x4 ``T`` (rotation and translation)."""
+        Tm = _mx(T)
+        if self.cam is not None:
+            self.cam.matrix_world = Tm @ self.cam.matrix_world
+        else:
+            self.rv3d.view_location = Tm @ self.rv3d.view_location
+            self.rv3d.view_rotation = Tm.to_quaternion() @ self.rv3d.view_rotation
+
     def orbit(self, p, up, yaw, pitch):
         """From the saved state: pitch about the view's right axis, then yaw about ``up``, both through ``p``."""
         p, up = Vector(p), Vector(up)
@@ -715,6 +724,60 @@ class OGC3D_OT_GlobeReanchor(Operator):
         return {"FINISHED"}
 
 
+def globe_tilt(g=None) -> float:
+    """Angle in radians between the Globe's vertical and Blender's Z, plus its turn away from north."""
+    g = g or globe()
+    if g is None:
+        return 0.0
+    G = _np(g.matrix_world)[:3, :3]
+    R = G / max(np.linalg.norm(G[:, 0]), 1e-300)
+    return float(math.acos(max(-1.0, min(1.0, (np.trace(R) - 1.0) / 2.0))))
+
+
+class OGC3D_OT_GlobeLevel(Operator):
+    """Make the ground under the view level again: the scene origin moves there, with +Z up and +Y north, and the view turns with it, so nothing changes on screen. After a long way on the globe the vertical of the place leans away from Blender's Z; this puts it back"""
+    bl_idname = "ogc3dtiles.globe_level"
+    bl_label = "Reset Vertical"
+
+    @classmethod
+    def poll(cls, context):
+        if not _nav["active"]:
+            cls.poll_message_set("Turn Globe Navigation on first")
+            return False
+        return True
+
+    def execute(self, context):
+        cv = _context_view(context)
+        g = globe(create_in=context.scene)
+        if cv is None or g is None:
+            return {"CANCELLED"}
+        region, rv3d, space = cv
+        try:
+            view = _View(space, rv3d)
+        except ValueError:
+            self.report({"WARNING"}, "Leave the camera view, or turn Lock Camera to View on")
+            return {"CANCELLED"}
+        a = _view_anchor(context, region, rv3d)
+        if a is None:
+            a = np.array(rv3d.view_location, dtype=np.float64)
+        if not reanchor(context, a):
+            self.report({"WARNING"}, "No georeferenced scene origin to move")
+            return {"CANCELLED"}
+        G = _np(g.matrix_world)
+        R = G[:3, :3] / max(np.linalg.norm(G[:3, 0]), 1e-300)
+        T = _about(G[:3, 3], R.T)                              # undo the Globe's rotation about the new origin
+        follows = view.follows_globe()
+        g.matrix_world = _mx(T @ G)
+        if not follows:                                        # a camera under the Globe turns with it
+            view.transform(T)
+        _mark_origin(g, context.scene.ogc3dtiles)
+        from . import ui
+        for st in ui._state["streams"].values():
+            st["last_sig"] = None
+        context.area.tag_redraw()
+        return {"FINISHED"}
+
+
 class OGC3D_OT_GlobeReset(Operator):
     """Put the Globe back in place: the scene origin at the Blender origin, north along +Y, 1:1, and the 3D views looking at it. The way out when the planet has gone out of sight"""
     bl_idname = "ogc3dtiles.globe_reset"
@@ -759,8 +822,7 @@ class OGC3D_PT_GlobeNav(Panel):
     bl_category = "3D Tiles"
     bl_label = "Globe Navigation (beta)"
     bl_idname = "OGC3D_PT_globe_nav"
-    bl_parent_id = "OGC3D_PT_origin"          # a folded section of Scene Origin: both move the origin
-    bl_options = {"DEFAULT_CLOSED"}
+    bl_parent_id = "OGC3D_PT_origin"          # a section of Scene Origin: both move the origin
 
     @classmethod
     def poll(cls, context):
@@ -786,12 +848,18 @@ class OGC3D_PT_GlobeNav(Panel):
         sub.enabled = abs(s - 1.0) > 1e-6
         sub.operator("ogc3dtiles.globe_scale_reset", text="To 1:1")
         layout.operator("ogc3dtiles.globe_reanchor", icon="PIVOT_CURSOR")
+        tilt = math.degrees(globe_tilt(g))
+        row = layout.row(align=True)
+        row.label(text="Vertical is +Z" if tilt < 0.01 else f"Vertical off by {tilt:.2f}°")
+        sub = row.row(align=True)
+        sub.enabled = tilt >= 0.01
+        sub.operator("ogc3dtiles.globe_level", text="Reset")
         layout.operator("ogc3dtiles.globe_parent", icon="CON_CHILDOF")
         layout.operator("ogc3dtiles.globe_reset", icon="LOOP_BACK")
         layout.prop(context.window_manager, "ogc3d_globe_frame")
 
 
-_classes = (OGC3D_OT_GlobeNav, OGC3D_OT_GlobeScaleReset, OGC3D_OT_GlobeReanchor, OGC3D_OT_GlobeParent, OGC3D_OT_GlobeReset,
+_classes = (OGC3D_OT_GlobeNav, OGC3D_OT_GlobeScaleReset, OGC3D_OT_GlobeReanchor, OGC3D_OT_GlobeLevel, OGC3D_OT_GlobeParent, OGC3D_OT_GlobeReset,
             OGC3D_PT_GlobeNav)
 
 

@@ -1172,6 +1172,44 @@ class OGC3D_OT_RelightRemove(Operator):
         return {"FINISHED"}
 
 
+LOOKS = (
+    ("LIT", "Lit", "Tiles shaded by the scene's lights (the default)"),
+    ("SHADELESS", "Shadeless", "Every tile's colours as they are, without any light"),
+    ("XRAY", "X-ray", "Point clouds and splats as an X-ray in their own colours"),
+    ("XRAY_MONO", "X-ray Mono", "Point clouds and splats as an X-ray in one colour, the Tint"),
+)
+
+
+def current_look(props) -> str:
+    if props.xray:
+        return "XRAY_MONO" if props.xray_tint_amount >= 0.999 else "XRAY"
+    return "SHADELESS" if props.shadeless else "LIT"
+
+
+class OGC3D_OT_MaterialLook(Operator):
+    """Material preset for every tile. Each one only sets the Shadeless and X-ray settings below"""
+    bl_idname = "ogc3dtiles.material_look"
+    bl_label = "Material Preset"
+    bl_options = {"REGISTER", "UNDO"}
+
+    look: bpy.props.EnumProperty(name="Look", items=LOOKS, default="LIT")
+
+    @classmethod
+    def description(cls, context, properties):
+        return next(d for k, _n, d in LOOKS if k == properties.look)
+
+    def execute(self, context):
+        props = context.scene.ogc3dtiles
+        xr = self.look in ("XRAY", "XRAY_MONO")
+        if xr:
+            props.xray_tint_amount = 1.0 if self.look == "XRAY_MONO" else 0.0
+        if props.shadeless != (self.look == "SHADELESS"):
+            props.shadeless = self.look == "SHADELESS"
+        if props.xray != xr:
+            props.xray = xr
+        return {"FINISHED"}
+
+
 def _tunable_prop(name) -> str:
     return name.lower().replace(" ", "_").replace("-", "")
 
@@ -1208,6 +1246,10 @@ OGC3D_RelightSliders = _relight_sliders()
 def draw_panel(layout, props):
     """Body of the collapsible "Materials" sub-panel."""
     from . import node_rows
+    look = current_look(props)
+    row = layout.row(align=True)
+    for key, name, _d in LOOKS:
+        row.operator("ogc3dtiles.material_look", text=name, depress=key == look).look = key
     relit = node_rows.draw(layout, props, "auto_relight", "Shared shader nodes", "RELIGHT")
     layout.prop(props, "backface_mode", text="Faces")
     layout.prop(props, "shadeless")
@@ -1301,7 +1343,7 @@ def _draw_metadata_columns(layout, props):
         layout.label(text=f"+ {len(rows) - _MAX_LEGEND_ROWS} more classes")
 
 
-_classes = [OGC3D_OT_RelightApply, OGC3D_OT_RelightRemove]
+_classes = [OGC3D_OT_RelightApply, OGC3D_OT_RelightRemove, OGC3D_OT_MaterialLook]
 
 
 def _persistent(fn):

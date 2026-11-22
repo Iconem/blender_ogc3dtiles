@@ -70,6 +70,9 @@ them with the same shader. Both groups can be edited. Ordinary transparency does
 look: semi-transparent points fade everything to an even fog, because each one also hides what is
 behind it.
 
+The **X-ray** and **X-ray Mono** [presets](/features/nodes-material#presets) at the top of the panel
+turn it on in one click, in the points' own colours or in the tint.
+
 ## Colours
 
 ![IGN LiDAR HD around the Eiffel Tower coloured by LAS class, with eye-dome lighting](/img/beauty_edl_ign.jpg)
@@ -92,6 +95,12 @@ fewer than a million points; the geometric errors match those spacings. Its 40,0
 thousand points each are each in a separate `tileset.json`, which adds one download per tile and one
 more wait at each level. What helps here: a larger *Max px*, so that coarse points grow to cover
 their cell, and in the tiler a finer root cell, more points per tile and fewer `tileset.json` files.
+
+Another scan of the same site, in Potree 1.7 (1.1 billion points), streamed through a Potree to 3D Tiles
+middleware with implicit tiling, starts at a 1.3 m spacing: from close by, 2.4 million points in 218
+tiles load within 15 s at a 2 px error, where the tileset above was still loading after 3 minutes.
+Such a converter sets each tile's geometric error to its point spacing, so a lower *Max screen space
+error* (2 to 4) than for meshes gives the detail a Potree viewer shows.
 
 ## How it works
 

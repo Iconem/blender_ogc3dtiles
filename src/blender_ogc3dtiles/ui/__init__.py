@@ -2222,9 +2222,9 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
             row.operator("ogc3dtiles.stop_stream", icon="PAUSE", text="Stop")
         row.operator("ogc3dtiles.freeze_tiles", icon="FREEZE", text="Freeze")
         row.operator("ogc3dtiles.clear_tiles", icon="TRASH", text="Clear All Tiles")
-        if any(o.type == "MESH" and "tile_url" not in o and (o.modifiers.get("Points") or o.modifiers.get("Splats"))
-               for o in context.selected_objects):
-            layout.operator("ogc3dtiles.export_points", icon="EXPORT")
+        if any(o.type == "MESH" and "tile_url" not in o and o.users_collection
+               and any(c.name == "Frozen tiles" for c in o.users_collection) for o in context.selected_objects):
+            layout.operator("ogc3dtiles.export_frozen", icon="EXPORT")
 
         # Tilesets
         row = layout.row()

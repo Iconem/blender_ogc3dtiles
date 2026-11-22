@@ -17,6 +17,20 @@ raster overlay, clipping, metadata colours and the shared shader nodes:
 
 Raster overlays have no group of their own: their nodes are in each tile's material.
 
+## Presets
+
+A row of buttons at the top of the *Nodes: Material* panel sets the look of every tile at once:
+
+| Preset | What you get |
+|---|---|
+| **Lit** (default) | Tiles shaded by the scene's lights. |
+| **Shadeless** | Every tile's colours as they are, without any light. See [below](#lighting-with-your-own-lamps). |
+| **X-ray** | Point clouds and splats as an [X-ray](/features/point-clouds#x-ray) in their own colours. |
+| **X-ray Mono** | The same in one colour, the X-ray *Tint*. |
+
+A preset only sets the *Shadeless* and *X-ray* settings below it; the button of the look in use
+stays pressed, and any setting can still be changed by hand afterwards.
+
 ## Shared shader nodes
 
 Tick **Shared shader nodes** to put the `OGC3D Relight` group on every tile. Photogrammetry carries

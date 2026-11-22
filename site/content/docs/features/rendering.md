@@ -106,12 +106,22 @@ are removed (the default), streaming stops and they are hidden, or streaming goe
 - Point and splat objects keep their display modifier, so they look as before, and underneath they
   are clouds of vertices with a `Col` colour attribute. A merged cloud has one point radius, the
   median of its tiles.
-- **Export Points**, shown when a frozen cloud is selected, writes it to PLY or glTF (`.glb`) as
-  points with their colours. Blender's own exporters with their default settings write nothing for
-  a cloud: PLY applies the display modifier, which turns the points into a point cloud object it
-  does not export, and glTF skips loose vertices. By hand: PLY with *Apply Modifiers* off; glTF with
-  *Loose Points* on (*Mesh* section) and *Use Vertex Color: Active*.
-- Meshes export with any exporter, as usual.
+- **Export Frozen**, shown when a frozen object is selected, writes the selected ones with the
+  settings they need, chosen by the file's extension:
+
+  | File | Meshes | Clouds |
+  |---|---|---|
+  | `.glb`, `.gltf` | with their textures | points with their colours |
+  | `.ply` | without textures | points with their colours |
+  | `.obj` | with their textures, written beside the file | left out |
+
+  With *Shared shader nodes* on, a glb also carries each photo as an emissive texture (the Baked
+  Light share), which makes it about three times larger; untick them first for a plain copy.
+
+- Blender's own exporters with their default settings write nothing for a cloud: PLY applies the
+  display modifier, which turns the points into a point cloud object it does not export, and glTF
+  skips loose vertices. By hand: PLY with *Apply Modifiers* off; glTF with *Loose Points* on (*Mesh*
+  section) and *Use Vertex Color: Active*.
 
 ## How it works
 

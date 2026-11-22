@@ -14,8 +14,11 @@ main branch and not in a release zip yet.
   tileset and kind (meshes, points, splats), at the detail they have, with clipping volumes applied and
   their own copies of materials and textures. Then streaming stops and the live tiles go, or stay. See
   [Freeze and export](/features/rendering#freeze-and-export).
-- **Export Points**: frozen point clouds and splats to PLY or glTF as points with their colours. Blender's
-  exporters with their default settings write nothing for them.
+- **Export Frozen**: frozen tiles to glb or glTF (meshes with their textures, clouds as points with their
+  colours), PLY, or OBJ (meshes with their textures). Blender's exporters with their default settings write
+  nothing for a cloud.
+- **Material presets** (Nodes: Material panel): Lit, Shadeless, X-ray and X-ray Mono, one click for every
+  tile. See [Presets](/features/nodes-material#presets).
 - **Stream for: Cameras of a collection.** Every camera of a collection selects tiles at once, each at the
   render resolution, panoramic ones all around: two 360° panoramas, or the cameras *Cameras Along the
   Animation* places on a camera path, so the detail the whole path needs is loaded together (then frozen).

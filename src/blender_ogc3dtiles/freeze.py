@@ -144,7 +144,7 @@ def freeze(context, merge=True) -> list:
 
 class OGC3D_OT_FreezeTiles(Operator):
     """Copy the tiles shown now into plain objects, one per tileset and kind (meshes, points, splats), at the
-    detail they have now, with clipping applied. Points stay points: export them without modifiers"""
+    detail they have now, with clipping applied. Export Frozen writes them out"""
     bl_idname = "ogc3dtiles.freeze_tiles"
     bl_label = "Freeze Tiles"
     bl_options = {"REGISTER"}
@@ -242,54 +242,141 @@ def _cloud(o) -> bool:
     return o.type == "MESH" and (o.modifiers.get("Points") is not None or o.modifiers.get("Splats") is not None)
 
 
-class OGC3D_OT_ExportPoints(Operator):
-    """Export the selected point objects (frozen tiles) as a point cloud with its colours: PLY, or glTF POINTS.
-    Blender's own exporters, with the settings a cloud needs (no display modifiers, loose vertices, colours)"""
-    bl_idname = "ogc3dtiles.export_points"
-    bl_label = "Export Points"
+def frozen_selection(context):
+    """Selected frozen (or any non-tile) mesh objects."""
+    return [o for o in context.selected_objects if o.type == "MESH" and "tile_url" not in o]
+
+
+_EXT = {"JPEG": ".jpg", "PNG": ".png", "WEBP": ".webp", "TARGA": ".tga", "BMP": ".bmp", "TIFF": ".tif"}
+
+
+def _write_image(img, folder) -> str:
+    """The image beside the export, as its original bytes when packed. Returns the file name, or ''."""
+    import os
+    base = bpy.path.clean_name(img.name)
+    pf = img.packed_file
+    try:
+        if pf is not None and pf.size:
+            name = base + _EXT.get(img.file_format, ".png")
+            with open(os.path.join(folder, name), "wb") as fh:
+                fh.write(bytes(pf.data))
+            return name
+        if img.has_data or img.size[0]:
+            name = base + ".png"
+            img.save(filepath=os.path.join(folder, name))
+            return name
+    except Exception:
+        pass
+    return ""
+
+
+def obj_textures(mtl_path, objs) -> int:
+    """Blender's OBJ exporter finds no texture in tile materials (their images are packed and pass through
+    other nodes): write each material's image beside the file and point the .mtl at it."""
+    import os
+    if not os.path.isfile(mtl_path):
+        return 0
+    by_name = {}
+    for o in objs:
+        for m in o.data.materials:
+            if m is not None and m.node_tree is not None:
+                img = next((n.image for n in m.node_tree.nodes if n.type == "TEX_IMAGE" and n.image is not None), None)
+                if img is not None:
+                    by_name[m.name] = by_name[m.name.replace(" ", "_")] = img
+    folder = os.path.dirname(mtl_path)
+    written, out, n = {}, [], 0
+    with open(mtl_path, encoding="utf-8") as fh:
+        lines = fh.read().splitlines()
+    img = None
+    for ln in lines:
+        if ln.startswith("newmtl "):
+            if img is not None:
+                out.append(f"map_Kd {written[img.name]}")
+                n += 1
+            img = by_name.get(ln[7:].strip())
+            if img is not None and img.name not in written:
+                written[img.name] = _write_image(img, folder)
+            if img is not None and not written[img.name]:
+                img = None
+        elif img is not None and ln.startswith("Kd "):
+            ln = "Kd 1.000000 1.000000 1.000000"
+        elif img is not None and ln.startswith("map_Kd "):
+            continue
+        out.append(ln)
+    if img is not None:
+        out.append(f"map_Kd {written[img.name]}")
+        n += 1
+    with open(mtl_path, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(out) + "\n")
+    return n
+
+
+class OGC3D_OT_ExportFrozen(Operator):
+    """Export the selected frozen tiles with the settings they need. Glb or glTF: meshes with their textures,
+    clouds as POINTS with their colours. PLY: clouds or meshes, without textures. OBJ: meshes with their
+    textures copied beside the file"""
+    bl_idname = "ogc3dtiles.export_frozen"
+    bl_label = "Export Frozen"
     bl_options = {"REGISTER"}
 
     filepath: bpy.props.StringProperty(subtype="FILE_PATH")
-    filter_glob: bpy.props.StringProperty(default="*.ply;*.glb;*.gltf", options={"HIDDEN"})
+    filter_glob: bpy.props.StringProperty(default="*.glb;*.gltf;*.ply;*.obj", options={"HIDDEN"})
 
     @classmethod
     def poll(cls, context):
-        return any(_cloud(o) for o in context.selected_objects)
+        return bool(frozen_selection(context))
 
     def invoke(self, context, event):
         if not self.filepath:
-            self.filepath = bpy.path.clean_name(context.active_object.name if context.active_object else "points") + ".ply"
+            sel = frozen_selection(context)
+            ext = ".ply" if sel and all(_cloud(o) for o in sel) else ".glb"
+            self.filepath = bpy.path.clean_name(context.active_object.name if context.active_object else "frozen") + ext
         context.window_manager.fileselect_add(self)
         return {"RUNNING_MODAL"}
 
     def execute(self, context):
         path = bpy.path.abspath(self.filepath)
-        sel = [o for o in context.selected_objects if _cloud(o)]
+        sel = frozen_selection(context)
         if not sel:
-            self.report({"WARNING"}, "Select point objects (Freeze Tiles makes them)")
+            self.report({"WARNING"}, "Select frozen objects (Freeze Tiles makes them)")
             return {"CANCELLED"}
+        clouds = [o for o in sel if _cloud(o)]
+        low = path.lower()
+        if not low.endswith((".glb", ".gltf", ".ply", ".obj")):
+            path += ".ply" if len(clouds) == len(sel) else ".glb"
+            low = path.lower()
+        if low.endswith(".obj") and clouds:
+            self.report({"WARNING"}, "OBJ has no point clouds: the clouds are left out (use PLY or glb)")
+            sel = [o for o in sel if not _cloud(o)]
+            if not sel:
+                return {"CANCELLED"}
         keep = list(context.selected_objects)
         for o in keep:
             o.select_set(o in sel)
         try:
-            if path.lower().endswith((".glb", ".gltf")):
+            # No display modifier applied: clouds stay vertices (frozen meshes have no modifiers left)
+            if low.endswith((".glb", ".gltf")):
                 bpy.ops.export_scene.gltf(filepath=path, use_selection=True, export_apply=False,
-                                          use_mesh_vertices=True, export_vertex_color="ACTIVE",
-                                          export_format="GLB" if path.lower().endswith(".glb") else "GLTF_SEPARATE")
+                                          use_mesh_vertices=bool(clouds), export_vertex_color="ACTIVE" if clouds else "MATERIAL",
+                                          export_format="GLB" if low.endswith(".glb") else "GLTF_SEPARATE")
+            elif low.endswith(".obj"):
+                bpy.ops.wm.obj_export(filepath=path, export_selected_objects=True, apply_modifiers=False,
+                                      export_materials=True, path_mode="STRIP")
+                obj_textures(path[:-4] + ".mtl", sel)
             else:
-                if not path.lower().endswith(".ply"):
-                    path += ".ply"
                 bpy.ops.wm.ply_export(filepath=path, export_selected_objects=True, apply_modifiers=False,
-                                      export_normals=False, export_uv=False)
+                                      export_normals=not clouds, export_uv=not clouds)
         finally:
             for o in keep:
                 o.select_set(True)
-        n = sum(len(o.data.vertices) for o in sel)
-        self.report({"INFO"}, f"{n:,} points written to {path}")
+        nv = sum(len(o.data.vertices) for o in sel if _cloud(o))
+        nf = sum(len(o.data.polygons) for o in sel if not _cloud(o))
+        what = ", ".join(x for x in (f"{nv:,} points" if nv else "", f"{nf:,} faces" if nf else "") if x)
+        self.report({"INFO"}, f"{what} written to {path}")
         return {"FINISHED"}
 
 
-_classes = (OGC3D_OT_FreezeTiles, OGC3D_OT_CamerasAlongPath, OGC3D_OT_ExportPoints)
+_classes = (OGC3D_OT_FreezeTiles, OGC3D_OT_CamerasAlongPath, OGC3D_OT_ExportFrozen)
 
 
 def register():

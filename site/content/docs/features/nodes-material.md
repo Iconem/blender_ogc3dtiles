@@ -49,6 +49,12 @@ In Rendered shading the tiles are lit by three things, and two of them are not y
 
 For lamps only, set *Baked Light* to 0 and the world's Surface strength to 0 (World properties).
 
+**Shadeless**, in the same panel, is the other end: every tile, meshes and points, shows its colours
+with no light at all. With the shared shader nodes it sets *Baked Light* to 1 and puts back the value
+it had when unticked; without them it routes each material's colour to Emission. Tiles that declare
+themselves unlit stay as they are either way. The panel also holds
+[X-ray for points and splats](/features/point-clouds#x-ray).
+
 Without Shared shader nodes there is no Baked Light: mesh and point tiles are plain lit materials.
 One case still emits its colour whatever the lamps: tiles that declare themselves unlit, which
 Google Photorealistic 3D Tiles do.

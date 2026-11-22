@@ -1979,7 +1979,8 @@ def _tick_native(scene, props, st, now) -> bool:
         res = backend.update_view(view.position, view.direction, view.up,
                                   view.viewport_width, view.viewport_height,
                                   view.fov_x, view.fov_y, dt=now - st["last_sel_t"],
-                                  ortho=view.ortho_extents, faces=view.faces, offsets=offsets)
+                                  ortho=view.ortho_extents, faces=view.faces, offsets=offsets,
+                                  extra=view.extra)
         changed |= _apply_visibility(st, set(res.to_render), set(), now)
         st["stats"] = res.stats
         st["last_sig"] = view.signature
@@ -2219,7 +2220,11 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
             row.operator("ogc3dtiles.start_stream", icon="PLAY", text="Start")
         else:
             row.operator("ogc3dtiles.stop_stream", icon="PAUSE", text="Stop")
+        row.operator("ogc3dtiles.freeze_tiles", icon="FREEZE", text="Freeze")
         row.operator("ogc3dtiles.clear_tiles", icon="TRASH", text="Clear All Tiles")
+        if any(o.type == "MESH" and "tile_url" not in o and (o.modifiers.get("Points") or o.modifiers.get("Splats"))
+               for o in context.selected_objects):
+            layout.operator("ogc3dtiles.export_points", icon="EXPORT")
 
         # Tilesets
         row = layout.row()
@@ -2336,6 +2341,15 @@ def _draw_view_source(layout, props) -> None:
         layout.prop(props, "view_camera", text="Camera")
         if props.view_camera is None:
             layout.label(text="No camera chosen: the 3D viewport is used", icon="INFO")
+    elif props.view_source == "COLLECTION":
+        from ..camera import collection_cameras
+        row = layout.row(align=True)
+        row.prop(props, "view_collection", text="")
+        row.prop(props, "view_collection_viewport", text="", icon="VIEW3D")
+        n = len(collection_cameras(props))
+        layout.label(text=f"{n} camera{'s' if n != 1 else ''}" + (" and the viewport" if props.view_collection_viewport
+                                                                   else ""), icon="OUTLINER_OB_CAMERA")
+    layout.operator("ogc3dtiles.cameras_along_path", icon="ANIM")
 
 
 def _group_button(row, name) -> None:

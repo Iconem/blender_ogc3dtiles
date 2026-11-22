@@ -8,14 +8,32 @@ main branch and not in a release zip yet.
 
 ## Unreleased
 
+## 0.6.5 (2026-11-22)
+
+- **Freeze Tiles** (button next to *Clear All Tiles*): the tiles shown now become plain objects, one per
+  tileset and kind (meshes, points, splats), at the detail they have, with clipping volumes applied and
+  their own copies of materials and textures. Then streaming stops and the live tiles go, or stay. See
+  [Freeze and export](/features/rendering#freeze-and-export).
+- **Export Points**: frozen point clouds and splats to PLY or glTF as points with their colours. Blender's
+  exporters with their default settings write nothing for them.
+- **Stream for: Cameras of a collection.** Every camera of a collection selects tiles at once, each at the
+  render resolution, panoramic ones all around: two 360° panoramas, or the cameras *Cameras Along the
+  Animation* places on a camera path, so the detail the whole path needs is loaded together (then frozen).
+  cesium-native only. See [Several cameras](/features/lod-streaming#several-cameras-at-once).
 - **X-ray for point clouds and Gaussian splats** (Nodes: Material panel). Every point adds a little light and
   hides nothing, so walls seen edge-on, vaults and the far side of a building show through, as on a
-  radiograph. Strength, point radius and a tint; needs a dark background. See
-  [X-ray](/features/point-clouds#x-ray), and the new clip on the [Videos](/guide/videos) page.
+  radiograph. It is a shared shader group, `OGC3D X-ray`, in front of each point material: points keep the
+  shape their display gives them. Splats become points while it is on, since Blender's splat renderer
+  ignores materials. Needs a dark background. See [X-ray](/features/point-clouds#x-ray), and the clip on
+  the [Videos](/guide/videos) page.
 - **Point clouds are shaded by the scene's lights**, as mesh tiles are: sun, lamps, world and shadows act on
   them. Before, their colours were shown without any light. Files saved with an older version are shaded
   the same way when opened. See [Lighting](/features/point-clouds#lighting).
-- Attenuated point size now stays between 2 and 6 px on screen by default (it was 1 to 3 px).
+- **Shadeless** (Nodes: Material panel): every tile shows its colours without any light, for scans that carry
+  their own. With the shared shader nodes it sets their Baked Light to 1. Off by default.
+- The shared shader nodes now work on point clouds too: they took a flat grey instead of the point colours.
+- Attenuated point size now stays between 4 and 12 px on screen by default (it was 1 to 3 px), and Screen
+  pixels mode draws 4 px points.
 - **A moved dataset has a selection of its own.** In a tileset of tilesets, each dataset moved by its Empty
   is selected in a separate pass for a camera moved the other way, limited to that dataset, and the main
   pass leaves it out. Nothing loads any more for the place the dataset was at, and 32 different offsets are
@@ -30,7 +48,6 @@ main branch and not in a release zip yet.
   now goes to the Blender user folder and the install is checked. Before, it reported a success and the
   backend was still missing after a restart.
 - Platform zips for extensions.blender.org start at Blender 5.0.
-
 - **Tile bounds** (LOD / Streaming panel): a wire outline around every visible tile, drawn in the 3D
   view only, in one colour or a random colour per tile. *Tile objects* outlines what each tile
   holds, splats included, which Blender's own Bounds display skips; *3D Tiles volumes* outlines the

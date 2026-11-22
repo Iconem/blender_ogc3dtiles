@@ -13,6 +13,7 @@ detailed they get, and how fast they are brought into Blender.
 | **3D viewport** (default) | The view you navigate in. |
 | **Scene camera** | The active scene camera, at the render resolution. |
 | **Chosen camera** | A camera object you pick in the field below. |
+| **Cameras of a collection** | Every camera of a collection at once, see [Several cameras at once](#several-cameras-at-once). |
 
 With a camera selected, the viewport is free: orbit, step back, and look at what that camera pulls
 in. Tiles refine inside its view and stay coarse, or are not loaded at all, outside of it. Move the
@@ -29,7 +30,8 @@ camera, or scrub the timeline when it is animated, and the tiles follow.
 - Looking through the camera (Numpad 0) shows what a render will contain.
 - Looking from outside shows how far the selection reaches and where detail stops. It is the way to
   check a shot before a long render, or to understand why a view is heavy.
-- To freeze what is loaded while you look around, untick the tileset's checkbox in the list.
+- To freeze what is loaded while you look around, untick the tileset's checkbox in the list. To keep it as
+  plain objects, use [Freeze](/features/rendering#freeze-and-export).
 
 ## Panoramic cameras
 
@@ -46,6 +48,23 @@ view: a 180° fisheye uses five. Detail close to the camera comes in refinement 
 last: on Notre-Dame with Google tiles, two minutes for the full set, the tower tops in the last
 step. Wait for the loading count to settle before rendering. EEVEE does not render panoramic cameras; Cycles
 does.
+
+## Several cameras at once
+
+**Stream for: Cameras of a collection** selects tiles for every camera of a collection at the same
+time (cameras in its child collections and hidden ones count too, up to 64), each at the render
+resolution, panoramic ones all around. The tiles each camera needs load together, and none is
+dropped because another camera does not see it. The small button next to the collection adds the
+3D viewport to them.
+
+- Two or more 360° panoramas: put their cameras in one collection. In a test with two
+  equirectangular panoramas about 100 m apart over Sacré-Cœur, 38 tiles were shown against 28 for one of them alone.
+- A camera path: **Cameras Along the Animation** copies the scene camera at evenly spaced frames of
+  the animation (12 by default) into an `OGC3D Path Cameras` collection, and sets *Stream for* to
+  it. The detail the whole path needs is then loaded at once, ready for
+  [Freeze Tiles](/features/rendering#freeze-and-export).
+- cesium-native selects for the union of the views. The Pure Python backend only uses the first
+  one.
 
 ## Max SSE: how fine
 

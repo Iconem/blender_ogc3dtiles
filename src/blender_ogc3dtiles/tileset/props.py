@@ -194,6 +194,11 @@ def _on_relight_gold(self, context):
     materials.set_gold_enabled(self.relight_gold)
 
 
+def _on_shadeless(self, context):
+    from .. import materials
+    materials.apply_shadeless(context.scene)
+
+
 def _on_xray(self, context):
     from .. import xray
     xray.apply(context.scene)
@@ -675,6 +680,15 @@ class TilesSceneProps(PropertyGroup):
         default="POINTS",
         update=_on_point_display,
     )
+    shadeless: BoolProperty(
+        name="Shadeless",
+        description="Show every tile's colours as they are, without any light: lamps, sun and world do "
+                    "nothing and nothing casts shadows. For photogrammetry and scans that already carry the "
+                    "light they were captured in. With the shared shader nodes it sets their Baked Light to 1. "
+                    "Live",
+        default=False,
+        update=_on_shadeless,
+    )
     xray: BoolProperty(
         name="X-ray",
         description="Show point clouds and Gaussian splats as an X-ray: every point adds a little light "
@@ -690,7 +704,9 @@ class TilesSceneProps(PropertyGroup):
         default=0.3, min=0.001, soft_max=2.0, max=50.0, precision=3, update=_on_xray_params,
     )
     xray_radius: FloatProperty(
-        name="Point radius (m)", description="Radius of the X-ray points",
+        name="Splat radius (m)",
+        description="Radius of the points Gaussian splats become while X-ray is on (point clouds keep the "
+                    "size their display gives them)",
         default=0.05, min=0.001, soft_max=1.0, max=50.0, precision=3, update=_on_xray_params,
     )
     xray_tint: FloatVectorProperty(
@@ -725,15 +741,15 @@ class TilesSceneProps(PropertyGroup):
     )
     point_adapt_min_px: FloatProperty(
         name="Min size (px)", description="Attenuated mode: points never smaller than this on screen",
-        default=2.0, min=0.0, max=64.0, update=_on_point_radius,
+        default=4.0, min=0.0, max=64.0, update=_on_point_radius,
     )
     point_adapt_max_px: FloatProperty(
         name="Max size (px)", description="Attenuated mode: points never larger than this on screen",
-        default=6.0, min=0.5, max=256.0, update=_on_point_radius,
+        default=12.0, min=0.5, max=256.0, update=_on_point_radius,
     )
     point_px: FloatProperty(
         name="Point size (px)", description="Screen mode: point diameter in pixels",
-        default=3.0, min=0.5, max=64.0, update=_on_point_radius,
+        default=4.0, min=0.5, max=64.0, update=_on_point_radius,
     )
     point_px_min_m: FloatProperty(
         name="Min radius (m)", default=0.005, min=0.0, max=10.0, update=_on_point_radius,
@@ -897,8 +913,22 @@ class TilesSceneProps(PropertyGroup):
             ("OBJECT", "Chosen camera", "A camera object of your choice, at the render resolution: "
                                         "tiles are selected for it while you look at the result "
                                         "from anywhere in the viewport"),
+            ("COLLECTION", "Cameras of a collection",
+             "Every camera of a collection at once, each at the render resolution (panoramic ones "
+             "all around): the tiles each of them needs load together. For several panoramas, or "
+             "cameras placed along an animation to keep the detail of a whole path. cesium-native only"),
         ],
         default="VIEWPORT",
+    )
+    view_collection: bpy.props.PointerProperty(
+        name="Cameras", type=bpy.types.Collection,
+        description="Collection whose cameras (children collections included, hidden ones too) all select "
+                    "tiles when 'Stream for' is 'Cameras of a collection'",
+    )
+    view_collection_viewport: BoolProperty(
+        name="And the viewport",
+        description="Select tiles for the 3D viewport too, besides the cameras of the collection",
+        default=True,
     )
     view_camera: bpy.props.PointerProperty(
         name="Camera", type=bpy.types.Object, poll=_camera_poll,

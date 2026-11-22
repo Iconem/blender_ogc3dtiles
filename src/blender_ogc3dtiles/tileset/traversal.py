@@ -209,6 +209,9 @@ class ViewState:
     # = 1. cesium-native selects for their union; the Python backend has no
     # frustum (frustum_planes None) and uses the per-face error
     faces: Optional[List[Tuple[Tuple[float, float, float], Tuple[float, float, float]]]] = None
+    # more views selected at the same time ("Stream for" a collection of cameras): cesium-native selects for the
+    # union of all of them, each at its own resolution; the Python backend uses this view only
+    extra: List["ViewState"] = field(default_factory=list)
     # placeholder fov of an orthographic view: both backends use the real
     # frame (the Python SSE and culling read p11 and the clip planes,
     # cesium-native gets ``ortho_extents``), so it only fills the fov

@@ -28,7 +28,7 @@ if sys.version_info < (3, 11):
 # neither of which imports bpy.
 if "bpy" in sys.modules:
     import bpy  # noqa: F401
-    from . import addon_prefs, tileset, camera, io, materials, compositor, geometry_demos, tile_bounds, ui, globe_nav
+    from . import addon_prefs, tileset, camera, io, materials, compositor, geometry_demos, tile_bounds, ui, globe_nav, freeze
 
     def register():
         addon_prefs.register()
@@ -41,8 +41,10 @@ if "bpy" in sys.modules:
         ui.register()
         tile_bounds.register()
         globe_nav.register()
+        freeze.register()
 
     def unregister():
+        freeze.unregister()
         globe_nav.unregister()
         tile_bounds.unregister()
         ui.unregister()

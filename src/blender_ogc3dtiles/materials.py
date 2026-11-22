@@ -486,6 +486,10 @@ def _albedo_socket(mat):
         if n.type == "TEX_IMAGE" and n.image is not None:
             return n.outputs["Color"], (n.outputs["Alpha"] if n.image.alpha_mode != "NONE" else None)
     bsdf = next((n for n in nt.nodes if n.type == "BSDF_PRINCIPLED"), None)
+    if bsdf is not None:                # point clouds: the colour lookup linked to the surface (or to the light)
+        for name in ("Base Color", "Emission Color"):
+            if bsdf.inputs[name].links:
+                return bsdf.inputs[name].links[0].from_socket, None
     rgb = nt.nodes.new("ShaderNodeRGB")
     rgb.location = (-600, 300)
     if bsdf is not None:
@@ -575,6 +579,70 @@ def remove_relight(mat) -> bool:
     if recolor:
         apply_metadata(mat)
     return True
+
+
+SHADELESS = "ogc3d_shadeless"           # on a material the Shadeless setting changed
+_BASE = "ogc3d_base"
+
+
+def set_shadeless(mat, on: bool) -> bool:
+    """A tile material without the shared shader nodes: its colour as light (Emission, the lamps do nothing), or
+    back to a surface colour. Materials that were unlit already (glTF KHR_materials_unlit) are left alone, and
+    turning the setting off only restores what it changed."""
+    if mat is None or not mat.use_nodes or mat.node_tree is None:
+        return False
+    nt = mat.node_tree
+    if any(n.type == "GROUP" and n.node_tree and n.node_tree.name == GROUP_NAME for n in nt.nodes):
+        return False
+    bsdf = next((n for n in nt.nodes if n.type == "BSDF_PRINCIPLED" and not n.mute), None)
+    if bsdf is None or "Emission Color" not in bsdf.inputs:
+        return False
+    em, base, strength = bsdf.inputs["Emission Color"], bsdf.inputs["Base Color"], bsdf.inputs["Emission Strength"]
+    if on:
+        if mat.get(SHADELESS) or (em.links and strength.default_value > 0.0):
+            return False
+        if base.links:
+            src = base.links[0].from_socket
+            nt.links.remove(base.links[0])
+            nt.links.new(src, em)
+        else:
+            mat[_BASE] = list(base.default_value)
+            em.default_value = base.default_value
+        base.default_value = (0.0, 0.0, 0.0, 1.0)
+        strength.default_value = 1.0
+        mat[SHADELESS] = True
+        return True
+    if not mat.get(SHADELESS):
+        return False
+    if em.links:
+        src = em.links[0].from_socket
+        nt.links.remove(em.links[0])
+        nt.links.new(src, base)
+    elif _BASE in mat:
+        base.default_value = mat[_BASE]
+    if _BASE in mat:
+        del mat[_BASE]
+    strength.default_value = 0.0
+    del mat[SHADELESS]
+    return True
+
+
+def apply_shadeless(scene) -> int:
+    """The Shadeless setting on every tile material. With the shared shader nodes it is their Baked Light at 1
+    (the value it had comes back when the setting is turned off)."""
+    props = scene.ogc3dtiles
+    on = bool(props.shadeless)
+    ng = bpy.data.node_groups.get(GROUP_NAME)
+    node = ng.nodes.get("Baked Light") if ng is not None else None
+    if node is not None:
+        v = node.outputs[0]
+        if on and not ng.get(SHADELESS):
+            ng[SHADELESS] = float(v.default_value)
+            v.default_value = 1.0
+        elif not on and ng.get(SHADELESS) is not None:
+            v.default_value = float(ng[SHADELESS])
+            del ng[SHADELESS]
+    return sum(1 for m in list(tile_materials()) if set_shadeless(m, on))
 
 
 def _is_tile_object(o) -> bool:
@@ -1142,6 +1210,7 @@ def draw_panel(layout, props):
     from . import node_rows
     relit = node_rows.draw(layout, props, "auto_relight", "Shared shader nodes", "RELIGHT")
     layout.prop(props, "backface_mode", text="Faces")
+    layout.prop(props, "shadeless")
     from .io import addon_pref
     ng = bpy.data.node_groups.get(GROUP_NAME)
     if ng is not None and relit and addon_pref("beta_material_controls", False):
@@ -1162,7 +1231,8 @@ def draw_panel(layout, props):
     if props.xray:
         col = box.column(align=True)
         col.prop(props, "xray_strength")
-        col.prop(props, "xray_radius")
+        if any(o.get("splats") for o in bpy.data.objects):
+            col.prop(props, "xray_radius")
         row = col.row(align=True)
         row.prop(props, "xray_tint_amount")
         row.prop(props, "xray_tint", text="")

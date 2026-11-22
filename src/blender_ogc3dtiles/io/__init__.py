@@ -35,7 +35,7 @@ import bpy
 from ..tileset.origin import origin_lla
 from ..tileset.traversal import Tile, TileState, mat_mul, mat_translation
 
-USER_AGENT = "blender-ogc3dtiles/0.6.4"     # keep in step with blender_manifest.toml
+USER_AGENT = "blender-ogc3dtiles/0.6.5"     # keep in step with blender_manifest.toml
 TIMEOUT_S = 30
 COLLECTION_NAME = "3D Tiles"
 
@@ -602,7 +602,10 @@ def _wire_point_colors(mat):
 def set_point_lit(mat, lit: bool = True) -> bool:
     """Point colours as a surface colour that the scene's lights shade (lit), or as light (unlit, kept only
     to read files of older versions, which wired them to Emission). Points have no normals of their own:
-    each one is shaded as the small sphere, tetrahedron or disc it is drawn as."""
+    each one is shaded as the small sphere, tetrahedron or disc it is drawn as. A material the Shadeless setting
+    changed is left to it."""
+    if mat is not None and mat.get("ogc3d_shadeless"):
+        return False
     nt = mat.node_tree if mat and mat.use_nodes else None
     bsdf = _node_of_type(nt, "BSDF_PRINCIPLED") if nt is not None else None
     if bsdf is None:
@@ -1021,14 +1024,14 @@ def build_tile_from_payload(payload: dict, key: str, scene: bpy.types.Scene,
         obj["point_radius_auto"] = min(max(0.6 * spacing, 0.01), 2.0) if spacing > 0 else 0.05
         _add_points_modifier(obj, point_radius_for(scene, payload),
                              getattr(scene.ogc3dtiles, "point_display", "POINTS"))
-    elif getattr(scene.ogc3dtiles, "auto_relight", False):
+    if getattr(scene.ogc3dtiles, "auto_relight", False) and not obj.get("splats"):
         from ..materials import apply_relight
         for m in me.materials:
             apply_relight(m)
+    _new_tile_hooks(scene, [obj], list(me.materials))
     if getattr(scene.ogc3dtiles, "xray", False) and (payload.get("points") or payload.get("splats")):
         from .. import xray
-        xray.show(obj)
-    _new_tile_hooks(scene, [obj], list(me.materials))
+        xray.show(obj)                  # last: in front of whatever the hooks put before the output
     obj.hide_viewport = hidden
     obj.hide_render = hidden
     obj.select_set(False)
@@ -1675,9 +1678,11 @@ def _new_tile_hooks(scene, objs, mats):
         from ..voxel_lookup import apply_material
         for m in mats:
             apply_material(m)
-    from ..materials import apply_backface
+    from ..materials import apply_backface, set_shadeless
     for m in mats:
         apply_backface(m, getattr(props, "backface_mode", "DOUBLE"))
+        if getattr(props, "shadeless", False):
+            set_shadeless(m, True)
     if getattr(props, "tile_geometry", False):
         for o in objs:
             apply_tile_geometry(o)

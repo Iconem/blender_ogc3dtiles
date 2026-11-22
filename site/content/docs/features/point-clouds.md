@@ -25,7 +25,7 @@ the **Nodes: Geometry** panel: how each point is drawn, and how large.
 | **Uniform** | One radius, in metres, for every tile. |
 | **Screen pixels** | Every point the same size on screen, wherever it is. The most exact and the heaviest: all point tiles are re-evaluated whenever the view moves. |
 
-If points look too sparse or too fat, change *Point scale* first. *Min px* and *Max px* are 2 and 6 by
+If points look too sparse or too fat, change *Point scale* first. *Min px* and *Max px* are 4 and 12 by
 default.
 
 ## Lighting
@@ -36,6 +36,9 @@ shadows. A point has no surface of its own, so each one is shaded as the small s
 or disc it is drawn as. *Disc splats* gives the smoothest result on tiles that carry normals, since
 the discs then follow the scanned surface. Files saved with an older version, where points showed
 their colours without any light, are shaded the same way when opened.
+
+To see the colours as they are, without any light, tick **Shadeless** in the *Nodes: Material*
+panel. It applies to every tile, meshes included.
 
 ## X-ray
 
@@ -48,7 +51,7 @@ side of a building) the light adds up, so the structure reads through itself.
 | Setting | What it does |
 |---|---|
 | **Strength** | Light added by each point. Lower it where a dense cloud burns to white. |
-| **Point radius** | Size of the X-ray points, in metres. |
+| **Splat radius** | Size of the points Gaussian splats become while X-ray is on, in metres. Point clouds keep the size their display gives them. |
 | **Tint amount** and its colour | At 0 the points keep their own colours; at 1 they all take the tint. |
 
 - It needs a dark background: set the World colour to black, or render with a transparent film over
@@ -57,9 +60,13 @@ side of a building) the light adds up, so the structure reads through itself.
 - It is a different thing from the [X-ray slider of meshes](/features/nodes-material#x-ray), which
   fades the faces turned toward you.
 
-How it works: the tile's Points or Splats modifier is given the `OGC3D X-ray` node group, which
-turns the vertices into points and gives them the `OGC3D X-ray` material: a Transparent shader
-added to an Emission shader, blended. Both can be edited. Ordinary transparency does not give this
+How it works: X-ray is a material effect. A shared shader group, `OGC3D X-ray`, sits in front of
+the Material Output of every point material and mixes the usual shader with a Transparent shader
+added to an Emission shader; the material is drawn blended while it is on. Points keep the shape
+their display gives them: points, tetrahedra or discs. Gaussian splats are the one exception:
+Blender draws them with its own splat renderer, which ignores materials, so while X-ray is on their
+Splats modifier is swapped for the `OGC3D X-ray Points` geometry group, which makes plain points of
+them with the same shader. Both groups can be edited. Ordinary transparency does not give this
 look: semi-transparent points fade everything to an even fog, because each one also hides what is
 behind it.
 
@@ -74,17 +81,17 @@ Points keep their own colour. To colour them by class or by intensity, see
 
 ## A cloud that stays sparse from afar
 
-From far away a point cloud shows only the tiles near the top of its tree, so those tiles must hold
-a thinned-out copy of the whole cloud: that is what the levels of detail of a point cloud are. Some
-tilers leave them nearly empty and put every point in the deepest tiles. The cloud then looks like a
-sparse scatter of dots until the camera is close enough to load those, and getting there means
-loading tens of thousands of small tiles. No viewer can fix this; the tileset has to be made again.
+From far away a point cloud shows only the tiles near the top of its tree, which hold a thinned-out
+copy of the cloud. How thin is the tiler's choice. A tiler that starts very coarse gives an overview
+that looks like a scatter of dots, and a viewer then has to go many levels down, through many small
+tiles, before the cloud looks solid.
 
-To check a tileset, count the points in its first levels: with Potree-style tilers, the root tile
-alone usually holds thousands to tens of thousands of points. One case found: a
-cloud of more than 150 million points held 33 points in its root tile and fewer than a million in
-its first five levels. Its 40,000 tiles of a few thousand points each were also each in a separate
-`tileset.json`, which adds one download per tile and one more wait at each level.
+One case found: a cloud of more than 150 million points made with gocesiumtiler. Its root tile keeps
+one point per 20 m cell (33 points), each level halves the cell, and its first five levels hold
+fewer than a million points; the geometric errors match those spacings. Its 40,000 tiles of a few
+thousand points each are each in a separate `tileset.json`, which adds one download per tile and one
+more wait at each level. What helps here: a larger *Max px*, so that coarse points grow to cover
+their cell, and in the tiler a finer root cell, more points per tile and fewer `tileset.json` files.
 
 ## How it works
 

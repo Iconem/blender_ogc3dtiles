@@ -632,7 +632,7 @@ def _shared_externals(cs, cache_dir, max_loads):
     tp = cs.async_.NativeTaskProcessor()
     asys = cs.async_.AsyncSystem(tp)
     copts = cs.curl.CurlAssetAccessorOptions()
-    copts.user_agent = "blender-ogc3dtiles/0.6.4 cesium-native-python"   # manifest version
+    copts.user_agent = "blender-ogc3dtiles/0.6.5 cesium-native-python"   # manifest version
     try:
         # the manylinux curl only knows Red Hat's CA bundle path; on other Linux
         # distributions every HTTPS request fails without a CA file (issue 9)
@@ -844,7 +844,8 @@ class CesiumNativeBackend:
                 pass
 
     def update_view(self, position_ecef, direction_ecef, up_ecef,
-                    viewport_w, viewport_h, hfov, vfov, dt=0.0, ortho=None, faces=None, offsets=None):
+                    viewport_w, viewport_h, hfov, vfov, dt=0.0, ortho=None, faces=None, offsets=None,
+                    extra=None):
         """``ortho`` = (half_width, half_height) of an orthographic frame in
         metres, centred on ``position_ecef``: the binding's orthographic
         ViewState then culls with the four side planes and uses
@@ -854,38 +855,43 @@ class CesiumNativeBackend:
         selects for their union.
         ``offsets`` = [(4x4 ECEF matrix, dataset URLs)] for datasets shown away from where they are
         (dataset_empties.view_offsets): each gets a selection of its own, for the camera moved by its matrix,
-        and the main selection leaves those datasets out."""
+        and the main selection leaves those datasets out.
+        ``extra`` = more camera.ViewState to select for at the same time (a collection of cameras): cesium-native
+        selects for the union of all the views."""
         if self._tileset is None:
             return NativeViewResult([], [], {})
         sel = self._cs.tiles.selection
-        args = (np.asarray(position_ecef, np.float64),
-                np.asarray(direction_ecef, np.float64),
-                np.asarray(up_ecef, np.float64),
-                np.asarray([viewport_w, viewport_h], np.float64))
-        if faces:
-            quarter = math.pi / 2.0
-            views = [sel.ViewState(args[0], np.asarray(d, np.float64), np.asarray(u, np.float64),
-                                   args[3], quarter, quarter) for d, u in faces]
-        elif ortho is not None:
-            hw, hh = float(ortho[0]), float(ortho[1])
-            views = [sel.ViewState(*args, -hw, hw, -hh, hh)]
-        else:
-            views = [sel.ViewState(*args, float(hfov), float(vfov))]
-        def moved_views(M):
-            R = M[:3, :3]
+        specs = [(position_ecef, direction_ecef, up_ecef, viewport_w, viewport_h, hfov, vfov, ortho, faces)]
+        for v in extra or ():
+            specs.append((v.position, v.direction, v.up, v.viewport_width, v.viewport_height, v.fov_x, v.fov_y,
+                          v.ortho_extents, v.faces))
+
+        def spec_views(spec, M=None):
+            pos, d0, u0, w, h, hf, vf, orth, fcs = spec
+            pos = np.asarray(pos, np.float64)
+            vp = np.asarray([w, h], np.float64)
+            R = M[:3, :3] if M is not None else None
+            if R is not None:
+                pos = R @ pos + M[:3, 3]
             out = []
-            for d, u in (faces or [(args[1], args[2])]):
-                p2 = R @ args[0] + M[:3, 3]
-                d2 = R @ np.asarray(d, np.float64)
-                u2 = R @ np.asarray(u, np.float64)
-                d2, u2 = d2 / np.linalg.norm(d2), u2 / np.linalg.norm(u2)
-                if faces:
-                    out.append(sel.ViewState(p2, d2, u2, args[3], math.pi / 2.0, math.pi / 2.0))
-                elif ortho is not None:
-                    out.append(sel.ViewState(p2, d2, u2, args[3], -hw, hw, -hh, hh))
+            for d, u in (fcs or [(d0, u0)]):
+                d, u = np.asarray(d, np.float64), np.asarray(u, np.float64)
+                if R is not None:
+                    d, u = R @ d, R @ u
+                    d, u = d / np.linalg.norm(d), u / np.linalg.norm(u)
+                if fcs:
+                    out.append(sel.ViewState(pos, d, u, vp, math.pi / 2.0, math.pi / 2.0))
+                elif orth is not None:
+                    hw, hh = float(orth[0]), float(orth[1])
+                    out.append(sel.ViewState(pos, d, u, vp, -hw, hw, -hh, hh))
                 else:
-                    out.append(sel.ViewState(p2, d2, u2, args[3], float(hfov), float(vfov)))
+                    out.append(sel.ViewState(pos, d, u, vp, float(hf), float(vf)))
             return out
+
+        views = [v for s in specs for v in spec_views(s)]
+
+        def moved_views(M):
+            return [v for s in specs for v in spec_views(s, M)]
 
         passes = [(self._tileset.default_view_group, views, None)]
         offsets = list(offsets or ())

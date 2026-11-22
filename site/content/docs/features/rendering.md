@@ -92,6 +92,27 @@ theirs is smaller, since Blender's 100 m default would render a site as empty.
 - If you use the clipping region (Alt+B), keep clip start above clip end / 10,000,000: beyond that
   ratio Blender's region stops clipping correctly.
 
+## Freeze and export
+
+**Freeze** (next to *Clear All Tiles*) turns the tiles shown now into plain Blender objects, at the
+detail they have now: one object per tileset and kind (meshes, points, splats), in a *Frozen tiles*
+collection. Clipping volumes and the shared geometry nodes are applied; materials and textures are
+copied, so they stay when the live tiles go. Then, as you choose: streaming stops and the live tiles
+are removed (the default), streaming stops and they are hidden, or streaming goes on.
+
+- What is frozen is what is on screen. To keep the detail of several views, a pair of panoramas or
+  a camera path, stream for [several cameras at once](/features/lod-streaming#several-cameras-at-once)
+  first.
+- Point and splat objects keep their display modifier, so they look as before, and underneath they
+  are clouds of vertices with a `Col` colour attribute. A merged cloud has one point radius, the
+  median of its tiles.
+- **Export Points**, shown when a frozen cloud is selected, writes it to PLY or glTF (`.glb`) as
+  points with their colours. Blender's own exporters with their default settings write nothing for
+  a cloud: PLY applies the display modifier, which turns the points into a point cloud object it
+  does not export, and glTF skips loose vertices. By hand: PLY with *Apply Modifiers* off; glTF with
+  *Loose Points* on (*Mesh* section) and *Use Vertex Color: Active*.
+- Meshes export with any exporter, as usual.
+
 ## How it works
 
 - The add-on hands cesium-native an orthographic view: the eye on the pivot and the frame's width

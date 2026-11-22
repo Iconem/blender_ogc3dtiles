@@ -105,14 +105,30 @@ class CesiumCameraAdapter:
 
     # ── full view state ──────────────────────────────────────────────────────
 
-    def get_view_state(self, root_obj=None, frame=None) -> ViewState | None:
+    def get_view_state(self, root_obj=None, frame=None, _cam=None) -> ViewState | None:
         """``root_obj`` is the per-tileset root Empty: tiles live in its local
         space (ENU), so the camera is expressed there too. Moving / rotating /
         scaling the Empty is therefore honoured by culling and SSE. ``frame``
         is the stream's own (lat, lon, h) anchor when it differs from the
-        scene origin (a tileset that isn't georeferenced)."""
+        scene origin (a tileset that isn't georeferenced).
+        "Stream for" a collection: one view per camera of the collection (and
+        the 3D viewport if asked), the first returned with the others in
+        ``extra``."""
         props = self.scene.ogc3dtiles
-        src = self._source(props)
+        if _cam is None and getattr(props, "view_source", "") == "COLLECTION" and RENDER_CAMERA[0] is None:
+            cams = collection_cameras(props)
+            states = []
+            if getattr(props, "view_collection_viewport", True):
+                states.append(self.get_view_state(root_obj, frame, _cam="VIEWPORT"))
+            states += [self.get_view_state(root_obj, frame, _cam=c) for c in cams]
+            states = [s for s in states if s is not None]
+            if not states:
+                return None
+            main = states[0]
+            main.extra = states[1:]
+            main.signature = tuple(s.signature for s in states)
+            return main
+        src = self._source(props, cam_override=_cam)
         if src is None:
             return None
         view, win, w, hpx, is_persp, src_sig, pano = src
@@ -168,15 +184,20 @@ class CesiumCameraAdapter:
                          p11=p11, p00=p00, is_persp=is_persp,
                          frustum_planes=planes, signature=sig)
 
-    def _source(self, props, force_camera=False):
+    def _source(self, props, force_camera=False, cam_override=None):
         """(view_matrix, window_matrix, width_px, height_px, is_persp,
         signature) from the 3D viewport, or at the render
         resolution from the scene camera (``view_source`` CAMERA) or from the
-        camera the user chose (OBJECT)."""
+        camera the user chose (OBJECT). ``cam_override``: a camera of the
+        collection, or "VIEWPORT"."""
         scene = self.scene
         source = getattr(props, "view_source", "VIEWPORT")
         cam = (scene.camera if source == "CAMERA"
                else getattr(props, "view_camera", None) if source == "OBJECT" else None)
+        if cam_override == "VIEWPORT":
+            source, cam = "VIEWPORT", None
+        elif cam_override is not None:
+            source, cam = "OBJECT", cam_override
         if isinstance(RENDER_CAMERA[0], dict):
             # an F12 render in the window: the frame's view, read on the render thread
             return RENDER_CAMERA[0]["src"] if source == "CAMERA" else None
@@ -239,6 +260,17 @@ class CesiumCameraAdapter:
 def _V(t):
     import mathutils
     return mathutils.Vector(t)
+
+
+MAX_COLLECTION_CAMERAS = 64
+
+
+def collection_cameras(props):
+    """Cameras of the "Stream for" collection and of its children, hidden ones included, at most 64."""
+    coll = getattr(props, "view_collection", None)
+    if coll is None:
+        return []
+    return [o for o in coll.all_objects if o.type == "CAMERA"][:MAX_COLLECTION_CAMERAS]
 
 
 # cube faces in camera space (Blender cameras look down -Z, Y up): direction, up

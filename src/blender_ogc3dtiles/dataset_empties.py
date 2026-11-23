@@ -53,6 +53,28 @@ def short_name(url: str) -> str:
         return url[-60:]
 
 
+NAME_KEYS = ("name", "title", "scene", "label")
+
+
+def display_name(url: str) -> str:
+    """A name for the Empty: the dataset's name in the aggregate's tile metadata (3D Tiles 1.1: `name`, else
+    `title`, `scene`, `label`, with the `project` in front when the name does not hold it), else short_name()."""
+    try:
+        from .tileset.feature_meta import TILESET_METADATA
+        by = TILESET_METADATA.by_content
+        props = by.get(url) or by.get(url.split("?", 1)[0]) or {}
+        name = next((str(props[k]).strip() for k in NAME_KEYS
+                     if isinstance(props.get(k), (str, int)) and str(props[k]).strip()), "")
+        if name:
+            project = props.get("project")
+            if isinstance(project, str) and project.strip() and project.strip().lower() not in name.lower():
+                name = f"{project.strip()} / {name}"
+            return name[:60]
+    except Exception:                                  # noqa: BLE001
+        pass
+    return short_name(url)
+
+
 def volume_centre(shape):
     """ECEF centre of a native_backend.volume_shape()."""
     if shape[0] == "region":
@@ -99,7 +121,7 @@ def adopt(scene, st, root, coll, obj_name: str, dataset, frame) -> None:
     names = st.setdefault("datasets", {})
     e = bpy.data.objects.get(names.get(url, ""))
     if e is None or e.get(PROP) != url:
-        e = bpy.data.objects.new(short_name(url), None)
+        e = bpy.data.objects.new(display_name(url), None)
         e.empty_display_type = "SINGLE_ARROW"          # points up: Location Z is the height offset
         e.empty_display_size = 20.0
         e[PROP] = url

@@ -711,9 +711,9 @@ class TilesSceneProps(PropertyGroup):
     )
     xray_meshes: BoolProperty(
         name="Meshes",
-        description="X-ray the mesh tiles too: every face adds its texture colour as light and hides nothing, "
+        description="X-ray the mesh tiles as well as points and splats: every face adds its texture colour as light and hides nothing, "
                     "front and back faces alike, so rooms, corridors and the far walls show through. Live",
-        default=False,
+        default=True,
         update=_on_xray,
     )
     xray_mesh_strength: FloatProperty(

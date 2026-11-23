@@ -61,7 +61,7 @@ side of a building) the light adds up, so the structure reads through itself.
   tile adds its points to its parent's, so where finer tiles are loaded there are more points per
   pixel and the X-ray is brighter, in rectangles. Lower *Strength*, or a lower *Max SSE* so that the
   whole view reaches the same level.
-- Mesh tiles stay as they are unless **Meshes** is ticked: see [X-ray on meshes](#x-ray-on-meshes).
+- Mesh tiles are X-rayed too unless **Meshes** is unticked: see [X-ray on meshes](#x-ray-on-meshes).
 
 How it works: X-ray is a material effect. A shared shader group, `OGC3D X-ray`, sits in front of
 the Material Output of every point material and mixes the usual shader with a Transparent shader
@@ -74,12 +74,12 @@ look: semi-transparent points fade everything to an even fog, because each one a
 behind it.
 
 The **X-ray** and **X-ray Mono** [presets](/features/nodes-material#presets) at the top of the panel
-turn it on in one click, in the points' own colours or in the tint.
+turn it on in one click, in the tiles' own colours or in the tint.
 
 ### X-ray on meshes
 
-The **X-ray All** preset, or the **Meshes** checkbox under an X-ray look, gives mesh tiles the same
-treatment: every face adds its texture colour as light and hides nothing, front and back faces alike.
+The X-ray looks give mesh tiles the same treatment (the **Meshes** checkbox under the X-ray settings,
+ticked by default, leaves them out): every face adds its texture colour as light and hides nothing, front and back faces alike.
 A building then shows its rooms, vaults and far walls through its roof, and a site with meshes and
 point clouds reads as one radiograph.
 

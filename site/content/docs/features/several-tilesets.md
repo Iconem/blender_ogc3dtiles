@@ -35,7 +35,8 @@ Ion, globe and terrain entries need the cesium-native backend.
 A `tileset.json` can be nothing but a tree of grouping tiles whose leaves are other tilesets, one per
 dataset: every survey of a city, every dataset of a server. With the cesium-native backend each of
 those datasets gets its own Empty under the tileset's root, named after the dataset, and its tiles are
-parented to it. The grouping tiles get none.
+parented to it. The name is the dataset's `name` in the aggregate's 3D Tiles 1.1 tile metadata (else `title`,
+`scene` or `label`, with its `project` in front), and only without one the last telling part of its URL. The grouping tiles get none.
 
 - The Empty appears with the dataset's first tile, at the dataset's centre, with its Z along the local
   vertical. Its location, rotation and scale start at zero: what you type there is an offset.

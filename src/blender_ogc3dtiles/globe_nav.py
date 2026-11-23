@@ -848,10 +848,11 @@ class OGC3D_PT_GlobeNav(Panel):
         col.label(text="Middle drag: orbit around the point")
         col.label(text="Shift + middle drag: grab the globe")
         s = globe_scale(g)
-        split = layout.split(factor=0.42, align=True)       # the label apart: inside the field it was cut short
-        split.label(text="World scale 1:")
-        row = split.row(align=True)
-        row.prop(context.window_manager, "ogc3d_globe_scale_n", text="")
+        col = layout.column(align=True)                     # one value, typed either way: ×0.01 is 1:100
+        col.label(text="World scale")
+        row = col.row(align=True)
+        row.prop(context.window_manager, "ogc3d_globe_scale_x", text="×")
+        row.prop(context.window_manager, "ogc3d_globe_scale_n", text="1:")
         sub = row.row(align=True)
         sub.enabled = abs(s - 1.0) > 1e-6
         sub.operator("ogc3dtiles.globe_scale_reset", text="To 1:1").denominator = 1.0
@@ -879,6 +880,15 @@ def _set_scale_n(_self, value) -> None:
             pass
 
 
+def _get_scale_x(_self) -> float:
+    return globe_scale()
+
+
+def _set_scale_x(_self, value) -> None:
+    if value > 0.0:
+        _set_scale_n(_self, 1.0 / value)
+
+
 _classes = (OGC3D_OT_GlobeNav, OGC3D_OT_GlobeScaleReset, OGC3D_OT_GlobeReanchor, OGC3D_OT_GlobeLevel, OGC3D_OT_GlobeParent, OGC3D_OT_GlobeReset,
             OGC3D_PT_GlobeNav)
 
@@ -893,6 +903,10 @@ def register():
         name="World scale 1:N", description="The Globe's scale as 1:N: type N to zoom the world about the point "
         "the view looks at; the view moves to match, so nothing jumps", min=1e-6, soft_min=0.01,
         step=100, precision=1, get=_get_scale_n, set=_set_scale_n)
+    bpy.types.WindowManager.ogc3d_globe_scale_x = bpy.props.FloatProperty(
+        name="World scale multiplier", description="The Globe's scale as a multiplier: 0.01 is 1:100, 1 is real "
+        "size. The same value as the 1:N field beside it, typed the other way", min=1e-9, soft_max=1e6,
+        step=1, precision=4, get=_get_scale_x, set=_set_scale_x)
 
 
 def unregister():
@@ -900,5 +914,6 @@ def unregister():
     _remove_draw()
     del bpy.types.WindowManager.ogc3d_globe_frame
     del bpy.types.WindowManager.ogc3d_globe_scale_n
+    del bpy.types.WindowManager.ogc3d_globe_scale_x
     for c in reversed(_classes):
         bpy.utils.unregister_class(c)

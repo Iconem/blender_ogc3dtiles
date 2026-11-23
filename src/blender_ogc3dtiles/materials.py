@@ -1185,19 +1185,18 @@ class OGC3D_OT_RelightRemove(Operator):
 LOOKS = (
     ("LIT", "Lit", "Tiles shaded by the scene's lights (the default)"),
     ("SHADELESS", "Shadeless", "Every tile's colours as they are, without any light"),
-    ("XRAY", "X-ray", "Point clouds and splats as an X-ray in their own colours"),
-    ("XRAY_MONO", "X-ray Mono", "Point clouds and splats as an X-ray in one colour, the Tint"),
-    ("XRAY_ALL", "X-ray All", "Meshes too: every tile as an X-ray in its own colours, rooms and far walls "
-                              "showing through"),
+    ("XRAY", "X-ray", "Every tile as an X-ray in its own colours: points, splats and meshes add their colour "
+                      "as light and hide nothing"),
+    ("XRAY_MONO", "X-ray Mono", "Every tile as an X-ray in one colour, the Tint"),
 )
-XRAY_LOOKS = ("XRAY", "XRAY_MONO", "XRAY_ALL")
+XRAY_LOOKS = ("XRAY", "XRAY_MONO")
 
 
 def current_look(props) -> str:
     if props.xray:
         if props.xray_tint_amount >= 0.999:
             return "XRAY_MONO"
-        return "XRAY_ALL" if props.xray_meshes else "XRAY"
+        return "XRAY"
     return "SHADELESS" if props.shadeless else "LIT"
 
 
@@ -1218,8 +1217,6 @@ class OGC3D_OT_MaterialLook(Operator):
         xr = self.look in XRAY_LOOKS
         if xr:
             props.xray_tint_amount = 1.0 if self.look == "XRAY_MONO" else 0.0
-            if props.xray_meshes != (self.look == "XRAY_ALL"):
-                props.xray_meshes = self.look == "XRAY_ALL"
         if props.shadeless != (self.look == "SHADELESS"):
             props.shadeless = self.look == "SHADELESS"
         if props.xray != xr:
@@ -1264,7 +1261,7 @@ def draw_panel(layout, props):
     """Body of the collapsible "Materials" sub-panel."""
     from . import node_rows
     look = current_look(props)
-    col = layout.column(align=True)                     # two rows: five buttons do not fit a narrow sidebar
+    col = layout.column(align=True)                     # two rows: four buttons do not fit a narrow sidebar
     for keys in (("LIT", "SHADELESS"), XRAY_LOOKS):
         row = col.row(align=True)
         for key, name, _d in LOOKS:
@@ -1297,11 +1294,12 @@ def draw_panel(layout, props):
         row = col.row(align=True)
         row.prop(props, "xray_tint_amount")
         row.prop(props, "xray_tint", text="")
-        col = box.column(align=True)
+        col = box.column(align=True)                    # always shown: the same settings under both X-ray looks
         col.prop(props, "xray_meshes")
-        if props.xray_meshes:
-            col.prop(props, "xray_mesh_strength")
-            col.prop(props, "xray_mesh_edge")
+        sub = col.column(align=True)
+        sub.active = props.xray_meshes
+        sub.prop(props, "xray_mesh_strength")
+        sub.prop(props, "xray_mesh_edge")
         box.label(text="Use a dark background", icon="INFO")
 
 

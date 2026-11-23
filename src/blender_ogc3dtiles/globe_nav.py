@@ -848,8 +848,10 @@ class OGC3D_PT_GlobeNav(Panel):
         col.label(text="Middle drag: orbit around the point")
         col.label(text="Shift + middle drag: grab the globe")
         s = globe_scale(g)
-        row = layout.row(align=True)
-        row.prop(context.window_manager, "ogc3d_globe_scale_n", text="World scale 1")
+        split = layout.split(factor=0.42, align=True)       # the label apart: inside the field it was cut short
+        split.label(text="World scale 1:")
+        row = split.row(align=True)
+        row.prop(context.window_manager, "ogc3d_globe_scale_n", text="")
         sub = row.row(align=True)
         sub.enabled = abs(s - 1.0) > 1e-6
         sub.operator("ogc3dtiles.globe_scale_reset", text="To 1:1").denominator = 1.0

@@ -8,6 +8,8 @@ main branch and not in a release zip yet.
 
 ## Unreleased
 
+## 0.6.6 (2026-11-23)
+
 - cesium-native-python: a wheel that is installed but does not load now says so, with the import error, instead of "Not installed"; the full traceback goes to the system console once. Installing from GitHub checks with a real import.
 - *Reload* (and the install check) no longer drop an already loaded native module: doing so broke every later import in the session, and the backend read "Not installed" until Blender restarted.
 - The add-on loaded before the wheel was installed picks up the native backend without a restart.

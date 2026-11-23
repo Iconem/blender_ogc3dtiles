@@ -35,7 +35,7 @@ One authenticated request per zip:
 ```
 curl -X POST https://extensions.blender.org/api/v1/extensions/ogc_3dtiles_streaming/versions/upload/ \
   -H "Authorization: Bearer $TOKEN" \
-  -F "version_file=@ogc_3dtiles_streaming-0.6.5-cp313-windows_x64.zip" \
+  -F "version_file=@ogc_3dtiles_streaming-0.6.6-cp313-windows_x64.zip" \
   --form-string "release_notes=..."
 ```
 

@@ -37,18 +37,24 @@ def target_args(target) -> list:
     return ["--target", target, "--upgrade"] if target else []
 
 
-def found_after_install(target) -> bool:
-    """Can this Blender import the module pip just installed?"""
+def found_after_install(target) -> tuple:
+    """(True, "") when this Blender imports the module pip just installed, else (False, the import error).
+    A real import, not just a look on disk: a wheel can be in place and still fail to load."""
     import importlib
-    import importlib.util
     import sys
     if target and target not in sys.path:
         sys.path.append(target)
     importlib.invalidate_caches()
+    from .tileset.backend import forget_failed_cesium_import
+    forget_failed_cesium_import()
     try:
-        return "cesium" in sys.modules or importlib.util.find_spec("cesium") is not None
-    except (ImportError, ValueError):
-        return False
+        importlib.import_module("cesium")
+        importlib.import_module("cesium.tiles.selection")
+        return True, ""
+    except Exception as exc:     # noqa: BLE001
+        import traceback
+        traceback.print_exc()
+        return False, f"{type(exc).__name__}: {exc}"
 
 
 class OGC3D_OT_InstallCesium(Operator):
@@ -85,8 +91,9 @@ class OGC3D_OT_InstallCesium(Operator):
                 text=True, **kwargs,
             )
             stdout, _ = proc.communicate(timeout=600)
-            if proc.returncode == 0 and not found_after_install(target):
-                self.report({"ERROR"}, "pip finished but this Blender does not find the module. See the System Console")
+            ok, err = found_after_install(target) if proc.returncode == 0 else (True, "")
+            if not ok:
+                self.report({"ERROR"}, f"pip finished but the module does not load: {err}. See the System Console")
                 print(stdout)
             elif proc.returncode == 0:
                 self.report({"INFO"}, "cesium-native-python installed. Reload Blender.")
@@ -189,10 +196,11 @@ class OGC3D_OT_InstallCesiumWheel(Operator):
             import numpy  # noqa: F401 — the wheel's only runtime dependency
         except ImportError:
             subprocess.run([sys.executable, "-m", "pip", "install", "numpy"], **kwargs)
-        if not found_after_install(target):
+        ok, err = found_after_install(target)
+        if not ok:
             print(proc.stdout)
-            self.report({"ERROR"}, f"pip installed {name} but this Blender does not find the module "
-                                   f"(Python {sys.version.split()[0]}). See the System Console")
+            self.report({"ERROR"}, f"pip installed {name} but it does not load in this Blender "
+                                   f"(Python {sys.version.split()[0]}): {err}. See the System Console")
             return {"CANCELLED"}
         self.report({"INFO"}, f"Installed {name} from {repo} {rel.get('tag_name')}. "
                               "Restart Blender (or Reload Module) to use the native backend.")

@@ -155,12 +155,68 @@ def probe_cesium() -> tuple:
         import cesium.tiles.selection  # noqa: F401, PLC0415
         ver = getattr(cesium, "__version__", "0.1.0")
         if CesiumNativeBackend is None:
+            _retry_native_backend()
+        if CesiumNativeBackend is None:
             return False, f"cesium-native-python {ver} found but backend unavailable: {_native_import_error}"
         return True, f"cesium-native-python {ver} ✓"
-    except ImportError:
-        return False, "Not installed — use 'Install wheel from GitHub Release' (add-on preferences)"
+    except ImportError as exc:
+        if isinstance(exc, ModuleNotFoundError) and exc.name == "cesium":
+            return False, ("Not installed: the wheel bundled with this extension is missing, reinstall the extension"
+                           if is_packaged() else "Not installed: use 'Install cesium-native-python library' "
+                           "(add-on preferences)")
+        _print_import_error_once()
+        return False, f"Installed but does not load: {type(exc).__name__}: {exc}"
     except Exception as exc:    # noqa: BLE001
-        return False, f"Import error: {exc}"
+        _print_import_error_once()
+        return False, f"Installed but does not load: {type(exc).__name__}: {exc}"
+
+
+def forget_failed_cesium_import() -> None:
+    """Let the next ``import cesium`` try again after a failed one (a wheel installed meanwhile). Once the
+    native module has loaded it stays: it registers its submodules (``cesium._native.tiles``...) in
+    ``sys.modules`` and can't be loaded twice, so dropping them would break every later import."""
+    import importlib  # noqa: PLC0415
+    if "cesium._native" not in sys.modules:
+        for k in [k for k in sys.modules if k == "cesium" or k.startswith("cesium.")]:
+            del sys.modules[k]
+    importlib.invalidate_caches()
+
+
+def _retry_native_backend() -> None:
+    """The add-on loaded before the wheel was installed: import the native backend now."""
+    global CesiumNativeBackend, _native_import_error
+    try:
+        from .native_backend import CesiumNativeBackend as cls  # noqa: PLC0415
+    except Exception as exc:   # noqa: BLE001
+        _native_import_error = exc
+    else:
+        CesiumNativeBackend, _native_import_error = cls, None
+
+
+def is_packaged() -> bool:
+    """A build that carries the cesium-native wheel inside the zip (extensions.blender.org, the per-platform
+    release zips): Blender installs the wheel with the extension, and there is no downloader module."""
+    import importlib.util  # noqa: PLC0415
+    root = __package__.rsplit(".", 1)[0] if __package__ and "." in __package__ else None
+    try:
+        return root is not None and importlib.util.find_spec(root + ".wheel_install") is None
+    except (ImportError, ValueError):
+        return False
+
+
+_import_error_printed = [False]
+
+
+def _print_import_error_once() -> None:
+    """The full traceback of a failed ``import cesium`` in the system console, once per session, so a wheel
+    that is there but does not load (missing library, wrong platform, signing) can be diagnosed."""
+    if _import_error_printed[0]:
+        return
+    _import_error_printed[0] = True
+    import traceback  # noqa: PLC0415
+    print("[3DTiles] cesium-native-python is installed but does not import:")
+    traceback.print_exc()
+    print("[3DTiles] sys.path:", sys.path)
 
 
 # ── Factory ───────────────────────────────────────────────────────────────────

@@ -225,6 +225,13 @@ class OGC3DTilesPreferences(AddonPreferences):
                 row.operator("ogc3dtiles.install_cesium_wheel", icon="IMPORT",
                              text="Install cesium-native-python library")
             row.operator("ogc3dtiles.reload_cesium", icon="FILE_REFRESH", text="")
+        sub = box.row()
+        sub.active = False
+        if wheel_install is None:
+            sub.label(text="Packaged build: the cesium-native wheel comes inside this extension", icon="PACKAGE")
+        else:
+            sub.label(text="Python-only build: the cesium-native wheel is downloaded from GitHub "
+                           "(jo-chemla/cesium-native-python)", icon="URL")
 
         # ── Cache / library ───────────────────────────────────────────────────
         boxc = layout.box()
@@ -301,10 +308,8 @@ class OGC3D_OT_ReloadCesium(Operator):
     bl_label  = "Reload cesium Module"
 
     def execute(self, context):
-        import sys
-        removed = [k for k in sys.modules if k.startswith("cesium")]
-        for k in removed:
-            del sys.modules[k]
+        from .tileset.backend import forget_failed_cesium_import
+        forget_failed_cesium_import()
         ok, msg = probe_cesium()
         self.report({"INFO"} if ok else {"WARNING"}, f"cesium: {msg}")
         return {"FINISHED"}

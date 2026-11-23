@@ -8,7 +8,7 @@ main branch and not in a release zip yet.
 
 ## Unreleased
 
-## 0.6.5 (2026-11-22)
+## 0.6.5 (2026-11-23)
 
 - **Freeze Tiles** (button next to *Clear All Tiles*): the tiles shown now become plain objects, one per
   tileset and kind (meshes, points, splats), at the detail they have, with clipping volumes applied and

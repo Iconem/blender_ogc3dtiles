@@ -12,7 +12,7 @@ needs is loaded together, and Freeze keeps it.
 from __future__ import annotations
 
 import bpy
-from bpy.props import BoolProperty, EnumProperty, IntProperty
+from bpy.props import BoolProperty, EnumProperty
 from bpy.types import Operator
 
 FROZEN_COLLECTION = "Frozen tiles"

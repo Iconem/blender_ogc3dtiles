@@ -57,6 +57,10 @@ side of a building) the light adds up, so the structure reads through itself.
 - It needs a dark background: set the World colour to black, or render with a transparent film over
   a dark page. On a light background the added light does not show.
 - It works in EEVEE and in Cycles; EEVEE is much faster here.
+- It reads best on buildings and interiors. On a wide terrain it shows the tiles: a point cloud
+  tile adds its points to its parent's, so where finer tiles are loaded there are more points per
+  pixel and the X-ray is brighter, in rectangles. Lower *Strength*, or a lower *Max SSE* so that the
+  whole view reaches the same level.
 - It is a different thing from the [X-ray slider of meshes](/features/nodes-material#x-ray), which
   fades the faces turned toward you.
 

@@ -5,7 +5,7 @@ description: "The phases timeline and other experiments"
 
 ## Globe navigation
 
-A sidebar panel, *Globe Navigation (beta)*, always open next to *Scene Origin*, for moving around a whole planet without the view
+A section of the sidebar's *Scene Origin* panel, *Globe Navigation (beta)*, that is never folded, for moving around a whole planet without the view
 running out of precision or of clipping range. Press **Globe Navigation**; a thin blue frame around the 3D
 view shows it is on, and the same button stops it.
 
@@ -22,7 +22,7 @@ Everything else stays Blender's own navigation.
 - An Empty, *OGC3D Globe*, carries every tileset. **Parent Selection to Globe** makes your own objects
   move with the planet.
 - Far from the ground the wheel scales that Empty instead of moving the view. The panel shows the
-  scale; **To 1:1** brings it back, with nothing moving on screen. Do this before a render or an
+  scale as 1:N, and you can type N to zoom the world about the point the view looks at; **To 1:1** brings it back, with nothing moving on screen. Do this before a render or an
   export, where metres must be metres.
 - When the gestures stop, the scene origin moves under the view and the tiles are placed again in
   double precision. **Re-anchor Scene Origin** does it at once; it is greyed while Globe Navigation

@@ -666,16 +666,19 @@ def _context_view(context):
 
 
 class OGC3D_OT_GlobeScaleReset(Operator):
-    """Scale the Globe back to 1:1 about the point the view looks at, and move the view away to match: nothing changes on screen. Do this before rendering or exporting, where metres must be metres"""
+    """Scale the Globe to 1:N (1:1 by default) about the point the view looks at, and move the view to match: nothing changes on screen. Back to 1:1 before rendering or exporting, where metres must be metres"""
     bl_idname = "ogc3dtiles.globe_scale_reset"
     bl_label = "Globe Scale to 1:1"
+    bl_options = {"INTERNAL"}
+
+    denominator: bpy.props.FloatProperty(name="1:N", default=1.0, min=1e-6)
 
     def execute(self, context):
         g, cv = globe(), _context_view(context)
         if g is None or cv is None:
             return {"CANCELLED"}
         region, rv3d, space = cv
-        s = globe_scale(g)
+        s = globe_scale(g) * self.denominator        # the factor that brings the Globe to 1:N
         if abs(s - 1.0) < 1e-9:
             return {"FINISHED"}
         try:
@@ -822,8 +825,8 @@ class OGC3D_PT_GlobeNav(Panel):
     bl_category = "3D Tiles"
     bl_label = "Globe Navigation (beta)"
     bl_idname = "OGC3D_PT_globe_nav"
-    bl_order = 1                              # next to Scene Origin: both move the origin
-    bl_options = {"HIDE_HEADER"}              # always open: the mode is a button, not a section to fold
+    bl_parent_id = "OGC3D_PT_origin"          # a section of Scene Origin: both move the origin
+    bl_options = {"HIDE_HEADER"}              # never folded: open whenever Scene Origin is
 
     @classmethod
     def poll(cls, context):
@@ -831,6 +834,7 @@ class OGC3D_PT_GlobeNav(Panel):
 
     def draw(self, context):
         layout = self.layout
+        layout.separator()
         layout.label(text="Globe Navigation (beta)", icon="WORLD")
         on = _nav["active"]
         layout.operator("ogc3dtiles.globe_nav", text="Stop Globe Navigation" if on else "Globe Navigation",
@@ -845,10 +849,10 @@ class OGC3D_PT_GlobeNav(Panel):
         col.label(text="Shift + middle drag: grab the globe")
         s = globe_scale(g)
         row = layout.row(align=True)
-        row.label(text="World scale 1:1" if abs(s - 1.0) < 1e-6 else f"World scale 1:{1.0 / s:,.0f}")
+        row.prop(context.window_manager, "ogc3d_globe_scale_n", text="World scale 1")
         sub = row.row(align=True)
         sub.enabled = abs(s - 1.0) > 1e-6
-        sub.operator("ogc3dtiles.globe_scale_reset", text="To 1:1")
+        sub.operator("ogc3dtiles.globe_scale_reset", text="To 1:1").denominator = 1.0
         layout.operator("ogc3dtiles.globe_reanchor", icon="PIVOT_CURSOR")
         tilt = math.degrees(globe_tilt(g))
         row = layout.row(align=True)
@@ -861,6 +865,18 @@ class OGC3D_PT_GlobeNav(Panel):
         layout.prop(context.window_manager, "ogc3d_globe_frame")
 
 
+def _get_scale_n(_self) -> float:
+    return 1.0 / max(globe_scale(), 1e-12)
+
+
+def _set_scale_n(_self, value) -> None:
+    if globe() is not None and value > 0.0:
+        try:
+            bpy.ops.ogc3dtiles.globe_scale_reset(denominator=float(value))
+        except RuntimeError:        # no 3D view in this context
+            pass
+
+
 _classes = (OGC3D_OT_GlobeNav, OGC3D_OT_GlobeScaleReset, OGC3D_OT_GlobeReanchor, OGC3D_OT_GlobeLevel, OGC3D_OT_GlobeParent, OGC3D_OT_GlobeReset,
             OGC3D_PT_GlobeNav)
 
@@ -871,11 +887,16 @@ def register():
     bpy.types.WindowManager.ogc3d_globe_frame = bpy.props.BoolProperty(
         name="Frame while active", default=True,
         description="Draw a thin frame around the 3D view while Globe Navigation is on")
+    bpy.types.WindowManager.ogc3d_globe_scale_n = bpy.props.FloatProperty(
+        name="World scale 1:N", description="The Globe's scale as 1:N: type N to zoom the world about the point "
+        "the view looks at; the view moves to match, so nothing jumps", min=1e-6, soft_min=0.01,
+        step=100, precision=1, get=_get_scale_n, set=_set_scale_n)
 
 
 def unregister():
     _nav["active"] = False
     _remove_draw()
     del bpy.types.WindowManager.ogc3d_globe_frame
+    del bpy.types.WindowManager.ogc3d_globe_scale_n
     for c in reversed(_classes):
         bpy.utils.unregister_class(c)

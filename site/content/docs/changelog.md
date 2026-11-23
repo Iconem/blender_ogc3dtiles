@@ -8,9 +8,9 @@ main branch and not in a release zip yet.
 
 ## Unreleased
 
-- **Sidebar layout.** The first panel is now *OGC 3D Tiles tilesets*. *Globe Navigation (beta)* is its own panel
-  that stays open, instead of a folded section of *Scene Origin*; *Scene Origin* shows the world scale under
-  latitude, longitude and height while the Globe exists. In *Nodes: Material*, the Shadeless and X-ray checkboxes
+- **Sidebar layout.** The first panel is now *OGC 3D Tiles tilesets*. *Globe Navigation (beta)* is no longer a folded
+  section: it is open whenever *Scene Origin* is. Its world scale is a number field: type N for 1:N and the world
+  zooms about the point the view looks at, the view moving to match. In *Nodes: Material*, the Shadeless and X-ray checkboxes
   are gone, since the presets already set them; the X-ray strength and tint show while an X-ray look is on.
 - **New library file:** the file dialog proposes `blender-ogc3dtiles-library.json`.
 

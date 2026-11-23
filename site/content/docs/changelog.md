@@ -8,6 +8,12 @@ main branch and not in a release zip yet.
 
 ## Unreleased
 
+- **X-ray on meshes.** A fifth material preset, *X-ray All*, and a *Meshes* checkbox under the X-ray looks:
+  every face of a mesh tile adds its texture colour as light and hides nothing, so rooms, vaults and far walls
+  show through, alongside point clouds and splats. *Mesh edges* goes from a double exposure of the textures (0)
+  to a line drawing of walls and outlines (3). Dark background, with or without the shared shader nodes. See
+  [X-ray on meshes](/features/point-clouds#x-ray-on-meshes).
+- Fixed: turning the shared shader nodes on or off while an X-ray look was on brought the tiles back opaque.
 - **Sidebar layout.** The first panel is now *OGC 3D Tiles tilesets*. *Globe Navigation (beta)* is no longer a folded
   section: it is open whenever *Scene Origin* is. Its world scale is a number field: type N for 1:N and the world
   zooms about the point the view looks at, the view moving to match. In *Nodes: Material*, the Shadeless and X-ray checkboxes

@@ -526,6 +526,8 @@ def import_glb_file(path: str, key: str, scene: bpy.types.Scene, root: bpy.types
         for n in new_mats:
             apply_relight(bpy.data.materials.get(n))
     _new_tile_hooks(scene, new_objs, [bpy.data.materials.get(n) for n in new_mats])
+    from .. import xray
+    xray.new_tiles(scene, new_objs)
     data_names = (sorted(set(bpy.data.meshes.keys()) - before_m)
                   + new_mats
                   + sorted(set(bpy.data.images.keys()) - before_i))
@@ -1029,9 +1031,8 @@ def build_tile_from_payload(payload: dict, key: str, scene: bpy.types.Scene,
         for m in me.materials:
             apply_relight(m)
     _new_tile_hooks(scene, [obj], list(me.materials))
-    if getattr(scene.ogc3dtiles, "xray", False) and (payload.get("points") or payload.get("splats")):
-        from .. import xray
-        xray.show(obj)                  # last: in front of whatever the hooks put before the output
+    from .. import xray
+    xray.new_tiles(scene, [obj])        # last: in front of whatever the hooks put before the output
     obj.hide_viewport = hidden
     obj.hide_render = hidden
     obj.select_set(False)

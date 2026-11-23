@@ -44,7 +44,7 @@ panel. It applies to every tile, meshes included.
 
 ![Gaussian splats of Kirants monastery: the splats, and the same view with X-ray on, in the splats' own colours and tinted](/img/xray_splats.jpg)
 
-**X-ray points and splats**, in the *Nodes: Material* panel, shows point clouds and Gaussian splats as a radiograph: every point adds a little light
+**X-ray**, a look of the *Nodes: Material* panel, shows point clouds and Gaussian splats as a radiograph: every point adds a little light
 and hides nothing. Where many points line up along the view (a wall seen edge-on, a vault, the far
 side of a building) the light adds up, so the structure reads through itself.
 
@@ -61,8 +61,7 @@ side of a building) the light adds up, so the structure reads through itself.
   tile adds its points to its parent's, so where finer tiles are loaded there are more points per
   pixel and the X-ray is brighter, in rectangles. Lower *Strength*, or a lower *Max SSE* so that the
   whole view reaches the same level.
-- It is a different thing from the [X-ray slider of meshes](/features/nodes-material#x-ray), which
-  fades the faces turned toward you.
+- Mesh tiles stay as they are unless **Meshes** is ticked: see [X-ray on meshes](#x-ray-on-meshes).
 
 How it works: X-ray is a material effect. A shared shader group, `OGC3D X-ray`, sits in front of
 the Material Output of every point material and mixes the usual shader with a Transparent shader
@@ -76,6 +75,26 @@ behind it.
 
 The **X-ray** and **X-ray Mono** [presets](/features/nodes-material#presets) at the top of the panel
 turn it on in one click, in the points' own colours or in the tint.
+
+### X-ray on meshes
+
+The **X-ray All** preset, or the **Meshes** checkbox under an X-ray look, gives mesh tiles the same
+treatment: every face adds its texture colour as light and hides nothing, front and back faces alike.
+A building then shows its rooms, vaults and far walls through its roof, and a site with meshes and
+point clouds reads as one radiograph.
+
+| Setting | What it does |
+|---|---|
+| **Mesh strength** | Light added by a face seen edge-on. Lower it where many walls line up and burn to white. |
+| **Mesh edges** | 0: every face adds the same light, like a double exposure of the textures. Higher: faces seen edge-on (walls, outlines) stand out and faces turned to you fade, down to a line drawing around 3. |
+
+- It is the same `OGC3D X-ray` group, on each mesh material with its *Mesh* input at 1, and it works
+  with or without the shared shader nodes. Clipping still cuts it.
+- While it is on, mesh materials are drawn blended and no face is culled, whatever *Faces* says;
+  both come back with any other look.
+- Tint amount and its colour apply to meshes too.
+- It is a different thing from the [X-ray slider of the shared shader nodes](/features/nodes-material#x-ray),
+  which fades the faces turned toward you and needs no dark background.
 
 ## Colours
 

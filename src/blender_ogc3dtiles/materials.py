@@ -346,19 +346,29 @@ def _build_clip_group(ng):
     arrange(ng)
 
 
-def surface_target(nt, include_poly=True):
+def surface_target(nt, include_poly=True, behind_xray=True):
     """Socket a material's final shader should feed: the polygon clip mix,
-    else the viewport-region clip mix, else the Material Output surface."""
+    else the viewport-region clip mix, else the Material Output surface.
+    The X-ray group sits in front of that socket: a shader goes behind it (its Shader input)."""
+    tgt = None
     if include_poly:
         from .overlays import POLY_MIX
         mix = nt.nodes.get(POLY_MIX)
         if mix is not None:
-            return mix.inputs[1]
-    mix = nt.nodes.get(CLIP_MIX)
-    if mix is not None:
-        return mix.inputs[1]
-    out = next((n for n in nt.nodes if n.type == "OUTPUT_MATERIAL"), None)
-    return out.inputs["Surface"] if out is not None else None
+            tgt = mix.inputs[1]
+    if tgt is None:
+        mix = nt.nodes.get(CLIP_MIX)
+        if mix is not None:
+            tgt = mix.inputs[1]
+    if tgt is None:
+        out = next((n for n in nt.nodes if n.type == "OUTPUT_MATERIAL"), None)
+        tgt = out.inputs["Surface"] if out is not None else None
+    if behind_xray and tgt is not None and tgt.links:
+        from .xray import NODE
+        front = tgt.links[0].from_node
+        if front.name == NODE and "Shader" in front.inputs:
+            return front.inputs["Shader"]
+    return tgt
 
 
 def apply_clip(mat) -> bool:
@@ -1177,12 +1187,17 @@ LOOKS = (
     ("SHADELESS", "Shadeless", "Every tile's colours as they are, without any light"),
     ("XRAY", "X-ray", "Point clouds and splats as an X-ray in their own colours"),
     ("XRAY_MONO", "X-ray Mono", "Point clouds and splats as an X-ray in one colour, the Tint"),
+    ("XRAY_ALL", "X-ray All", "Meshes too: every tile as an X-ray in its own colours, rooms and far walls "
+                              "showing through"),
 )
+XRAY_LOOKS = ("XRAY", "XRAY_MONO", "XRAY_ALL")
 
 
 def current_look(props) -> str:
     if props.xray:
-        return "XRAY_MONO" if props.xray_tint_amount >= 0.999 else "XRAY"
+        if props.xray_tint_amount >= 0.999:
+            return "XRAY_MONO"
+        return "XRAY_ALL" if props.xray_meshes else "XRAY"
     return "SHADELESS" if props.shadeless else "LIT"
 
 
@@ -1200,9 +1215,11 @@ class OGC3D_OT_MaterialLook(Operator):
 
     def execute(self, context):
         props = context.scene.ogc3dtiles
-        xr = self.look in ("XRAY", "XRAY_MONO")
+        xr = self.look in XRAY_LOOKS
         if xr:
             props.xray_tint_amount = 1.0 if self.look == "XRAY_MONO" else 0.0
+            if props.xray_meshes != (self.look == "XRAY_ALL"):
+                props.xray_meshes = self.look == "XRAY_ALL"
         if props.shadeless != (self.look == "SHADELESS"):
             props.shadeless = self.look == "SHADELESS"
         if props.xray != xr:
@@ -1247,9 +1264,12 @@ def draw_panel(layout, props):
     """Body of the collapsible "Materials" sub-panel."""
     from . import node_rows
     look = current_look(props)
-    row = layout.row(align=True)
-    for key, name, _d in LOOKS:
-        row.operator("ogc3dtiles.material_look", text=name, depress=key == look).look = key
+    col = layout.column(align=True)                     # two rows: five buttons do not fit a narrow sidebar
+    for keys in (("LIT", "SHADELESS"), XRAY_LOOKS):
+        row = col.row(align=True)
+        for key, name, _d in LOOKS:
+            if key in keys:
+                row.operator("ogc3dtiles.material_look", text=name, depress=key == look).look = key
     relit = node_rows.draw(layout, props, "auto_relight", "Shared shader nodes", "RELIGHT")
     layout.prop(props, "backface_mode", text="Faces")
     from .io import addon_pref
@@ -1269,7 +1289,7 @@ def draw_panel(layout, props):
                     icon="MATERIAL").kind = "TILE"
     if props.xray:           # the X-ray presets above turn it on; only its settings are shown here
         box = layout.box()
-        box.label(text="X-ray points and splats", icon="XRAY")
+        box.label(text="X-ray", icon="XRAY")
         col = box.column(align=True)
         col.prop(props, "xray_strength")
         if any(o.get("splats") for o in bpy.data.objects):
@@ -1277,6 +1297,11 @@ def draw_panel(layout, props):
         row = col.row(align=True)
         row.prop(props, "xray_tint_amount")
         row.prop(props, "xray_tint", text="")
+        col = box.column(align=True)
+        col.prop(props, "xray_meshes")
+        if props.xray_meshes:
+            col.prop(props, "xray_mesh_strength")
+            col.prop(props, "xray_mesh_edge")
         box.label(text="Use a dark background", icon="INFO")
 
 

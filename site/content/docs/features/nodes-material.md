@@ -27,9 +27,11 @@ A row of buttons at the top of the *Nodes: Material* panel sets the look of ever
 | **Shadeless** | Every tile's colours as they are, without any light. See [below](#lighting-with-your-own-lamps). |
 | **X-ray** | Point clouds and splats as an [X-ray](/features/point-clouds#x-ray) in their own colours. |
 | **X-ray Mono** | The same in one colour, the X-ray *Tint*. |
+| **X-ray All** | Meshes too: every tile as an X-ray in its own colours, rooms and far walls showing through. See [X-ray on meshes](/features/point-clouds#x-ray-on-meshes). |
 
-The button of the look in use stays pressed. With an X-ray look, its strength and tint show under the
-presets.
+The button of the look in use stays pressed. With an X-ray look, its settings show under the presets:
+strength, tint, and a **Meshes** checkbox, which is what *X-ray All* ticks. Tick it under *X-ray Mono*
+for meshes in the tint.
 
 ## Shared shader nodes
 
@@ -84,6 +86,10 @@ turns toward you.
 
 In Material Preview the transparency looks stippled; it smooths out in Rendered shading as samples
 accumulate, and in final renders.
+
+This slider needs the shared shader nodes and works on any background: a faded face shows what is
+behind it. The **X-ray All** preset is another look, [X-ray on meshes](/features/point-clouds#x-ray-on-meshes):
+every face adds light, on a dark background, with or without the shared shader nodes.
 
 ## Faces
 

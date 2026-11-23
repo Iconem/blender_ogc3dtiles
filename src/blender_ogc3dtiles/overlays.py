@@ -308,7 +308,7 @@ def _ensure_poly_mix(nt, tileset_uid):
     mix = nt.nodes.get(POLY_MIX)
     if mix is not None:
         return mix
-    target = materials.surface_target(nt, include_poly=False)
+    target = materials.surface_target(nt, include_poly=False, behind_xray=False)   # clipping also cuts the X-ray
     if target is None or not target.links:
         return None
     src = target.links[0].from_socket

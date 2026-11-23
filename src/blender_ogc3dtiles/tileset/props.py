@@ -691,9 +691,9 @@ class TilesSceneProps(PropertyGroup):
     )
     xray: BoolProperty(
         name="X-ray",
-        description="Show point clouds and Gaussian splats as an X-ray: every point adds a little light "
-                    "and hides nothing, so walls seen edge-on, vaults and the far side of a building "
-                    "show through. Needs a dark background (World colour, or a transparent film over "
+        description="Show point clouds and Gaussian splats (and meshes, with Meshes) as an X-ray: every point "
+                    "adds a little light and hides nothing, so walls seen edge-on, vaults and the far side "
+                    "of a building show through. Needs a dark background (World colour, or a transparent film over "
                     "black); best in Eevee. Live",
         default=False,
         update=_on_xray,
@@ -708,6 +708,24 @@ class TilesSceneProps(PropertyGroup):
         description="Radius of the points Gaussian splats become while X-ray is on (point clouds keep the "
                     "size their display gives them)",
         default=0.05, min=0.001, soft_max=1.0, max=50.0, precision=3, update=_on_xray_params,
+    )
+    xray_meshes: BoolProperty(
+        name="Meshes",
+        description="X-ray the mesh tiles too: every face adds its texture colour as light and hides nothing, "
+                    "front and back faces alike, so rooms, corridors and the far walls show through. Live",
+        default=False,
+        update=_on_xray,
+    )
+    xray_mesh_strength: FloatProperty(
+        name="Mesh strength",
+        description="Light added by a face seen edge-on. Lower it where many walls line up and burn to white",
+        default=0.5, min=0.001, soft_max=2.0, max=50.0, precision=3, update=_on_xray_params,
+    )
+    xray_mesh_edge: FloatProperty(
+        name="Mesh edges",
+        description="0: every face adds the same light, as a double exposure of the textures. Higher: faces "
+                    "seen edge-on (walls, outlines) stand out and faces turned to you fade",
+        default=1.0, min=0.0, soft_max=4.0, max=16.0, precision=2, update=_on_xray_params,
     )
     xray_tint: FloatVectorProperty(
         name="Tint", subtype="COLOR", size=3, min=0.0, max=1.0, default=(0.55, 0.8, 1.0),

@@ -822,7 +822,8 @@ class OGC3D_PT_GlobeNav(Panel):
     bl_category = "3D Tiles"
     bl_label = "Globe Navigation (beta)"
     bl_idname = "OGC3D_PT_globe_nav"
-    bl_parent_id = "OGC3D_PT_origin"          # a section of Scene Origin: both move the origin
+    bl_order = 1                              # next to Scene Origin: both move the origin
+    bl_options = {"HIDE_HEADER"}              # always open: the mode is a button, not a section to fold
 
     @classmethod
     def poll(cls, context):
@@ -830,6 +831,7 @@ class OGC3D_PT_GlobeNav(Panel):
 
     def draw(self, context):
         layout = self.layout
+        layout.label(text="Globe Navigation (beta)", icon="WORLD")
         on = _nav["active"]
         layout.operator("ogc3dtiles.globe_nav", text="Stop Globe Navigation" if on else "Globe Navigation",
                         icon="PAUSE" if on else "WORLD", depress=on)

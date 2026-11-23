@@ -361,7 +361,7 @@ class OGC3D_OT_LibraryAddFile(Operator):
     bl_idname = "ogc3dtiles.library_add_file"
     bl_label = "Add Library File"
 
-    filepath: StringProperty(subtype="FILE_PATH", default="tilesets.json")
+    filepath: StringProperty(subtype="FILE_PATH", default="blender-ogc3dtiles-library.json")
     filter_glob: StringProperty(default="*.json", options={"HIDDEN"})
 
     def invoke(self, context, event):

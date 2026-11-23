@@ -37,7 +37,7 @@ or disc it is drawn as. *Disc splats* gives the smoothest result on tiles that c
 the discs then follow the scanned surface. Files saved with an older version, where points showed
 their colours without any light, are shaded the same way when opened.
 
-To see the colours as they are, without any light, tick **Shadeless** in the *Nodes: Material*
+To see the colours as they are, without any light, pick the **Shadeless** preset in the *Nodes: Material*
 panel. It applies to every tile, meshes included.
 
 ## X-ray

@@ -8,6 +8,12 @@ main branch and not in a release zip yet.
 
 ## Unreleased
 
+- **Sidebar layout.** The first panel is now *OGC 3D Tiles tilesets*. *Globe Navigation (beta)* is its own panel
+  that stays open, instead of a folded section of *Scene Origin*; *Scene Origin* shows the world scale under
+  latitude, longitude and height while the Globe exists. In *Nodes: Material*, the Shadeless and X-ray checkboxes
+  are gone, since the presets already set them; the X-ray strength and tint show while an X-ray look is on.
+- **New library file:** the file dialog proposes `blender-ogc3dtiles-library.json`.
+
 ## 0.6.6 (2026-11-23)
 
 - cesium-native-python: a wheel that is installed but does not load now says so, with the import error, instead of "Not installed"; the full traceback goes to the system console once. Installing from GitHub checks with a real import.

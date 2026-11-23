@@ -2184,7 +2184,7 @@ class _OGC3DSidebar:
 
 
 class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
-    bl_label = "OGC 3D Tiles"
+    bl_label = "OGC 3D Tiles tilesets"
     bl_idname = "OGC3D_PT_main"
     bl_order = 0
 
@@ -2419,6 +2419,11 @@ class OGC3D_PT_OriginPanel(_OGC3DSidebar, Panel):
         col.prop(props, "origin_lat", text="Latitude °")
         col.prop(props, "origin_lon", text="Longitude °")
         col.prop(props, "origin_height", text="Height m")
+        from ..globe_nav import globe, globe_scale
+        if globe() is not None:          # Globe Navigation zooms by scaling the world: say by how much
+            s = globe_scale()
+            col.label(text="World scale 1:1" if abs(s - 1.0) < 1e-6 else f"World scale 1:{1.0 / s:,.0f}",
+                      icon="FULLSCREEN_ENTER")
         col.prop(props, "origin_text", text="", placeholder="Paste lat, lon, height (exact)")
         if props.origin_text_status:
             col.label(text=props.origin_text_status, icon="INFO")

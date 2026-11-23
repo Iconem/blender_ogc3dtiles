@@ -1252,7 +1252,6 @@ def draw_panel(layout, props):
         row.operator("ogc3dtiles.material_look", text=name, depress=key == look).look = key
     relit = node_rows.draw(layout, props, "auto_relight", "Shared shader nodes", "RELIGHT")
     layout.prop(props, "backface_mode", text="Faces")
-    layout.prop(props, "shadeless")
     from .io import addon_pref
     ng = bpy.data.node_groups.get(GROUP_NAME)
     if ng is not None and relit and addon_pref("beta_material_controls", False):
@@ -1268,9 +1267,9 @@ def draw_panel(layout, props):
                          slider=True)
     layout.operator("ogc3dtiles.open_nodes", text="Open a tile's material",
                     icon="MATERIAL").kind = "TILE"
-    box = layout.box()
-    box.prop(props, "xray", text="X-ray points and splats")
-    if props.xray:
+    if props.xray:           # the X-ray presets above turn it on; only its settings are shown here
+        box = layout.box()
+        box.label(text="X-ray points and splats", icon="XRAY")
         col = box.column(align=True)
         col.prop(props, "xray_strength")
         if any(o.get("splats") for o in bpy.data.objects):

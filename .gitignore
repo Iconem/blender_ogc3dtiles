@@ -17,3 +17,6 @@ docs/img/*
 !docs/img/sidebar.jpg
 docs/video/
 .cache/
+# private: the Iconem dataset manifest lives in %LOCALAPPDATA%/blender_ogc3dtiles\private, never in a clone
+*iconem_manifest*.json
+private/

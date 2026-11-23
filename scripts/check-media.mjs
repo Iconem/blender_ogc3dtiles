@@ -27,9 +27,18 @@ for (const f of files) {
   total += size
   if (size > MAX_FILE) problems.push(`${f}: ${Math.round(size / 1e3)} KB, over ${MAX_FILE / 1e3} KB (recompress it, or put it on a release)`)
 }
+// Private data never goes in git: the Iconem dataset manifest (kept in %LOCALAPPDATA%\blender_ogc3dtiles\private)
+// and real Iconem share links, which open the data to anyone who has them.
+for (const f of files) {
+  if (/iconem_manifest[^/]*\.json$|(^|\/)private\//i.test(f)) problems.push(`${f}: private data, keep it out of git`)
+}
+try {
+  const hits = execFileSync("git", ["grep", "-I", "-l", "-E", "api\.iconem\.com/s/[A-Za-z0-9_-]{16,}"], { encoding: "utf8" })
+  for (const f of hits.split("\n").filter(Boolean)) problems.push(`${f}: contains an Iconem share link, keep it out of git`)
+} catch {} // git grep exits 1 when nothing matches
 if (total > MAX_TOTAL) problems.push(`tracked media add up to ${(total / 1e6).toFixed(1)} MB, over ${MAX_TOTAL / 1e6} MB`)
 if (problems.length) {
-  console.error("check-media: heavy files in git\n  " + problems.join("\n  "))
+  console.error("check-media: files that must not be in git\n  " + problems.join("\n  "))
   process.exit(1)
 }
 console.log(`check-media: ${files.length} files, media ${(total / 1e6).toFixed(1)} MB, all under the limits`)

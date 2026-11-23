@@ -28,8 +28,8 @@ A row of buttons at the top of the *Nodes: Material* panel sets the look of ever
 | **X-ray** | Point clouds and splats as an [X-ray](/features/point-clouds#x-ray) in their own colours. |
 | **X-ray Mono** | The same in one colour, the X-ray *Tint*. |
 
-A preset only sets the *Shadeless* and *X-ray* settings below it; the button of the look in use
-stays pressed, and any setting can still be changed by hand afterwards.
+The button of the look in use stays pressed. With an X-ray look, its strength and tint show under the
+presets.
 
 ## Shared shader nodes
 
@@ -63,9 +63,9 @@ In Rendered shading the tiles are lit by three things, and two of them are not y
 
 For lamps only, set *Baked Light* to 0 and the world's Surface strength to 0 (World properties).
 
-**Shadeless**, in the same panel, is the other end: every tile, meshes and points, shows its colours
+The **Shadeless** preset is the other end: every tile, meshes and points, shows its colours
 with no light at all. With the shared shader nodes it sets *Baked Light* to 1 and puts back the value
-it had when unticked; without them it routes each material's colour to Emission. Tiles that declare
+it had when you pick another look; without them it routes each material's colour to Emission. Tiles that declare
 themselves unlit stay as they are either way. The panel also holds
 [X-ray for points and splats](/features/point-clouds#x-ray).
 

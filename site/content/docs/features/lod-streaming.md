@@ -55,13 +55,14 @@ does.
 time (cameras in its child collections and hidden ones count too, up to 64), each at the render
 resolution, panoramic ones all around. The tiles each camera needs load together, and none is
 dropped because another camera does not see it. The small button next to the collection adds the
-3D viewport to them.
+3D viewport to them (off by default).
 
 - Two or more 360° panoramas: put their cameras in one collection. In a test with two
   equirectangular panoramas about 100 m apart over Sacré-Cœur, 38 tiles were shown against 28 for one of them alone.
-- A camera path: **Cameras Along the Animation** copies the scene camera at evenly spaced frames of
-  the animation (12 by default) into an `OGC3D Path Cameras` collection, and sets *Stream for* to
-  it. The detail the whole path needs is then loaded at once, ready for
+- A camera path: **Cameras Along the Animation**, under the collection field, copies the scene
+  camera at evenly spaced frames of the animation into an `OGC3D Path Cameras` collection and sets
+  *Stream for* to it, without the viewport. The number beside the button is how many cameras (12
+  by default). The detail the whole path needs is then loaded at once, ready for
   [Freeze Tiles](/features/rendering#freeze-and-export).
 - cesium-native selects for the union of the views. The Pure Python backend only uses the first
   one.

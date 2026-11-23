@@ -928,7 +928,12 @@ class TilesSceneProps(PropertyGroup):
     view_collection_viewport: BoolProperty(
         name="And the viewport",
         description="Select tiles for the 3D viewport too, besides the cameras of the collection",
-        default=True,
+        default=False,
+    )
+    path_camera_count: IntProperty(
+        name="Cameras",
+        description="How many cameras Cameras Along the Animation places, spread evenly over the frame range",
+        default=12, min=2, max=64,
     )
     view_camera: bpy.props.PointerProperty(
         name="Camera", type=bpy.types.Object, poll=_camera_poll,

@@ -115,8 +115,10 @@ are removed (the default), streaming stops and they are hidden, or streaming goe
   | `.ply` | without textures | points with their colours |
   | `.obj` | with their textures, written beside the file | left out |
 
-  With *Shared shader nodes* on, a glb also carries each photo as an emissive texture (the Baked
-  Light share), which makes it about three times larger; untick them first for a plain copy.
+  glb is the one to use for meshes. Each mesh material is written as a plain one, the photo as
+  Base Color, whatever the material shows in Blender (shared shader nodes, clipping, X-ray): each
+  photo is stored once. Written as they are, those materials made Blender's exporter store each photo
+  three times.
 
 - Blender's own exporters with their default settings write nothing for a cloud: PLY applies the
   display modifier, which turns the points into a point cloud object it does not export, and glTF

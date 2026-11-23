@@ -2349,7 +2349,9 @@ def _draw_view_source(layout, props) -> None:
         n = len(collection_cameras(props))
         layout.label(text=f"{n} camera{'s' if n != 1 else ''}" + (" and the viewport" if props.view_collection_viewport
                                                                    else ""), icon="OUTLINER_OB_CAMERA")
-    layout.operator("ogc3dtiles.cameras_along_path", icon="ANIM")
+        row = layout.row(align=True)
+        row.operator("ogc3dtiles.cameras_along_path", icon="ANIM")
+        row.prop(props, "path_camera_count", text="")
 
 
 def _group_button(row, name) -> None:

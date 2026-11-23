@@ -197,17 +197,9 @@ class OGC3D_OT_CamerasAlongPath(Operator):
     bl_label = "Cameras Along the Animation"
     bl_options = {"REGISTER", "UNDO"}
 
-    count: IntProperty(name="Cameras", default=12, min=2, max=64,
-                       description="How many cameras, spread evenly over the frame range")
-    viewport: BoolProperty(name="And the viewport", default=False,
-                           description="Select tiles for the 3D viewport too")
-
     @classmethod
     def poll(cls, context):
         return context.scene.camera is not None
-
-    def invoke(self, context, event):
-        return context.window_manager.invoke_props_dialog(self)
 
     def execute(self, context):
         sc = context.scene
@@ -219,7 +211,7 @@ class OGC3D_OT_CamerasAlongPath(Operator):
         for o in list(coll.objects):
             bpy.data.objects.remove(o)
         f0, f1, keep = sc.frame_start, sc.frame_end, sc.frame_current
-        n = self.count
+        n = sc.ogc3dtiles.path_camera_count
         try:
             for i in range(n):
                 f = round(f0 + (f1 - f0) * i / (n - 1))
@@ -232,7 +224,7 @@ class OGC3D_OT_CamerasAlongPath(Operator):
             sc.frame_set(keep)
         props = sc.ogc3dtiles
         props.view_collection = coll
-        props.view_collection_viewport = self.viewport
+        props.view_collection_viewport = False      # the path's detail only, never the viewport's
         props.view_source = "COLLECTION"
         self.report({"INFO"}, f"{n} cameras in '{PATH_COLLECTION}', frames {f0} to {f1}; streaming for them")
         return {"FINISHED"}
@@ -311,6 +303,53 @@ def obj_textures(mtl_path, objs) -> int:
     return n
 
 
+def _plain_material(m):
+    """A Principled material with the tile's photo as Base Color, nothing else: what glTF can say. Tile
+    materials pass the photo through the shared shader group and the clip and X-ray mixes, and the glTF
+    exporter then writes it again as an emissive texture, and once more for the alpha."""
+    img = None
+    if m is not None and m.node_tree is not None:
+        img = next((n.image for n in m.node_tree.nodes if n.type == "TEX_IMAGE" and n.image is not None), None)
+    pm = bpy.data.materials.new((m.name if m else "material")[:50] + " (export)")
+    pm.use_nodes = True
+    nt = pm.node_tree
+    bsdf = next(n for n in nt.nodes if n.type == "BSDF_PRINCIPLED")
+    bsdf.inputs["Roughness"].default_value = 1.0
+    bsdf.inputs["Metallic"].default_value = 0.0
+    if img is not None:
+        tex = nt.nodes.new("ShaderNodeTexImage")
+        tex.image = img
+        tex.location = (-400, 300)
+        nt.links.new(tex.outputs["Color"], bsdf.inputs["Base Color"])
+    elif m is not None:
+        bsdf.inputs["Base Color"].default_value = tuple(m.diffuse_color)
+    return pm
+
+
+class _PlainMaterials:
+    """For the export only: frozen meshes get plain materials, put back afterwards."""
+    def __init__(self, objs):
+        self.objs, self.swaps, self.made = objs, [], {}
+
+    def __enter__(self):
+        for o in self.objs:
+            for i, slot in enumerate(o.material_slots):
+                m = slot.material
+                key = m.name if m else ""
+                if key not in self.made:
+                    self.made[key] = _plain_material(m)
+                self.swaps.append((slot, m))
+                slot.material = self.made[key]
+        return self
+
+    def __exit__(self, *exc):
+        for slot, m in self.swaps:
+            slot.material = m
+        for pm in self.made.values():
+            bpy.data.materials.remove(pm)
+        return False
+
+
 class OGC3D_OT_ExportFrozen(Operator):
     """Export the selected frozen tiles with the settings they need. Glb or glTF: meshes with their textures,
     clouds as POINTS with their colours. PLY: clouds or meshes, without textures. OBJ: meshes with their
@@ -356,9 +395,11 @@ class OGC3D_OT_ExportFrozen(Operator):
         try:
             # No display modifier applied: clouds stay vertices (frozen meshes have no modifiers left)
             if low.endswith((".glb", ".gltf")):
-                bpy.ops.export_scene.gltf(filepath=path, use_selection=True, export_apply=False,
-                                          use_mesh_vertices=bool(clouds), export_vertex_color="ACTIVE" if clouds else "MATERIAL",
-                                          export_format="GLB" if low.endswith(".glb") else "GLTF_SEPARATE")
+                with _PlainMaterials([o for o in sel if not _cloud(o)]):
+                    bpy.ops.export_scene.gltf(filepath=path, use_selection=True, export_apply=False,
+                                              use_mesh_vertices=bool(clouds),
+                                              export_vertex_color="ACTIVE" if clouds else "MATERIAL",
+                                              export_format="GLB" if low.endswith(".glb") else "GLTF_SEPARATE")
             elif low.endswith(".obj"):
                 bpy.ops.wm.obj_export(filepath=path, export_selected_objects=True, apply_modifiers=False,
                                       export_materials=True, path_mode="STRIP")

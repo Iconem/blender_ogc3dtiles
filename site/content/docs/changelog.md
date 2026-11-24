@@ -8,10 +8,15 @@ main branch and not in a release zip yet.
 
 ## Unreleased
 
-- **Point size: smaller under finer tiles (beta).** In point clouds that add detail (Potree octrees through
+Nothing yet.
+
+## 0.6.7 (2026-11-25)
+
+- **Point size: adaptive under finer tiles (beta).** In point clouds that add detail (Potree octrees through
   3dtiled, most LiDAR tilesets), a coarse tile's points now shrink where finer tiles are shown over them, per
-  point, as Potree's adaptive size does. On by default in *Attenuated* and *Per tile*; a checkbox under the
-  radius settings. See [Point clouds](/features/point-clouds#smaller-under-finer-tiles-beta).
+  point, as Potree's adaptive size does. On by default in *Attenuated* and *Per tile*; the checkbox
+  *Adaptive size under finer tiles*, under the radius fields of *Nodes: Geometry*. See
+  [Point clouds](/features/point-clouds#adaptive-size-under-finer-tiles-beta).
 
 - **X-ray on meshes, and one X-ray preset.** *X-ray* now applies to mesh tiles as well as point clouds and
   splats (a *Meshes* checkbox under its settings, ticked by default, leaves them out): every face adds its
@@ -42,10 +47,12 @@ main branch and not in a release zip yet.
   *Color tiles by*. *All columns as attributes* is now *Keep every property as an attribute*.
 - Fixed: *Color tiles by > Tileset* could show every tileset in one colour in the viewport, and close hues for
   different tilesets. Hues are now spread, kept on each tileset's Empty, and the viewport redraws.
-- **Dataset markers: dots of a fixed size on screen.** A *px* field beside *Markers for all N datasets*: every
-  dataset gets a dot of that radius in the 3D viewport, 5 pixels by default, whatever the distance and the Globe
-  scale, so small sites show from space. Blender draws an Empty no larger than a kilometre, so a sphere alone
-  could not.
+- **Datasets of an aggregate: a dot and a collection each.** Every dataset Empty gets a white dot in the 3D
+  viewport, of a fixed size on screen (*Dot px* beside *An Empty per dataset*, 5 pixels by default), whatever
+  the distance and the Globe scale, so small sites show from space: Blender draws an Empty no larger than a
+  kilometre. Every dataset also gets its own collection under the tileset's, with its Empty and its tiles: its
+  eye hides one dataset among overlapping ones.
+- *Scene Origin* is open by default.
 - The *Nodes* panels are in the order Geometry, Material, Metadata, Compositing. *Keep every property as an
   attribute* sits under *Read feature metadata*.
 - **Sidebar.** A first panel, *OGC 3D Tiles*, has the status line and Start / Stop, Freeze, Clear All Tiles; the

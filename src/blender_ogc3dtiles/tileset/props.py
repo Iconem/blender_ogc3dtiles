@@ -864,7 +864,7 @@ class TilesSceneProps(PropertyGroup):
         default=False, update=_on_dataset_marker_size)
     dataset_marker_px: FloatProperty(
         name="Marker size px",
-        description="Every dataset also gets a dot of this radius in pixels in the 3D viewport, whatever the "
+        description="Every dataset Empty also gets a white dot of this radius in pixels in the 3D viewport, whatever the "
                     "distance and the Globe scale, so that a small site shows from space. An Empty cannot be "
                     "drawn larger than a kilometre. Viewport only, not in renders. 0: no dot",
         default=5.0, min=0.0, max=64.0, soft_max=20.0, update=_on_dataset_marker_size)

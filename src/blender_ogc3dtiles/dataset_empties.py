@@ -176,6 +176,40 @@ def adopt(scene, st, root, coll, obj_name: str, dataset, frame) -> None:
         known[e.name] = (url, tuple(float(v) for v in centre))
     obj.parent = e
     obj.matrix_parent_inverse = e.matrix_parent_inverse.inverted()
+    own = _collection(coll, e)
+    if own is not None:
+        for o in (e, obj, *obj.children_recursive):
+            _move(o, own)
+
+
+COLL = "ogc3dtiles_dataset_coll"       # on the Empty: the name of the dataset's collection
+
+
+def _collection(coll, e):
+    """The dataset's own collection, under the tileset's: its eye hides one dataset among overlapping ones."""
+    if coll is None:
+        return None
+    own = bpy.data.collections.get(e.get(COLL, ""))
+    if own is None or coll.children.get(own.name) is None:
+        own = bpy.data.collections.new(e.name)
+        coll.children.link(own)
+        e[COLL] = own.name
+    return own
+
+
+def _move(o, own) -> None:
+    if own.objects.get(o.name) is not None:
+        return
+    for c in list(o.users_collection):
+        c.objects.unlink(o)
+    own.objects.link(o)
+
+
+def drop_empty_collections(coll) -> None:
+    """After a Clear: the dataset collections nothing is left in."""
+    for c in list(coll.children) if coll is not None else ():
+        if not c.objects and not c.children:
+            bpy.data.collections.remove(c)
 
 
 def markers(scene, st, root, coll, frame) -> int:

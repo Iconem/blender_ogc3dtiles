@@ -38,14 +38,21 @@ those datasets gets its own Empty under the tileset's root, named after the data
 parented to it. The name is the dataset's `name` in the aggregate's 3D Tiles 1.1 tile metadata (else `title`,
 `scene` or `label`, with its `project` in front), and only without one the last telling part of its URL.
 
+Each dataset also gets:
+
+- **A collection of its own**, under the tileset's, named like its Empty, holding the Empty and the dataset's
+  tiles. Its eye in the Outliner hides one dataset among overlapping ones (several surveys of one monument).
+  Hiding the Empty alone does not hide its tiles: that is how Blender parents work. A hidden dataset still
+  streams.
+- **A white dot** in the 3D viewport, of the **Dot px** radius beside *An Empty per dataset* (5 pixels by
+  default, 0 for none), the same at any distance and any Globe scale: a site of a few metres shows from space.
+  The dots hide behind tiles, are not in renders and cannot be clicked: pick a dataset in *Scene Origin >
+  Dataset*, or its Empty in the Outliner.
+
 **Markers for all N datasets (beta)**, under *An Empty per dataset*, makes those Empties at Start for every
 dataset the aggregate's `tileset.json` lists, before any tile of it is loaded: a sphere at its centre. The
-sphere has the dataset's size, up to a kilometre: Blender draws an Empty no larger. So each dataset also gets a
-**dot** in the 3D viewport, of the **px** radius beside the checkbox (5 pixels by default, 0 for none), the same
-at any distance and any Globe scale: a site of a few metres shows from space. Datasets with tiles loaded have a
-blue dot, the others an orange one. The dots hide behind tiles, are not in renders and cannot be clicked: pick
-a dataset in *Scene Origin > Dataset*, or its Empty in the Outliner. With markers on, a dataset keeps its sphere once its tiles
-are in. *Scene Origin > Dataset* then lists them all, so the origin can go to a dataset on the other side
+sphere has the dataset's size, up to a kilometre: Blender draws an Empty no larger, which is what the dots are
+for. With markers on, a dataset keeps its sphere once its tiles are in. *Scene Origin > Dataset* then lists them all, so the origin can go to a dataset on the other side
 of the world, and its tiles load there. A marker becomes the dataset's ordinary Empty with its first tile.
 Unticking removes the markers no tile took over. It reads the root `tileset.json` only: datasets listed in
 a sub-tileset of a very large aggregate get no marker yet. The grouping tiles get none.

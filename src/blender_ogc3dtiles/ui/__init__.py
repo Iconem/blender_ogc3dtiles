@@ -1439,6 +1439,7 @@ def _teardown_stream(st, remove_objects: bool):
         from .. import clip_nodes
         clip_nodes.forget_groups(st["key"])
         coll = bpy.data.collections.get(st.get("coll") or "")
+        dataset_empties.drop_empty_collections(coll)
         if coll is not None and not coll.objects and not coll.children:
             bpy.data.collections.remove(coll)
 
@@ -2396,15 +2397,15 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
             from ..tileset.feature_meta import TILESET_METADATA
             n_all = len(TILESET_METADATA.datasets_of(st.get("url") or "")) if st is not None else 0
             if n_ds or n_all or not props.dataset_empties:   # only where it does something: an aggregate
-                layout.prop(props, "dataset_empties",
-                            text=f"An Empty per dataset ({n_ds})" if n_ds else "An Empty per dataset")
+                row = layout.row(align=True)
+                row.prop(props, "dataset_empties",
+                         text=f"An Empty per dataset ({n_ds})" if n_ds else "An Empty per dataset")
+                if props.dataset_empties:
+                    row.prop(props, "dataset_marker_px", text="Dot px")
                 if props.dataset_empties and (n_all or props.dataset_markers):
-                    row = layout.row(align=True)
-                    row.prop(props, "dataset_markers",
-                             text=f"Markers for all {n_all} datasets (beta)" if n_all
-                             else "Markers for every dataset (beta)")
-                    if props.dataset_markers:
-                        row.prop(props, "dataset_marker_px", text="px")
+                    layout.prop(props, "dataset_markers",
+                                text=f"Markers for all {n_all} datasets (beta)" if n_all
+                                else "Markers for every dataset (beta)")
             b = layout.box()
             b.prop(it, "use_clipping", text=(f"Clipping ({len(it.clip_polygons)})"
                                              if it.clip_polygons else "Clipping"))
@@ -2515,7 +2516,6 @@ class OGC3D_PT_OriginPanel(_OGC3DSidebar, Panel):
     bl_label = "Scene Origin"
     bl_idname = "OGC3D_PT_origin"
     bl_order = 1
-    bl_options = {"DEFAULT_CLOSED"}
 
     def draw_header(self, context):
         self.layout.label(text="", icon="ORIENTATION_GLOBAL")

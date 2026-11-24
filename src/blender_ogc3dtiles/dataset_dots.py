@@ -1,11 +1,11 @@
 """Dots for the datasets of an aggregate tileset, at a fixed size on screen.
 
 An Empty is drawn no larger than a kilometre (empty_display_size stops at 1000), so the sphere of a dataset is
-lost from a few hundred kilometres. With *Markers for every dataset* on, this draws one point per dataset Empty
+lost from a few hundred kilometres. With *An Empty per dataset* on, this draws one white disc per dataset Empty
 in every 3D viewport, a few pixels wide at any distance and any Globe scale, depth tested against the tiles.
 The viewport's far clip plane is much nearer than the other side of a continent, so a dot beyond it is drawn on
 its view ray just inside the plane: same place on screen, and still behind every tile.
-Orange: no tile of the dataset is loaded. Blue: some are. Viewport only.
+Viewport only.
 """
 from __future__ import annotations
 
@@ -17,8 +17,7 @@ import numpy as np
 PROP = "ogc3dtiles_dataset"            # dataset_empties.PROP: that module needs mathutils, the tests have none
 
 REFRESH_S = 1.0
-PENDING = (1.0, 0.55, 0.1, 1.0)
-LOADED = (0.25, 0.75, 1.0, 1.0)
+COLOR = (1.0, 1.0, 1.0, 1.0)
 RIM = (0.0, 0.0, 0.0, 0.85)
 _state = {"handle": None, "t": 0.0, "empties": [], "sig": None, "batches": None}
 
@@ -49,11 +48,8 @@ def _signature(es) -> tuple:
 
 
 def _rebuild(es):
-    """World positions, by colour."""
-    pending = [tuple(e.matrix_world.translation) for e in es if not e.children]
-    loaded = [tuple(e.matrix_world.translation) for e in es if e.children]
-    _state["batches"] = [(c, np.asarray(pts, dtype=np.float64))
-                         for c, pts in ((PENDING, pending), (LOADED, loaded)) if pts]
+    """World positions."""
+    _state["batches"] = np.asarray([tuple(e.matrix_world.translation) for e in es], dtype=np.float64)
 
 
 def within_clip(points, eye, far, keep=0.9):
@@ -75,10 +71,41 @@ def _far_and_eye(rv):
     return far, np.array(rv.view_matrix.inverted().translation, dtype=np.float64)
 
 
+VERT = "void main() { gl_Position = mvp * vec4(pos, 1.0); gl_PointSize = size; }"
+FRAG = """
+void main() {
+  float r = length(gl_PointCoord - vec2(0.5)) * 2.0;          // 0 at the centre, 1 on the edge
+  float px = 2.0 / size;                                      // one pixel, in those units
+  if (r > 1.0) discard;
+  vec4 c = mix(color, rim, smoothstep(inner - px, inner, r));
+  c.a *= 1.0 - smoothstep(1.0 - px, 1.0, r);
+  fragColor = c;
+}
+"""
+
+
+def _disc_shader():
+    """A round point with a dark rim. Blender's own point shaders draw squares."""
+    if _state.get("shader") is None:
+        import gpu
+        info = gpu.types.GPUShaderCreateInfo()
+        info.push_constant("MAT4", "mvp")
+        info.push_constant("VEC4", "color")
+        info.push_constant("VEC4", "rim")
+        info.push_constant("FLOAT", "size")
+        info.push_constant("FLOAT", "inner")
+        info.vertex_in(0, "VEC3", "pos")
+        info.fragment_out(0, "VEC4", "fragColor")
+        info.vertex_source(VERT)
+        info.fragment_source(FRAG)
+        _state["shader"] = gpu.shader.create_from_info(info)
+    return _state["shader"]
+
+
 def _draw():
     scene = bpy.context.scene
     props = getattr(scene, "ogc3dtiles", None)
-    if props is None or not props.dataset_markers or props.dataset_marker_px <= 0.0:
+    if props is None or not props.dataset_empties or props.dataset_marker_px <= 0.0:
         return
     try:
         es = _empties()
@@ -88,31 +115,33 @@ def _draw():
         if sig != _state["sig"] or _state["batches"] is None:
             _state["sig"] = sig
             _rebuild(es)
-    except Exception as e:                           # noqa: BLE001
-        print(f"[3DTiles] dataset dots: {e}")
-        _state["batches"] = None
-        return
-    import gpu
-    from gpu_extras.batch import batch_for_shader
-    shader = gpu.shader.from_builtin("POINT_UNIFORM_COLOR")
-    far, eye = _far_and_eye(bpy.context.region_data)
-    batches = []
-    for color, pts in _state["batches"]:
+        import gpu
+        from gpu_extras.batch import batch_for_shader
+        shader = _disc_shader()
+        rv = bpy.context.region_data
+        far, eye = _far_and_eye(rv)
+        pts = _state["batches"]
         if far:
             pts = within_clip(pts, eye, far)
-        batches.append((color, batch_for_shader(shader, "POINTS", {"pos": pts.astype(np.float32)})))
-    d = 2.0 * float(props.dataset_marker_px) * bpy.context.preferences.system.ui_scale
-    gpu.state.blend_set("ALPHA")
-    gpu.state.depth_test_set("LESS_EQUAL")
-    shader.bind()
-    for size, tint in ((d + 3.0, 0), (d, 1)):        # a dark rim, then the dot
-        gpu.state.point_size_set(size)
-        for color, batch in batches:
-            shader.uniform_float("color", color if tint else RIM)
-            batch.draw(shader)
-    gpu.state.point_size_set(1.0)
-    gpu.state.depth_test_set("NONE")
-    gpu.state.blend_set("NONE")
+        batch = batch_for_shader(shader, "POINTS", {"pos": pts.astype(np.float32)})
+        size = 2.0 * float(props.dataset_marker_px) * bpy.context.preferences.system.ui_scale + 3.0
+        gpu.state.blend_set("ALPHA")
+        gpu.state.depth_test_set("LESS_EQUAL")
+        gpu.state.program_point_size_set(True)
+        shader.bind()
+        shader.uniform_float("mvp", rv.perspective_matrix)
+        shader.uniform_float("color", COLOR)
+        shader.uniform_float("rim", RIM)
+        shader.uniform_float("size", size)
+        shader.uniform_float("inner", 1.0 - 3.0 / size)
+        batch.draw(shader)
+        gpu.state.program_point_size_set(False)
+        gpu.state.depth_test_set("NONE")
+        gpu.state.blend_set("NONE")
+    except Exception as e:                           # noqa: BLE001
+        if not _state.get("failed"):
+            _state["failed"] = True
+            print(f"[3DTiles] dataset dots: {e}")
 
 
 def invalidate() -> None:

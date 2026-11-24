@@ -12,7 +12,7 @@ header. Blender remembers the order and which ones are folded.
 |---|---|
 | **OGC 3D Tiles** | Status line, Start / Stop / Clear, the tileset list and the selected tileset's fields. Below: its **Raster overlays** and its **Clipping**, each in a box with the checkbox that switches it on. **Clip to viewport region (Alt+B)** is the first row of the Clipping box and applies to all tilesets. |
 | **Scene Origin** | Where the Blender origin sits on the globe. |
-| **LOD / Streaming** | *Stream for* first, then the settings (Max SSE, concurrent requests, the points / vertices cap), tile bounds, and the *Cache* section with *Viewport Performance* folded inside. |
+| **LOD / Streaming** | *Stream for* first, then the settings (Max SSE, concurrent requests, the points / vertices cap), tile bounds, the *Cache* section, and *Viewport Performance*, folded, after it. |
 | **Nodes: Material** | Shared shader nodes, back-face handling, a button that opens a tile's own material. |
 | **Nodes: Geometry** | Shared geometry nodes, point display and radius, relation lines. |
 | **Nodes: Compositing** | Beauty compositor nodes with their sliders. |

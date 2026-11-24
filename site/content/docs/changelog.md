@@ -18,17 +18,23 @@ main branch and not in a release zip yet.
 - **Markers for every dataset of an aggregate (beta).** Under *An Empty per dataset*: an Empty for each dataset
   the aggregate's `tileset.json` lists, before any of its tiles, so *Scene Origin > Dataset* can go to any of them.
   See [Several tilesets](/features/several-tilesets#a-tileset-of-tilesets).
-- **Scene origin, Auto, with a global tileset in the list.** Google, a terrain layer or the bare globe no longer
-  fix the origin where the panel had it: they wait up to 10 s for a tileset that has a place.
+- **Scene origin, Auto: the first tileset of the list.** The origin goes to the first tileset that is ticked,
+  visible and has a place, not to whichever answered first. Google, a terrain layer or the bare globe no longer
+  fix the origin where the panel had it. The others wait up to 10 s for it.
 - **Clipping.** *Keep inside any* is the default mode (it was *Cut inside any*: a tileset saved with clipping
   objects and the mode never touched now keeps what it used to cut; set the mode back once). *Clip to viewport
   region* is the first row of the Clipping box.
 - **LOD / Streaming.** *Stream for* first, a *Settings* title over the sliders, and *Advanced* is now *Cache*,
-  open by default, with *Viewport Performance* folded inside. *Cameras Along the Animation* is offered for the
+  open by default, with *Viewport Performance* folded after it. *Cameras Along the Animation* is offered for the
   scene camera and a chosen camera too, and samples the chosen one.
-- **Color tiles by Elevation or Object.** Beside a metadata *Column*: *Elevation* colours by height above the
-  ellipsoid through the Color Ramp (range from the loaded tiles, or a custom one), *Object* gives every tile object
-  a random colour, which shows how the tileset is cut and which detail is loaded where. Neither needs metadata.
+- **Color tiles by Property, Elevation, Tile or Tileset.** *Property* is the former *Column*, with a new
+  **feature id** entry: one colour per feature (a building, say). *Elevation* colours by height above the
+  ellipsoid through the Color Ramp (range from the loaded tiles, or a custom one), in true metres at any world
+  scale of the Globe. *Tile* gives every tile a random colour, *Tileset* one colour per tileset or per dataset of
+  an aggregate. The last three need no metadata.
+- **Copy into project** is no longer a button under the tileset's URL: it downloads the whole tileset. The
+  operator stays in the F3 search; Freeze keeps what is on screen.
+- **X-ray settings.** *Strength* comes before *Tint*.
 - **Nodes: Metadata.** *Color tiles by* is always shown. The voxel settings are a *Voxels* section, shown only
   with a voxel tileset.
 - **Globe Navigation.** Typing a world scale resizes the Globe under a view that stays put (it used to move the

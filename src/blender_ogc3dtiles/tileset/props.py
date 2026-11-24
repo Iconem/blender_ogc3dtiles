@@ -859,12 +859,17 @@ class TilesSceneProps(PropertyGroup):
         name="Color by",
         description="What drives the colors",
         items=[
-            ("COLUMN", "Column", "A metadata column: classes with a palette, numbers through the Color Ramp"),
+            ("COLUMN", "Property", "A property of the tiles, read with their metadata: classification, "
+                                   "intensity, any vertex, feature or texture property. Classes get a palette, "
+                                   "numbers go through the Color Ramp, and 'feature id' gives one color per "
+                                   "feature (a building, say)"),
             ("ELEVATION", "Elevation", "Height above the ellipsoid, through the Color Ramp. Read in the "
-                                       "material from the scene's Z and the origin's height, so it needs no "
-                                       "metadata; meant for a Globe at 1:1 with the vertical along +Z"),
-            ("OBJECT", "Object", "One random color per tile object: shows how the tileset is cut into tiles "
-                                 "and which level of detail is loaded where"),
+                                       "material, so it needs no metadata; true metres at any world scale of "
+                                       "the Globe"),
+            ("OBJECT", "Tile", "One random color per tile: shows how a tileset is cut into tiles and which "
+                               "level of detail is loaded where"),
+            ("TILESET", "Tileset", "One color per tileset, and per dataset of an aggregate (with An Empty per "
+                                   "dataset): tells apart what comes from where"),
         ],
         default="COLUMN", update=_on_meta_source,
     )

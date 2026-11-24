@@ -551,14 +551,14 @@ class OGC3D_OT_TilesetCopyCancel(Operator):
 
 
 def draw_entry_tools(layout, it) -> None:
-    """Row under an entry's URL: library save, copy into project."""
+    """Row under an entry's URL: library save. Copy Tileset into Project (the whole tileset, or a crop, as
+    files) is no longer a button: Freeze keeps what is on screen; the operator stays in the F3 search, and
+    its progress shows here while it runs."""
     row = layout.row(align=True)
     row.operator("ogc3dtiles.library_save", text="Save to library", icon="BOOKMARKS")
     if _export["thread"] is not None:
         row.label(text=export_status())
         row.operator("ogc3dtiles.tileset_copy_cancel", text="", icon="X")
-    else:
-        row.operator("ogc3dtiles.tileset_copy", text="Copy into project", icon="PACKAGE")
 
 
 _classes = [

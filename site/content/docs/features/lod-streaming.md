@@ -97,7 +97,7 @@ under it is fine enough and stays.
   cesium-native's own default. With the Python backend it is the number of parallel downloads, applied
   at the next Start. Raise it on a fast connection, lower it if a server refuses requests.
 
-*Viewport Performance*, folded inside the *Cache* section, sets how much the viewport does at each step of the streaming
+*Viewport Performance*, a folded section after *Cache*, sets how much the viewport does at each step of the streaming
 loop (an update and a redraw of the view). Renders are not affected: a converged render waits for every
 tile whatever these are.
 
@@ -134,7 +134,7 @@ outline: they are blended without writing depth.
 
 ## Cache
 
-The section is open by default. It holds the disk cache and its bin, *Viewport Performance*, and:
+The section is open by default. It holds the disk cache and its bin, and:
 
 - **cesium-native cache MB**: memory for tiles that are loaded but no longer shown, so that coming
   back to a view is instant. It is not a ceiling on what is shown: tiles in view are never dropped.

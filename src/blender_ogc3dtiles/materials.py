@@ -17,7 +17,11 @@ import colorsys
 import bpy
 from bpy.types import Operator
 
-from .tileset.feature_meta import MAX_CLASSES, REGISTRY, attribute_name
+from .tileset.feature_meta import FEATURE_ID_ATTR, MAX_CLASSES, REGISTRY, attribute_name
+
+FEATURE_COLUMN = "feature id"           # in the Property list: one colour per feature, no column of its own
+HUE_PROP = "ogc3d_hue"                  # on a tile object: the hue of its tileset (Color tiles by > Tileset)
+RANDOM_SOURCES = ("OBJECT", "TILESET")
 
 GROUP_NAME = "OGC3D Relight"
 TUNABLES = (
@@ -758,9 +762,13 @@ _META_LAYOUT = {
     "Mix": (50, 300), "Mix.001": (50, -150), "Math.004": (250, -150),
     "Mix.002": (450, 250), "Group Output": (650, 250),
     "Use Elevation": (-1400, -700), "Elevation Offset": (-1400, -820), "Use Object": (-1400, -940),
-    "Geometry": (-1400, -1080), "Elevation XYZ": (-1200, -1080), "Elevation": (-1000, -1000),
+    "Geometry": (-1400, -1080), "Elevation Axis": (-1400, -1320), "Elevation XYZ": (-1200, -1080),
+    "Elevation": (-1000, -1000),
+    "Use Tileset": (-1400, -1480), "Use Feature": (-1400, -1600), "Tileset Hue": (-1150, -1480),
+    "Feature": (-1150, -1700), "Feature Spread": (-950, -1700), "Feature Hue": (-750, -1700),
+    "Hue Tileset": (-900, -1400), "Hue Feature": (-650, -1400),
     "Number Value": (-900, 100), "Elevation Has": (-500, -320),
-    "Object Info": (-700, -700), "Object Color": (-450, -700), "Object Pick": (250, 300), "Object Has": (250, -320),
+    "Object Info": (-1400, -1200), "Object Color": (-450, -1400), "Object Pick": (250, 300), "Object Has": (250, -320),
 }
 
 
@@ -776,7 +784,7 @@ def _layout_metadata_group(ng, only_if_stacked=False):
 def ensure_metadata_group():
     ng = bpy.data.node_groups.get(META_GROUP)
     if ng is not None and "Texel" in ng.interface.items_tree and "Alpha" in ng.interface.items_tree \
-            and ng.nodes.get("Use Object") is not None:
+            and ng.nodes.get("Elevation Axis") is not None:
         return ng
     stops = None
     if ng is None:
@@ -835,12 +843,17 @@ def ensure_metadata_group():
     use_obj = _value_node(ng, "Use Object", 0.0)
     geom = nodes.new("ShaderNodeNewGeometry")
     geom.name = "Geometry"
-    xyz = nodes.new("ShaderNodeSeparateXYZ")
+    axis = nodes.new("ShaderNodeCombineXYZ")           # the Globe's up, over its scale: see update_elevation_frame
+    axis.name = "Elevation Axis"
+    axis.inputs[2].default_value = 1.0
+    xyz = nodes.new("ShaderNodeVectorMath")
     xyz.name = "Elevation XYZ"
+    xyz.operation = "DOT_PRODUCT"
     links.new(geom.outputs["Position"], xyz.inputs[0])
+    links.new(axis.outputs[0], xyz.inputs[1])
     elev = nodes.new("ShaderNodeMath")
     elev.name = "Elevation"
-    links.new(xyz.outputs["Z"], elev.inputs[0])
+    links.new(xyz.outputs["Value"], elev.inputs[0])
     links.new(elev_off.outputs[0], elev.inputs[1])
     number = nodes.new("ShaderNodeMix")
     number.name = "Number Value"
@@ -894,10 +907,42 @@ def ensure_metadata_group():
     # object: one colour per tile object, from Blender's per-object random number
     info = nodes.new("ShaderNodeObjectInfo")
     info.name = "Object Info"
+    # ... or one per tileset (a hue written on each tile object), or one per feature of a tile
+    use_set, use_feat = _value_node(ng, "Use Tileset", 0.0), _value_node(ng, "Use Feature", 0.0)
+    set_hue = nodes.new("ShaderNodeAttribute")
+    set_hue.name = "Tileset Hue"
+    set_hue.attribute_type = "OBJECT"
+    set_hue.attribute_name = HUE_PROP
+    feat = nodes.new("ShaderNodeAttribute")
+    feat.name = "Feature"
+    feat.attribute_type = "GEOMETRY"
+    feat.attribute_name = FEATURE_ID_ATTR
+    feat_mul = nodes.new("ShaderNodeMath")
+    feat_mul.name = "Feature Spread"
+    feat_mul.operation = "MULTIPLY_ADD"                 # golden ratio steps: neighbours in the table differ
+    feat_mul.inputs[1].default_value = 0.6180339887
+    links.new(feat.outputs["Fac"], feat_mul.inputs[0])
+    links.new(info.outputs["Random"], feat_mul.inputs[2])
+    feat_hue = nodes.new("ShaderNodeMath")
+    feat_hue.name = "Feature Hue"
+    feat_hue.operation = "FRACT"
+    links.new(feat_mul.outputs[0], feat_hue.inputs[0])
+    hue1 = nodes.new("ShaderNodeMix")
+    hue1.name = "Hue Tileset"
+    hue1.data_type = "FLOAT"
+    links.new(use_set.outputs[0], hue1.inputs[0])
+    links.new(info.outputs["Random"], hue1.inputs[2])
+    links.new(set_hue.outputs["Fac"], hue1.inputs[3])
+    hue2 = nodes.new("ShaderNodeMix")
+    hue2.name = "Hue Feature"
+    hue2.data_type = "FLOAT"
+    links.new(use_feat.outputs[0], hue2.inputs[0])
+    links.new(hue1.outputs[0], hue2.inputs[2])
+    links.new(feat_hue.outputs[0], hue2.inputs[3])
     obj_col = nodes.new("ShaderNodeCombineColor")
     obj_col.name = "Object Color"
     obj_col.mode = "HSV"
-    links.new(info.outputs["Random"], obj_col.inputs[0])
+    links.new(hue2.outputs[0], obj_col.inputs[0])
     obj_col.inputs[1].default_value, obj_col.inputs[2].default_value = 0.85, 0.9
     obj_pick = nodes.new("ShaderNodeMix")
     obj_pick.name = "Object Pick"
@@ -958,23 +1003,26 @@ def update_metadata_group(scene):
     """Point the shared group at the active column."""
     props = scene.ogc3dtiles
     ng = ensure_metadata_group()
-    col = REGISTRY.get(props.meta_column) if props.meta_column else None
-    attr = attribute_name(props.meta_column) if props.meta_column else ""
+    by_feature = props.meta_source == "COLUMN" and props.meta_column == FEATURE_COLUMN
+    col = REGISTRY.get(props.meta_column) if props.meta_column and not by_feature else None
+    attr = attribute_name(props.meta_column) if props.meta_column and not by_feature else ""
     nodes = ng.nodes
     if nodes["Column"].attribute_name != attr:
         nodes["Column"].attribute_name = attr
     nodes["Strength"].outputs[0].default_value = props.meta_strength
     source = props.meta_source
     nodes["Use Elevation"].outputs[0].default_value = 1.0 if source == "ELEVATION" else 0.0
-    nodes["Use Object"].outputs[0].default_value = 1.0 if source == "OBJECT" else 0.0
-    nodes["Elevation Offset"].outputs[0].default_value = props.origin_height if props.origin_valid else 0.0
+    nodes["Use Object"].outputs[0].default_value = 1.0 if source in RANDOM_SOURCES or by_feature else 0.0
+    nodes["Use Tileset"].outputs[0].default_value = 1.0 if source == "TILESET" else 0.0
+    nodes["Use Feature"].outputs[0].default_value = 1.0 if by_feature else 0.0
+    update_elevation_frame(scene, force=True)
     if source == "ELEVATION":
         nodes["Is Number"].outputs[0].default_value = 1.0
         lo, hi = (props.meta_range_min, props.meta_range_max) if props.meta_range_custom else elevation_range(scene)
         nodes["Min"].outputs[0].default_value = lo
         nodes["Max"].outputs[0].default_value = max(hi, lo + 1e-6)
         return
-    if source == "OBJECT":
+    if source in RANDOM_SOURCES or by_feature:
         nodes["Is Number"].outputs[0].default_value = 1.0      # no class palette, no class opacity
         return
     is_number = col is not None and col.kind == "number"
@@ -986,13 +1034,79 @@ def update_metadata_group(scene):
     write_palette(scene)
 
 
-_elevation = {"lo": None, "hi": None}
+_elevation = {"lo": None, "hi": None, "frame": None}
+
+
+def _globe_inverse():
+    """World to the Globe's own space, where a metre is a metre and +Z is up at the origin. Identity without
+    a Globe (Globe Navigation never started)."""
+    from mathutils import Matrix
+    g = next((o for o in bpy.data.objects if o.get("ogc3dtiles_globe")), None)
+    if g is None:
+        return Matrix.Identity(4)
+    try:
+        return g.matrix_world.inverted()
+    except ValueError:
+        return Matrix.Identity(4)
+
+
+def update_elevation_frame(scene, force=False) -> None:
+    """The group reads a height as dot(position, axis) + offset. With a Globe scaled, turned or moved by Globe
+    Navigation, axis and offset are the Z row of its inverse, so the heights stay true metres above the
+    ellipsoid at any world scale. Called on every streaming tick: it writes only when the Globe moved."""
+    props = scene.ogc3dtiles
+    ng = bpy.data.node_groups.get(META_GROUP)
+    if ng is None or ng.nodes.get("Elevation Axis") is None:
+        return
+    if not force and not (props.meta_color and props.meta_source == "ELEVATION"):
+        return
+    row = _globe_inverse()[2]
+    frame = tuple(round(v, 9) for v in row) + (props.origin_height if props.origin_valid else 0.0,)
+    if frame == _elevation["frame"] and not force:
+        return
+    _elevation["frame"] = frame
+    axis = ng.nodes["Elevation Axis"]
+    for i in range(3):
+        axis.inputs[i].default_value = row[i]
+    ng.nodes["Elevation Offset"].outputs[0].default_value = row[3] + frame[4]
 
 
 def _object_heights(o):
     from mathutils import Vector
-    mw = o.matrix_world
+    mw = _globe_inverse() @ o.matrix_world
     return [(mw @ Vector(c)).z for c in o.bound_box]
+
+
+def _tileset_parent(o):
+    """The Empty a tile hangs under: its dataset's in an aggregate, else its tileset's root."""
+    p = o.parent
+    for _ in range(4):
+        if p is None or "ogc3dtiles_dataset" in p or p.get("ogc3dtiles_root"):
+            return p
+        p = p.parent
+    return p
+
+
+def set_tileset_hues(objs) -> None:
+    """Write on each tile object the hue of its tileset, which Color tiles by > Tileset reads."""
+    import zlib
+    hues = {}
+    for o in objs:
+        p = _tileset_parent(o)
+        name = p.name if p is not None else ""
+        if name not in hues:
+            hues[name] = (zlib.crc32(name.encode("utf-8")) % 3600) / 3600.0
+        if o.get(HUE_PROP) != hues[name]:
+            o[HUE_PROP] = hues[name]
+
+
+def new_tiles_color(scene, objs) -> None:
+    """Tiles just built, for the sources that need no metadata."""
+    source = scene.ogc3dtiles.meta_source
+    if source == "ELEVATION":
+        new_tiles_elevation(scene, objs)
+    elif source == "TILESET":
+        set_tileset_hues(objs)
 
 
 def elevation_range(scene, objs=None, rescan=False):
@@ -1036,7 +1150,7 @@ def sync_metadata(scene, force=False):
     _meta_seen[0] = REGISTRY.version
     props = scene.ogc3dtiles
     columns = REGISTRY.columns()
-    known = {c.name for c in props.meta_columns}
+    known = {c.name for c in props.meta_columns if c.name != FEATURE_COLUMN}
     wanted = {c[0] for c in columns}
     if known != wanted:
         props.meta_columns.clear()
@@ -1057,7 +1171,10 @@ def sync_metadata(scene, force=False):
                 item = props.meta_classes.add()
                 item.name, item.column, item.code = text, name, code
                 item["color"] = _class_color(code, name)
-    if props.meta_column not in wanted and columns:
+    if columns and FEATURE_COLUMN not in props.meta_columns:      # after the real ones: never the default
+        item = props.meta_columns.add()
+        item.name, item.kind = FEATURE_COLUMN, "number"
+    if props.meta_column not in wanted and props.meta_column != FEATURE_COLUMN and columns:
         props["meta_column"] = REGISTRY.best_column()
         from .io import refresh_feature_attributes
         refresh_feature_attributes(scene)
@@ -1078,6 +1195,8 @@ def restore_metadata(scene):
     group = bpy.data.node_groups.get(META_GROUP)
     columns = []
     for item in props.meta_columns:
+        if item.name == FEATURE_COLUMN:
+            continue
         lo, hi = item.lo, item.hi
         if item.kind == "number" and hi < lo and item.name == props.meta_column                 and group is not None and not props.meta_range_custom:
             try:                       # files saved before the range was stored
@@ -1094,8 +1213,8 @@ def restore_metadata(scene):
 def metadata_columns(props):
     """Columns the tiles keep as attributes."""
     if props.meta_all_columns:
-        return [c.name for c in props.meta_columns]
-    return [props.meta_column] if props.meta_column else []
+        return [c.name for c in props.meta_columns if c.name != FEATURE_COLUMN]
+    return [props.meta_column] if props.meta_column and props.meta_column != FEATURE_COLUMN else []
 
 
 VOXEL_VOLUME_MAT = "OGC3D Voxel Volume"
@@ -1252,6 +1371,8 @@ def set_metadata_colors(scene) -> int:
     if enabled:
         if scene.ogc3dtiles.meta_source == "ELEVATION":
             elevation_range(scene, rescan=True)
+        elif scene.ogc3dtiles.meta_source == "TILESET":
+            set_tileset_hues([o for o in scene.objects if o.type in {"MESH", "POINTCLOUD"} and _is_tile_object(o)])
         sync_metadata(scene, force=True)
         from .io import refresh_feature_attributes
         refresh_feature_attributes(scene)
@@ -1385,12 +1506,12 @@ def draw_panel(layout, props):
         box = layout.box()
         box.label(text="X-ray", icon="XRAY")
         col = box.column(align=True)
+        col.prop(props, "xray_strength")                # points, splats and meshes alike
         row = col.row(align=True)                       # 0: each tile in its own colours; 1: one colour, the tint
         row.prop(props, "xray_tint_amount", text="Tint")
         swatch = row.row(align=True)
         swatch.scale_x = 0.35
         swatch.prop(props, "xray_tint", text="")
-        col.prop(props, "xray_strength")                # points, splats and meshes alike
         if any(o.get("splats") for o in bpy.data.objects):
             col.prop(props, "xray_radius")
         col = box.column(align=True)
@@ -1460,12 +1581,15 @@ def _draw_metadata_columns(layout, props):
                 row.prop(props, "meta_range_max")
         return
     if not props.meta_columns:
-        layout.label(text="No metadata column loaded yet" if props.read_metadata
-                     else "Columns come with Read feature metadata", icon="INFO")
+        layout.label(text="No property loaded yet" if props.read_metadata
+                     else "Properties come with Read feature metadata", icon="INFO")
         return
-    layout.prop_search(props, "meta_column", props, "meta_columns", text="Column")
+    layout.prop_search(props, "meta_column", props, "meta_columns", text="Property")
     layout.prop(props, "meta_strength")
     layout.prop(props, "meta_all_columns")
+    if props.meta_column == FEATURE_COLUMN:
+        layout.label(text="One color per feature of each tile", icon="INFO")
+        return
     col = REGISTRY.get(props.meta_column)
     if col is None:
         return

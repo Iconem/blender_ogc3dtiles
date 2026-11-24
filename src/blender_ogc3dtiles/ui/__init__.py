@@ -1099,20 +1099,37 @@ def _dataset_markers(scene, props, st) -> None:
         print(f"[3DTiles] dataset markers: {e}")
 
 
-def _global_waits(st, center_ecef, radius_m, now) -> bool:
-    """A global tileset (Google, a terrain layer, the bare globe) has no place of its own. While no origin is
-    set and another tileset has yet to say where it is, the global one waits, at most ORIGIN_WAIT_S, so that
-    the scene origin goes to the first tileset that has a place instead of staying where the panel had it."""
+def _stream_hidden(st) -> bool:
+    """The tileset's eye in the list (its collection, in this view layer) is closed."""
+    try:
+        lc = _layer_collection(bpy.context.view_layer.layer_collection, st.get("coll") or "")
+    except Exception:                                # noqa: BLE001
+        return False
+    return lc is not None and (lc.hide_viewport or lc.exclude)
+
+
+def _origin_waits(props, st, center_ecef, radius_m, now) -> bool:
+    """Auto origin: the first tileset of the list that is ticked, visible and has a place decides. A tileset
+    whose centre is known waits, at most ORIGIN_WAIT_S, while one that comes before it has yet to say where it
+    is. A global tileset (Google, a terrain layer, the bare globe: no place of its own) and a hidden one come
+    after every other, so they wait for any of them."""
     if _state["origin_set"]:
         return False
     near_centre = math.dist(center_ecef, (0.0, 0.0, 0.0)) < LOCAL_TILESET_RADIUS_M
-    if not (near_centre and (radius_m is None or radius_m >= LOCAL_TILESET_RADIUS_M)):
-        return False
-    st["is_global"] = True
+    if near_centre and (radius_m is None or radius_m >= LOCAL_TILESET_RADIUS_M):
+        st["is_global"] = True
     if now - st.setdefault("origin_wait_t", now) > ORIGIN_WAIT_S:
         return False
+    order = {it.uid: i for i, it in enumerate(props.tilesets)}
+    last = len(order)
+
+    def rank(s):
+        return (bool(s.get("is_global")) or _stream_hidden(s), order.get(s.get("key"), last))
+
+    mine = rank(st)
     return any(o is not st and o.get("backend") is not None and not o.get("frame_set") and not o.get("is_global")
-               and not o.get("error") for o in _state["streams"].values())
+               and not o.get("error") and not o.get("paused") and rank(o) < mine
+               for o in _state["streams"].values())
 
 
 def _decide_origin(props, center_ecef, radius_m=None):
@@ -1957,12 +1974,15 @@ def _tick_native(scene, props, st, now) -> bool:
         if c is None:
             st["pending"] = 0
             return False
-        if _global_waits(st, c, backend.root_radius_m(), now):
+        if _origin_waits(props, st, c, backend.root_radius_m(), now):
             st["pending"] = 0
             return False
         st["frame"] = _decide_origin(props, c, backend.root_radius_m())
         st["frame_set"] = True
     _dataset_markers(scene, props, st)
+    if props.meta_color and props.meta_source == "ELEVATION":
+        from ..materials import update_elevation_frame
+        update_elevation_frame(scene)                # the Globe was scaled or moved: heights stay metres
     if not st.get("clip_fit"):
         r = backend.root_radius_m()
         if r is not None:
@@ -2525,13 +2545,14 @@ class OGC3D_PT_LodPanel(_OGC3DSidebar, Panel):
             row = sub.row(align=True)
             row.prop(props, "use_disk_cache", text="Disk cache")
             row.operator("ogc3dtiles.clear_cache", icon="TRASH", text="")
-            # how much tile building the viewport loop does per tick: viewport only, renders wait for every tile
-            perf_h, perf = sub.panel("ogc3d_lod_viewport_perf", default_closed=True)
-            perf_h.label(text="Viewport Performance")
-            if perf:
-                col = perf.column(align=True)
-                col.prop(props, "imports_per_tick", text="Imports / tick")
-                col.prop(props, "nav_build_ms", text="Build ms while navigating")
+        # how much tile building the viewport loop does per tick: viewport only, renders wait for every tile
+        perf_h, perf = layout.panel("ogc3d_lod_viewport_perf", default_closed=True)
+        perf_h.label(text="Viewport Performance")
+        if perf:
+            col = perf.column(align=True)
+            col.prop(props, "imports_per_tick", text="Imports / tick")
+            col.prop(props, "nav_build_ms", text="Build ms while navigating")
+        if sub:
             for st in _state["streams"].values():
                 if st["backend"] is None:
                     continue

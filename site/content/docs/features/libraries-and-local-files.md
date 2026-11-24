@@ -74,8 +74,10 @@ in the bookmark menu of the overlay list: that is the place for overlays that ne
 
 ## Copy into project
 
-*Copy into project* downloads the selected tileset into a folder, by default `//tilesets/<name>` next
-to the .blend.
+*Copy Tileset into Project* downloads the selected tileset, as files, into a folder, by default
+`//tilesets/<name>` next to the .blend. Without a crop that is the whole tileset, every level of detail,
+which is why it is no longer a button of the panel: find it in the operator search (F3). To keep what is on
+screen in the .blend, use [Freeze](/features/rendering#freeze-and-export) instead.
 
 - **Crop** to the bounding box of an object. A flat object crops its footprint at any height.
 - **Finest error** stops at a level of detail, given as a geometric error in metres.

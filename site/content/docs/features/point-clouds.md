@@ -28,6 +28,20 @@ the **Nodes: Geometry** panel: how each point is drawn, and how large.
 If points look too sparse or too fat, change *Point scale* first. *Min px* and *Max px* are 4 and 12 by
 default.
 
+### Smaller under finer tiles (beta)
+
+Many point clouds add detail instead of replacing it (ADD refinement: Potree octrees streamed by 3dtiled,
+most LiDAR tilesets). A coarse tile then stays on screen under its finer tiles, and its large points speckle
+the dense areas. With **Smaller under finer tiles**, on by default in *Attenuated* and *Per tile*, each point
+of a coarse tile takes half its radius for every finer level shown over it, and keeps its size where none is
+shown, so nothing opens up at the edge of the detail. This is Potree's adaptive point size.
+
+- It is per point, and costs one integer per tile: when the selection changes, only the tiles above those
+  that appeared or disappeared are evaluated again.
+- In *Attenuated*, *Min px* still applies: at a small window size the points are already at the minimum and
+  little changes. *Per tile* shows it in full.
+- Not for splats, X-ray points, *Uniform* or *Screen pixels*. cesium-native backend, Direct mesh.
+
 ## Lighting
 
 Points are shaded by the scene's lights, like mesh tiles: their colour is the surface colour of a

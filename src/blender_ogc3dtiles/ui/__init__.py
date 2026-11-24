@@ -1752,8 +1752,40 @@ def _apply_visibility(st, render_keys, keep_ids, now) -> bool:
             set_tile_visible(rec.holder, vis)
             rec.visible = vis
             changed = True
+            st.setdefault("vis_changed", set()).add(k)
     st["render_keys"] = render_keys
     return changed
+
+
+def _octree_links(st, backend) -> None:
+    """Adaptive point size: take the parent links the backend found since the last tick."""
+    links = backend.pop_links() if hasattr(backend, "pop_links") else ()
+    if not links:
+        return
+    from ..tileset import octree_mask
+    masks = st.get("octree")
+    if masks is None:
+        masks = st["octree"] = octree_mask.Masks()
+    boxes = backend.tile_boxes
+    for key, parent in links:
+        if key in boxes and parent in boxes and \
+                masks.link(key, parent, octree_mask.octant_bits(boxes[parent], boxes[key])):
+            st.setdefault("vis_changed", set()).add(key)
+
+
+def _octree_update(st) -> None:
+    """Adaptive point size: one integer per tile, rewritten only for the ancestors of the tiles that appeared
+    or disappeared since the last call."""
+    changed, masks = st.get("vis_changed"), st.get("octree")
+    if not changed:
+        return
+    if masks is not None:
+        tiles = st["tiles"]
+        out = masks.update(changed, {k for k, rec in tiles.items() if rec.visible})
+        if out:
+            from ..io import set_octree_masks
+            set_octree_masks({tiles[k].holder: m for k, m in out.items() if k in tiles})
+    changed.clear()
 
 
 def _evict(st, props, now) -> bool:
@@ -1926,6 +1958,14 @@ def _build_native_tile(scene, props, st, rt) -> bool:
         if ecef is not None:
             from ..tileset.native_backend import enu_from_ecef_matrix
             rec.ecef = np.linalg.solve(enu_from_ecef_matrix(*frame), ecef)
+            box = getattr(st["backend"], "tile_boxes", {}).get(rt.key)
+            if box is not None and rt.mesh_payload is not None and rt.mesh_payload.get("points"):
+                from ..io import set_octree_box
+                inv = np.linalg.inv(rec.ecef)                 # ECEF to the tile's own space
+                set_octree_box(r[0], inv[:3, :3] @ box[0] + inv[:3, 3], box[1] @ inv[:3, :3].T)
+                masks = st.get("octree")
+                if masks is not None:                         # built again under shown children
+                    st.setdefault("vis_changed", set()).update(masks.children.get(rt.key, ()))
         st["dirty"] = True
         ds = getattr(st["backend"], "tile_dataset", {}).get(rt.key) if props.dataset_empties else None
         if ds is not None:
@@ -2004,6 +2044,9 @@ def _tick_native(scene, props, st, now) -> bool:
         rec = tiles.pop(key, None)
         if rec is not None:
             batch.append((rec.holder, rec.data))
+            if st.get("octree") is not None:
+                st["octree"].unlink(key)
+                st.setdefault("vis_changed", set()).add(key)
         st.get("pending_overlays", {}).pop(key, None)
     if batch:
         remove_tiles(batch)
@@ -2045,6 +2088,8 @@ def _tick_native(scene, props, st, now) -> bool:
                                   ortho=view.ortho_extents, faces=view.faces, offsets=offsets,
                                   extra=view.extra)
         changed |= _apply_visibility(st, set(res.to_render), set(), now)
+        _octree_links(st, backend)
+        _octree_update(st)
         st["stats"] = res.stats
         st["last_sig"] = view.signature
         st["last_sel_t"] = now
@@ -2604,6 +2649,8 @@ class OGC3D_PT_DisplayPanel(_OGC3DSidebar, Panel):
             row.prop(props, "point_px_max_m", text="Max m")
         else:
             layout.prop(props, "point_scale", text="Point scale")
+        if props.point_radius_mode in {"ADAPTIVE", "AUTO"}:
+            layout.prop(props, "point_adaptive")
         if any(o.get("splats") for o in bpy.data.objects):
             from ..io import SPLATS_NODEGROUP, splats_supported
             row = layout.row(align=True)

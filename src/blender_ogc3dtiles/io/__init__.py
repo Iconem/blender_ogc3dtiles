@@ -1073,7 +1073,8 @@ def apply_point_radius(scene) -> int:
         if ng is None:
             continue
         ng = _points_nodegroup(display)            # upgrades an old group in place
-        for node_name, val in ((SCREEN_MODE_NODE, 1.0 if mode == "SCREEN" else 0.0),
+        for node_name, val in ((OCTREE_NODE, 1.0 if getattr(props, "point_adaptive", True) else 0.0),
+                               (SCREEN_MODE_NODE, 1.0 if mode == "SCREEN" else 0.0),
                                (ADAPT_MODE_NODE, 1.0 if mode == "ADAPTIVE" else 0.0),
                                (PX_SIZE_NODE, float(props.point_px) * 0.5),   # diameter → radius
                                (PX_MIN_NODE, float(props.point_px_min_m)),
@@ -1289,7 +1290,7 @@ def _points_nodegroup(mesh_mode=False):
     name = _GROUP_FOR_MODE[display]
     ng = bpy.data.node_groups.get(name)
     if ng is not None:
-        if ng.nodes.get(ADAPT_MIN_NODE) is not None:
+        if ng.nodes.get(OCTREE_NODE) is not None:
             return ng
         # group saved by an older version: rebuild the nodes, keep the
         # interface sockets (modifiers reference them by identifier)
@@ -1308,6 +1309,12 @@ def _points_nodegroup(mesh_mode=False):
         radius.min_value = 0.0
     if "Material" not in have:
         iface.new_socket("Material", in_out="INPUT", socket_type="NodeSocketMaterial")
+    for i, name in enumerate(OCTREE_VECTORS):         # the tile's box in its own space, see octree_mask
+        if name not in have:
+            sock = iface.new_socket(name, in_out="INPUT", socket_type="NodeSocketVector")
+            sock.default_value = [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)][i]
+    if OCTREE_MASK not in have:
+        iface.new_socket(OCTREE_MASK, in_out="INPUT", socket_type="NodeSocketInt").default_value = 0
     N, L = ng.nodes.new, ng.links.new
     n_in = N("NodeGroupInput")
     n_out = N("NodeGroupOutput")
@@ -1318,7 +1325,8 @@ def _points_nodegroup(mesh_mode=False):
     mul0.operation = "MULTIPLY"
     L(n_in.outputs["Radius"], mul0.inputs[0])
     L(scale.outputs[0], mul0.inputs[1])
-    mul = _screen_radius_nodes(ng, mul0.outputs[0])     # metres ↔ screen-pixel radius
+    oct_mul = _octree_radius_nodes(ng, n_in, mul0.outputs[0])       # smaller where finer tiles are shown
+    mul = _screen_radius_nodes(ng, oct_mul.outputs[0])  # metres ↔ screen-pixel radius
     m2p = N("GeometryNodeMeshToPoints")
     m2p.mode = "VERTICES"
     L(n_in.outputs["Geometry"], m2p.inputs["Mesh"])
@@ -1431,6 +1439,102 @@ def _value(ng, name, default):
     n.name = n.label = name
     n.outputs[0].default_value = default
     return n
+
+
+OCTREE_NODE = "Octree Adapt"        # 1 = points shrink where finer tiles are shown over them
+OCTREE_VECTORS = ("Octree Centre", "Octree X", "Octree Y", "Octree Z")
+OCTREE_MASK = "Octree Mask"         # 3 bits per octant: finer levels shown there (tileset.octree_mask)
+OCTREE_BOX_PROP = "ogc3d_octree"            # on a point tile: centre and three half axes, 12 floats, local
+OCTREE_MASK_PROP = "ogc3d_octree_mask"      # ... and its integer, when not 0
+
+
+def _octree_radius_nodes(ng, n_in, metres_socket):
+    """radius = metres / 2 ** depth, depth = the 3 bits of Octree Mask for the octant of the tile's box the
+    point is in. A mask of 0, the default, leaves the radius alone. Float math is exact here: the mask is
+    below 2 ** 24 and the divisors are powers of two."""
+    N, L = ng.nodes.new, ng.links.new
+
+    def math(op, a=None, b=None, c=None):
+        n = N("ShaderNodeMath")
+        n.operation = op
+        for i, v in enumerate((a, b, c)):
+            if v is None:
+                continue
+            if isinstance(v, (int, float)):
+                n.inputs[i].default_value = v
+            else:
+                L(v, n.inputs[i])
+        return n
+
+    on = _value(ng, OCTREE_NODE, 1.0)
+    pos = N("GeometryNodeInputPosition")
+    rel = N("ShaderNodeVectorMath")
+    rel.operation = "SUBTRACT"
+    L(pos.outputs[0], rel.inputs[0])
+    L(n_in.outputs[OCTREE_VECTORS[0]], rel.inputs[1])
+    octant = None
+    for i, axis in enumerate(OCTREE_VECTORS[1:]):
+        dot = N("ShaderNodeVectorMath")
+        dot.operation = "DOT_PRODUCT"
+        L(rel.outputs[0], dot.inputs[0])
+        L(n_in.outputs[axis], dot.inputs[1])
+        side = math("GREATER_THAN", dot.outputs["Value"], 0.0)
+        octant = side if octant is None else math("MULTIPLY_ADD", side.outputs[0], float(1 << i), octant.outputs[0])
+    shift = math("ROUND", math("POWER", 8.0, octant.outputs[0]).outputs[0])
+    field = math("FLOOR", math("DIVIDE", n_in.outputs[OCTREE_MASK], shift.outputs[0]).outputs[0])
+    depth = math("MODULO", field.outputs[0], 8.0)
+    depth.name = "Octree Depth"
+    shrink = math("POWER", 0.5, math("MULTIPLY", depth.outputs[0], on.outputs[0]).outputs[0])
+    out = math("MULTIPLY", metres_socket, shrink.outputs[0])
+    out.name = "Octree Radius"
+    return out
+
+
+def set_octree_box(holder_name: str, centre, axes) -> None:
+    """A point tile's box in the tile's own space: its points find their octant from it."""
+    holder = bpy.data.objects.get(holder_name)
+    if holder is None:
+        return
+    flat = [float(v) for v in centre] + [float(v) for ax in axes for v in ax]
+    for o in [holder, *holder.children_recursive]:
+        mod = o.modifiers.get("Points") if o.type == "MESH" else None
+        if mod is None or mod.type != "NODES" or mod.node_group is None or o.get("splats"):
+            continue
+        o[OCTREE_BOX_PROP] = flat
+        _set_octree_inputs(mod, mod.node_group, o)
+
+
+def set_octree_masks(masks: dict) -> int:
+    """{holder name: integer}: only the tiles whose integer changed. Each one re-evaluates its points."""
+    n = 0
+    for holder_name, mask in masks.items():
+        holder = bpy.data.objects.get(holder_name)
+        if holder is None:
+            continue
+        for o in [holder, *holder.children_recursive]:
+            if OCTREE_BOX_PROP not in o or int(o.get(OCTREE_MASK_PROP, 0)) == int(mask):
+                continue
+            o[OCTREE_MASK_PROP] = int(mask)
+            mod = o.modifiers.get("Points")
+            if mod is not None and mod.type == "NODES" and mod.node_group is not None:
+                _set_octree_inputs(mod, mod.node_group, o, mask_only=True)
+                o.update_tag()
+                n += 1
+    return n
+
+
+def _set_octree_inputs(mod, ng, obj, mask_only=False) -> None:
+    box = obj.get(OCTREE_BOX_PROP)
+    if box is None or len(box) != 12:
+        return
+    for item in ng.interface.items_tree:
+        if getattr(item, "in_out", "") != "INPUT":
+            continue
+        if item.name == OCTREE_MASK:
+            _mod_input_set(mod, item.identifier, int(obj.get(OCTREE_MASK_PROP, 0)))
+        elif item.name in OCTREE_VECTORS and not mask_only:
+            i = 3 * OCTREE_VECTORS.index(item.name)
+            _mod_input_set(mod, item.identifier, (float(box[i]), float(box[i + 1]), float(box[i + 2])))
 
 
 def _screen_radius_nodes(ng, metres_socket):
@@ -1587,6 +1691,7 @@ def _set_points_inputs(mod, ng, radius, mat):
             _mod_input_set(mod, item.identifier, mat)
         elif item.name == "Radius":
             _mod_input_set(mod, item.identifier, float(radius))
+    _set_octree_inputs(mod, ng, mod.id_data)        # kept on the object: a group switch brings them along
 
 
 TILE_GEOMETRY_GROUP = "OGC3D Tile Geometry"

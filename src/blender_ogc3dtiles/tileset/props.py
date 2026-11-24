@@ -786,6 +786,15 @@ class TilesSceneProps(PropertyGroup):
         default="ADAPTIVE",
         update=_on_point_radius,
     )
+    point_adaptive: BoolProperty(
+        name="Smaller under finer tiles (beta)",
+        description="Point clouds that add detail (ADD refinement, as Potree octrees streamed by 3dtiled): a "
+                    "coarse tile stays on screen under its finer tiles. With this on, its points shrink to the "
+                    "finer spacing where finer tiles are shown, and keep their size where none is, so a dense "
+                    "area is no longer speckled with large coarse points. Per point, as Potree's adaptive size. "
+                    "Not in Uniform or Screen pixels mode. Live",
+        default=True, update=_on_point_radius,
+    )
     point_adapt_min_px: FloatProperty(
         name="Min size (px)", description="Attenuated mode: points never smaller than this on screen",
         default=4.0, min=0.0, max=64.0, update=_on_point_radius,

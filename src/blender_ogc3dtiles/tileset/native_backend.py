@@ -273,6 +273,12 @@ class _GlbPreparer:
             if not self._owner._dataset_warned:
                 self._owner._dataset_warned = True
                 print("[3DTiles/native] dataset of %s: %r" % (load_result.key, exc))
+        try:                                  # adaptive point size: its box, and its ADD-refined parent
+            self._note_links(tile, load_result.key)
+        except Exception as exc:              # noqa: BLE001
+            if not self._owner._links_warned:
+                self._owner._links_warned = True
+                print("[3DTiles/native] parent of %s: %r" % (load_result.key, exc))
         try:                                  # where the tile sits in the hierarchy
             level, up = 0, tile.parent
             while up is not None and level < 64:
@@ -298,6 +304,7 @@ class _GlbPreparer:
             self._owner.tile_info.pop(rt.key, None)
             self._owner.tile_volumes.pop(rt.key, None)
             self._owner.tile_dataset.pop(rt.key, None)
+            self._owner.tile_boxes.pop(rt.key, None)
             with self._owner._lock:
                 self._owner._freed.append(rt.key)
             for p in [rt.glb_path] + list(rt.aux_files):
@@ -358,6 +365,38 @@ class _GlbPreparer:
         except Exception as exc:          # noqa: BLE001
             print("[3DTiles/native] raster image failed: %r" % (exc,))
             return None
+
+    def _note_links(self, tile, key) -> None:
+        """Point tiles only. The tile's box, and who is whose parent among the tiles that have content: looked
+        up from the child and from the parent, since either may be ready first."""
+        if not (key and self._owner.direct_mesh):
+            return
+        owner = self._owner
+        obb = tile.bounding_volume.as_oriented_bounding_box()
+        # glm hands matrices over column-major: half_axes[i] is the i-th half axis
+        owner.tile_boxes[key] = (np.asarray(obb.center, np.float64), np.asarray(obb.half_axes, np.float64))
+
+        def adds(t) -> bool:
+            return "ADD" in str(getattr(t, "refine", "")).upper()
+
+        up, hops = tile.parent, 0
+        while up is not None and hops < 4:           # past tiles without content
+            pk = self._tile_key(up)
+            if pk is not None:
+                if adds(up) and pk != key:
+                    owner._links.append((key, pk))
+                break
+            up, hops = up.parent, hops + 1
+        if adds(tile):
+            stack = [(c, 0) for c in tile.children]
+            while stack:
+                c, depth = stack.pop()
+                ck = self._tile_key(c)
+                if ck is not None:
+                    if ck != key:
+                        owner._links.append((ck, key))
+                elif depth < 2:
+                    stack.extend((g, depth + 1) for g in c.children)
 
     @staticmethod
     def _tile_key(tile):
@@ -671,6 +710,9 @@ class CesiumNativeBackend:
         self.tile_info = {}                     # tile key -> {column: value} (feature_meta.TILE_COLUMNS)
         self.tile_volumes = {}                  # tile key -> volume_shape(), in ECEF
         self.tile_dataset = {}                  # tile key -> (external tileset URL, its centre in ECEF)
+        self.tile_boxes = {}                    # tile key -> (centre, half axes as rows), in ECEF
+        self._links = []                        # (tile key, key of its ADD-refined parent): see octree_mask
+        self._links_warned = False
         self._dataset_cache = {}
         self._dataset_warned = False
         self.voxel_grids = bool(voxel_grids)    # keep the whole grid of voxel tiles (Volume, lookup)
@@ -962,6 +1004,11 @@ class CesiumNativeBackend:
 
     def last_selection(self):
         return None
+
+    def pop_links(self):
+        """(tile key, parent key) pairs found since the last call."""
+        out, self._links = self._links, []
+        return out
 
     def pop_freed(self):
         with self._lock:

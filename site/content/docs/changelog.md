@@ -8,6 +8,11 @@ main branch and not in a release zip yet.
 
 ## Unreleased
 
+- **Point size: smaller under finer tiles (beta).** In point clouds that add detail (Potree octrees through
+  3dtiled, most LiDAR tilesets), a coarse tile's points now shrink where finer tiles are shown over them, per
+  point, as Potree's adaptive size does. On by default in *Attenuated* and *Per tile*; a checkbox under the
+  radius settings. See [Point clouds](/features/point-clouds#smaller-under-finer-tiles-beta).
+
 - **X-ray on meshes, and one X-ray preset.** *X-ray* now applies to mesh tiles as well as point clouds and
   splats (a *Meshes* checkbox under its settings, ticked by default, leaves them out): every face adds its
   texture colour as light and hides nothing, so rooms, vaults and far walls show through. *Mesh edges* goes from

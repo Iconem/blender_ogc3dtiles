@@ -35,7 +35,8 @@ Move, rotate, scale or keyframe the object: the cut follows live, without reload
 | Keep inside any | what is outside every object |
 | Keep inside all | what is outside at least one object |
 
-Switching mode is close to instant.
+*Keep inside any* is the default: the usual case is one box or outline around the part to keep. Switching
+mode is close to instant.
 
 ## Solid view and exports
 
@@ -48,8 +49,8 @@ real.
 ## Viewport region (Alt+B)
 
 Blender's clipping region (Alt+B) only cuts in Solid and Wireframe shading; EEVEE ignores it.
-**Clip to viewport region**, in the main panel, makes Material Preview and Rendered honour it too, for
-every tileset. Drag a region with Alt+B to clip, press Alt+B again to clear. It is on by default.
+**Clip to viewport region**, the first row of a tileset's *Clipping* box, makes Material Preview and
+Rendered honour it too. It is one setting for every tileset, whichever tileset's box you tick it in. Drag a region with Alt+B to clip, press Alt+B again to clear. It is on by default.
 
 The region comes from the largest 3D viewport, and F12 renders use the region that viewport last had.
 

@@ -59,8 +59,8 @@ dropped because another camera does not see it. The small button next to the col
 
 - Two or more 360° panoramas: put their cameras in one collection. In a test with two
   equirectangular panoramas about 100 m apart over Sacré-Cœur, 38 tiles were shown against 28 for one of them alone.
-- A camera path: **Cameras Along the Animation**, under the collection field, copies the scene
-  camera at evenly spaced frames of the animation into an `OGC3D Path Cameras` collection and sets
+- A camera path: **Cameras Along the Animation**, under *Stream for* (with the scene camera, a chosen
+  camera or a collection), copies that camera at evenly spaced frames of the animation into an `OGC3D Path Cameras` collection and sets
   *Stream for* to it, without the viewport. The number beside the button is how many cameras (12
   by default). The detail the whole path needs is then loaded at once, ready for
   [Freeze Tiles](/features/rendering#freeze-and-export).
@@ -97,7 +97,7 @@ under it is fine enough and stays.
   cesium-native's own default. With the Python backend it is the number of parallel downloads, applied
   at the next Start. Raise it on a fast connection, lower it if a server refuses requests.
 
-*Viewport Performance*, folded under it, sets how much the viewport does at each step of the streaming
+*Viewport Performance*, folded inside the *Cache* section, sets how much the viewport does at each step of the streaming
 loop (an update and a redraw of the view). Renders are not affected: a converged render waits for every
 tile whatever these are.
 
@@ -132,7 +132,9 @@ colour instead. *Width* is the line width in pixels. The eye icon hides the part
 are behind mesh and point tiles; off, every outline is drawn on top. Gaussian splats hide no
 outline: they are blended without writing depth.
 
-## Advanced
+## Cache
+
+The section is open by default. It holds the disk cache and its bin, *Viewport Performance*, and:
 
 - **cesium-native cache MB**: memory for tiles that are loaded but no longer shown, so that coming
   back to a view is instant. It is not a ceiling on what is shown: tiles in view are never dropped.

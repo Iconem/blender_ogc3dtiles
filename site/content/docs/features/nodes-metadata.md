@@ -12,7 +12,9 @@ and intensity. The **Nodes: Metadata** panel reads it and colours the tiles with
 
 ## Use it
 
-1. Tick **Read feature metadata** before pressing Start. It needs the cesium-native backend.
+1. Tick **Read feature metadata** before pressing Start. It needs the cesium-native backend. The
+   *Color tiles by* row is always shown; its columns come with the metadata. The
+   *Color tiles by* row is always shown; its columns come with the metadata.
 2. Once tiles are in, tick **Color tiles by** and pick a **Column**.
 3. Text and class columns get a legend, numbers get a colour ramp.
 

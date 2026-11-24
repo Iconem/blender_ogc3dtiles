@@ -50,9 +50,9 @@ side of a building) the light adds up, so the structure reads through itself.
 
 | Setting | What it does |
 |---|---|
-| **Strength** | Light added by each point. Lower it where a dense cloud burns to white. |
+| **Strength** | Light added by each point, and by each mesh face seen edge-on (five times a point's). Lower it where a dense cloud, or walls lined up, burn to white. |
 | **Splat radius** | Size of the points Gaussian splats become while X-ray is on, in metres. Point clouds keep the size their display gives them. |
-| **Tint amount** and its colour | At 0 the points keep their own colours; at 1 they all take the tint. |
+| **Tint** and its colour | At 0 every tile keeps its own colours; at 1 they all take the tint, as on a radiograph; in between, a mix. |
 
 - It needs a dark background: set the World colour to black, or render with a transparent film over
   a dark page. On a light background the added light does not show.
@@ -73,8 +73,8 @@ them with the same shader. Both groups can be edited. Ordinary transparency does
 look: semi-transparent points fade everything to an even fog, because each one also hides what is
 behind it.
 
-The **X-ray** and **X-ray Mono** [presets](/features/nodes-material#presets) at the top of the panel
-turn it on in one click, in the tiles' own colours or in the tint.
+The **X-ray** [preset](/features/nodes-material#presets) at the top of the panel turns it on in one
+click.
 
 ### X-ray on meshes
 
@@ -85,8 +85,7 @@ point clouds reads as one radiograph.
 
 | Setting | What it does |
 |---|---|
-| **Mesh strength** | Light added by a face seen edge-on. Lower it where many walls line up and burn to white. |
-| **Mesh edges** | 0: every face adds the same light, like a double exposure of the textures. Higher: faces seen edge-on (walls, outlines) stand out and faces turned to you fade, down to a line drawing around 3. |
+| **Mesh edges** | 0: every face adds the same light, like a double exposure of the textures. Higher: faces seen edge-on (walls, outlines) stand out and faces turned to you fade, down to a line drawing around 3, the default. |
 
 - It is the same `OGC3D X-ray` group, on each mesh material with its *Mesh* input at 1, and it works
   with or without the shared shader nodes. Clipping still cuts it.

@@ -300,7 +300,10 @@ def pick(scene, region, rv3d, x, y):
             p = c["inv"] @ ndc
             p = np.append(p[:3] / p[3], 1.0)
             return (G @ (c["Ginv"] @ p))[:3]         # the world may have moved since that redraw
-    o, d = _ray(region, rv3d, x, y)
+    try:
+        o, d = _ray(region, rv3d, x, y)
+    except ValueError:                               # a view matrix without an inverse (an extreme view distance)
+        return None
     centre = _earth_centre(G, scene.ogc3dtiles)
     return _ray_sphere(o, d, centre, float(np.linalg.norm(G[:3, 3] - centre)))
 
@@ -666,12 +669,14 @@ def _context_view(context):
 
 
 class OGC3D_OT_GlobeScaleReset(Operator):
-    """Scale the Globe to 1:N (1:1 by default) about the point the view looks at, and move the view to match: nothing changes on screen. Back to 1:1 before rendering or exporting, where metres must be metres"""
+    """Scale the Globe to 1:N (1:1 by default) about the point the view looks at. With Keep View the view moves to match and nothing changes on screen. Back to 1:1 before rendering or exporting, where metres must be metres"""
     bl_idname = "ogc3dtiles.globe_scale_reset"
     bl_label = "Globe Scale to 1:1"
     bl_options = {"INTERNAL"}
 
-    denominator: bpy.props.FloatProperty(name="1:N", default=1.0, min=1e-6)
+    denominator: bpy.props.FloatProperty(name="1:N", default=1.0, min=1e-3, max=1.0 / MIN_SCALE)
+    keep_view: bpy.props.BoolProperty(name="Keep View", default=True,
+                                      description="Move the view with the Globe, so that the image stays the same")
 
     def execute(self, context):
         g, cv = globe(), _context_view(context)
@@ -690,11 +695,13 @@ class OGC3D_OT_GlobeScaleReset(Operator):
         if p is None:
             p = np.array(rv3d.view_location, dtype=np.float64)
         _set_globe(context, g, _about(p, np.eye(3) / s) @ _np(g.matrix_world), view)
-        if not view.follows_globe():
+        if self.keep_view and not view.follows_globe():
             view.dolly(p, s)
         _nav["dirty"] = True
         _nav["last_t"] = time.monotonic()
-        context.area.tag_redraw()
+        for a in context.window.screen.areas:
+            if a.type == "VIEW_3D":
+                a.tag_redraw()
         return {"FINISHED"}
 
 
@@ -834,8 +841,8 @@ class OGC3D_PT_GlobeNav(Panel):
 
     def draw(self, context):
         layout = self.layout
-        layout.separator()
         layout.label(text="Globe Navigation (beta)", icon="WORLD")
+        layout.operator("ogc3dtiles.globe_parent", icon="CON_CHILDOF")
         on = _nav["active"]
         layout.operator("ogc3dtiles.globe_nav", text="Stop Globe Navigation" if on else "Globe Navigation",
                         icon="PAUSE" if on else "WORLD", depress=on)
@@ -849,13 +856,14 @@ class OGC3D_PT_GlobeNav(Panel):
         col.label(text="Shift + middle drag: grab the globe")
         s = globe_scale(g)
         col = layout.column(align=True)                     # one value, typed either way: ×0.01 is 1:100
-        col.label(text="World scale")
-        row = col.row(align=True)
-        row.prop(context.window_manager, "ogc3d_globe_scale_x", text="×")
-        row.prop(context.window_manager, "ogc3d_globe_scale_n", text="1:")
-        sub = row.row(align=True)
+        for label, name in (("World scale ×", "ogc3d_globe_scale_x"), ("World scale 1:", "ogc3d_globe_scale_n")):
+            split = col.split(factor=0.45, align=True)      # the label apart: inside a narrow field it is dropped
+            split.label(text=label)
+            split.prop(context.window_manager, name, text="")
+        sub = col.row(align=True)
         sub.enabled = abs(s - 1.0) > 1e-6
-        sub.operator("ogc3dtiles.globe_scale_reset", text="To 1:1").denominator = 1.0
+        op = sub.operator("ogc3dtiles.globe_scale_reset", text="To 1:1, keeping the view")
+        op.denominator, op.keep_view = 1.0, True
         layout.operator("ogc3dtiles.globe_reanchor", icon="PIVOT_CURSOR")
         tilt = math.degrees(globe_tilt(g))
         row = layout.row(align=True)
@@ -863,7 +871,6 @@ class OGC3D_PT_GlobeNav(Panel):
         sub = row.row(align=True)
         sub.enabled = tilt >= 0.01
         sub.operator("ogc3dtiles.globe_level", text="Reset")
-        layout.operator("ogc3dtiles.globe_parent", icon="CON_CHILDOF")
         layout.operator("ogc3dtiles.globe_reset", icon="LOOP_BACK")
         layout.prop(context.window_manager, "ogc3d_globe_frame")
 
@@ -875,7 +882,9 @@ def _get_scale_n(_self) -> float:
 def _set_scale_n(_self, value) -> None:
     if globe() is not None and value > 0.0:
         try:
-            bpy.ops.ogc3dtiles.globe_scale_reset(denominator=float(value))
+            # typed: the world is resized under a view that stays put, about the point the view looks at
+            bpy.ops.ogc3dtiles.globe_scale_reset(denominator=min(max(float(value), 1e-3), 1.0 / MIN_SCALE),
+                                                 keep_view=False)
         except RuntimeError:        # no 3D view in this context
             pass
 
@@ -901,11 +910,11 @@ def register():
         description="Draw a thin frame around the 3D view while Globe Navigation is on")
     bpy.types.WindowManager.ogc3d_globe_scale_n = bpy.props.FloatProperty(
         name="World scale 1:N", description="The Globe's scale as 1:N: type N to zoom the world about the point "
-        "the view looks at; the view moves to match, so nothing jumps", min=1e-6, soft_min=0.01,
+        "the view looks at. The view stays where it is, so the world grows or shrinks in it", min=1e-3, soft_min=0.01,
         step=100, precision=1, get=_get_scale_n, set=_set_scale_n)
     bpy.types.WindowManager.ogc3d_globe_scale_x = bpy.props.FloatProperty(
         name="World scale multiplier", description="The Globe's scale as a multiplier: 0.01 is 1:100, 1 is real "
-        "size. The same value as the 1:N field beside it, typed the other way", min=1e-9, soft_max=1e6,
+        "size. The same value as the 1:N field beside it, typed the other way", min=MIN_SCALE, max=1e3,
         step=1, precision=4, get=_get_scale_x, set=_set_scale_x)
 
 

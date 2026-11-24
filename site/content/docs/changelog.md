@@ -8,11 +8,32 @@ main branch and not in a release zip yet.
 
 ## Unreleased
 
-- **X-ray on meshes.** The *X-ray* and *X-ray Mono* presets now apply to mesh tiles as well as point clouds
-  and splats (a *Meshes* checkbox under the X-ray settings, ticked by default, leaves them out): every face of a mesh tile adds its texture colour as light and hides nothing, so rooms, vaults and far walls
-  show through, alongside point clouds and splats. *Mesh edges* goes from a double exposure of the textures (0)
-  to a line drawing of walls and outlines (3). Dark background, with or without the shared shader nodes. See
-  [X-ray on meshes](/features/point-clouds#x-ray-on-meshes).
+- **X-ray on meshes, and one X-ray preset.** *X-ray* now applies to mesh tiles as well as point clouds and
+  splats (a *Meshes* checkbox under its settings, ticked by default, leaves them out): every face adds its
+  texture colour as light and hides nothing, so rooms, vaults and far walls show through. *Mesh edges* goes from
+  a double exposure of the textures (0) to a line drawing of walls and outlines (3, the default). *X-ray Mono* is
+  gone: the *Tint* slider does it, from the tiles' own colours (0) to one colour (1). One *Strength* for points,
+  splats and meshes. See [X-ray on meshes](/features/point-clouds#x-ray-on-meshes).
+- **Nodes: Material.** *Shared shader nodes* comes before the presets, and ticking it goes back to *Lit*.
+- **Markers for every dataset of an aggregate (beta).** Under *An Empty per dataset*: an Empty for each dataset
+  the aggregate's `tileset.json` lists, before any of its tiles, so *Scene Origin > Dataset* can go to any of them.
+  See [Several tilesets](/features/several-tilesets#a-tileset-of-tilesets).
+- **Scene origin, Auto, with a global tileset in the list.** Google, a terrain layer or the bare globe no longer
+  fix the origin where the panel had it: they wait up to 10 s for a tileset that has a place.
+- **Clipping.** *Keep inside any* is the default mode (it was *Cut inside any*: a tileset saved with clipping
+  objects and the mode never touched now keeps what it used to cut; set the mode back once). *Clip to viewport
+  region* is the first row of the Clipping box.
+- **LOD / Streaming.** *Stream for* first, a *Settings* title over the sliders, and *Advanced* is now *Cache*,
+  open by default, with *Viewport Performance* folded inside. *Cameras Along the Animation* is offered for the
+  scene camera and a chosen camera too, and samples the chosen one.
+- **Nodes: Metadata.** *Color tiles by* is always shown. The voxel settings are a *Voxels* section, shown only
+  with a voxel tileset.
+- **Globe Navigation.** Typing a world scale resizes the Globe under a view that stays put (it used to move the
+  view to match, so nothing seemed to happen). *To 1:1, keeping the view* is on its own row, the labels are beside
+  the fields, and *Parent Selection to Globe* comes first.
+- Fixed: 3D BAG, and other tiles with `EXT_meshopt_compression` and quantized positions, failed to load
+  ("the model has 2 buffers").
+- Fixed: Globe Navigation raised "matrix does not have an inverse" after an extreme world scale.
 - **Datasets named from their metadata.** In a tileset of tilesets, a dataset's Empty, and so the list of
   *Scene Origin > Dataset*, takes the dataset's `name` from the aggregate's tile metadata when it has one,
   instead of a part of its URL (an identifier, for share links).

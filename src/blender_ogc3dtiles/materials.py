@@ -1187,15 +1187,12 @@ LOOKS = (
     ("SHADELESS", "Shadeless", "Every tile's colours as they are, without any light"),
     ("XRAY", "X-ray", "Every tile as an X-ray in its own colours: points, splats and meshes add their colour "
                       "as light and hide nothing"),
-    ("XRAY_MONO", "X-ray Mono", "Every tile as an X-ray in one colour, the Tint"),
 )
-XRAY_LOOKS = ("XRAY", "XRAY_MONO")
+XRAY_LOOKS = ("XRAY",)
 
 
 def current_look(props) -> str:
     if props.xray:
-        if props.xray_tint_amount >= 0.999:
-            return "XRAY_MONO"
         return "XRAY"
     return "SHADELESS" if props.shadeless else "LIT"
 
@@ -1215,8 +1212,6 @@ class OGC3D_OT_MaterialLook(Operator):
     def execute(self, context):
         props = context.scene.ogc3dtiles
         xr = self.look in XRAY_LOOKS
-        if xr:
-            props.xray_tint_amount = 1.0 if self.look == "XRAY_MONO" else 0.0
         if props.shadeless != (self.look == "SHADELESS"):
             props.shadeless = self.look == "SHADELESS"
         if props.xray != xr:
@@ -1261,13 +1256,10 @@ def draw_panel(layout, props):
     """Body of the collapsible "Materials" sub-panel."""
     from . import node_rows
     look = current_look(props)
-    col = layout.column(align=True)                     # two rows: four buttons do not fit a narrow sidebar
-    for keys in (("LIT", "SHADELESS"), XRAY_LOOKS):
-        row = col.row(align=True)
-        for key, name, _d in LOOKS:
-            if key in keys:
-                row.operator("ogc3dtiles.material_look", text=name, depress=key == look).look = key
     relit = node_rows.draw(layout, props, "auto_relight", "Shared shader nodes", "RELIGHT")
+    row = layout.row(align=True)
+    for key, name, _d in LOOKS:
+        row.operator("ogc3dtiles.material_look", text=name, depress=key == look).look = key
     layout.prop(props, "backface_mode", text="Faces")
     from .io import addon_pref
     ng = bpy.data.node_groups.get(GROUP_NAME)
@@ -1288,17 +1280,18 @@ def draw_panel(layout, props):
         box = layout.box()
         box.label(text="X-ray", icon="XRAY")
         col = box.column(align=True)
-        col.prop(props, "xray_strength")
+        row = col.row(align=True)                       # 0: each tile in its own colours; 1: one colour, the tint
+        row.prop(props, "xray_tint_amount", text="Tint")
+        swatch = row.row(align=True)
+        swatch.scale_x = 0.35
+        swatch.prop(props, "xray_tint", text="")
+        col.prop(props, "xray_strength")                # points, splats and meshes alike
         if any(o.get("splats") for o in bpy.data.objects):
             col.prop(props, "xray_radius")
-        row = col.row(align=True)
-        row.prop(props, "xray_tint_amount")
-        row.prop(props, "xray_tint", text="")
-        col = box.column(align=True)                    # always shown: the same settings under both X-ray looks
+        col = box.column(align=True)
         col.prop(props, "xray_meshes")
         sub = col.column(align=True)
         sub.active = props.xray_meshes
-        sub.prop(props, "xray_mesh_strength")
         sub.prop(props, "xray_mesh_edge")
         box.label(text="Use a dark background", icon="INFO")
 
@@ -1310,16 +1303,30 @@ def draw_metadata_panel(layout, props):
     """Body of the collapsible "Metadata" sub-panel."""
     layout.prop(props, "read_metadata")
     _draw_metadata_columns(layout, props)
-    row = layout.row(align=True)
+    if not has_voxels():                                # a section of its own, and only with a voxel tileset
+        return
+    head, body = layout.panel("ogc3d_meta_voxels", default_closed=False)
+    head.label(text="Voxels")
+    if body is None:
+        return
+    row = body.row(align=True)
     row.prop(props, "voxel_display")
     row.operator("ogc3dtiles.open_nodes", text="", icon="NODETREE").kind = "VOXEL"
     if props.voxel_display == "VOLUME":
-        layout.prop(props, "voxel_opacity")
+        body.prop(props, "voxel_opacity")
     if props.voxel_display == "PROJECT":
-        layout.prop(props, "voxel_mix")
-        layout.prop(props, "voxel_cut")
+        body.prop(props, "voxel_mix")
+        body.prop(props, "voxel_cut")
     else:
-        layout.prop(props, "voxel_exaggeration")
+        body.prop(props, "voxel_exaggeration")
+
+
+def has_voxels() -> bool:
+    """A voxel tileset is in the scene: its tiles were coloured, or made volumes."""
+    sc = bpy.context.scene
+    if sc is not None and sc.get("ogc3d_voxel_colors"):
+        return True
+    return any(o.type == "VOLUME" and "tile_url" in o for o in bpy.data.objects)
 
 
 def _draw_metadata_columns(layout, props):
@@ -1329,13 +1336,12 @@ def _draw_metadata_columns(layout, props):
         box.label(text="Tileset", icon="INFO")
         for name, value in sorted(TILESET_METADATA.tileset.items()):
             box.label(text=f"{name}: {value}")
-    if not props.read_metadata:
-        return
-    if not props.meta_columns:
-        layout.label(text="No metadata column loaded yet", icon="INFO")
-        return
     from . import node_rows
     node_rows.draw(layout, props, "meta_color", "Color tiles by", "METADATA")
+    if not props.meta_columns:
+        layout.label(text="No metadata column loaded yet" if props.read_metadata
+                     else "Columns come with Read feature metadata", icon="INFO")
+        return
     layout.prop_search(props, "meta_column", props, "meta_columns", text="Column")
     layout.prop(props, "meta_strength")
     layout.prop(props, "meta_all_columns")

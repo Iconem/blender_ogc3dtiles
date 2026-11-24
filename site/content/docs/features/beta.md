@@ -22,8 +22,10 @@ Everything else stays Blender's own navigation.
 - An Empty, *OGC3D Globe*, carries every tileset. **Parent Selection to Globe** makes your own objects
   move with the planet.
 - Far from the ground the wheel scales that Empty instead of moving the view. The panel shows the
-  scale both as a multiplier (×0.01) and as 1:N (1:100), the same value typed either way, and you can type one to zoom the world about the point the view looks at; **To 1:1** brings it back, with nothing moving on screen. Do this before a render or an
-  export, where metres must be metres.
+  scale both as a multiplier (×0.01) and as 1:N (1:100), the same value typed either way. Typing one
+  resizes the Empty about the point the view looks at, under a view that stays where it is, so the world
+  grows or shrinks on screen. **To 1:1, keeping the view** brings it back and moves the view to match, with
+  nothing moving on screen. Do this before a render or an export, where metres must be metres.
 - When the gestures stop, the scene origin moves under the view and the tiles are placed again in
   double precision. **Re-anchor Scene Origin** does it at once; it is greyed while Globe Navigation
   is off.

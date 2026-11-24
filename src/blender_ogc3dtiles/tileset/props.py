@@ -223,6 +223,11 @@ def _on_relight(self, context):
     try:
         from .. import materials
         materials.set_relight(bool(self.auto_relight))
+        if self.auto_relight:                     # the shared nodes are for the lit look: leave Shadeless and X-ray
+            if self.xray:
+                self.xray = False
+            if self.shadeless:
+                self.shadeless = False
     except Exception as e:                        # noqa: BLE001
         print(f"[3DTiles] relight: {e}")
 
@@ -475,7 +480,7 @@ class TilesetItem(PropertyGroup):
         description="Cut this tileset with Blender objects: vertical polygons from their "
                     "outlines, or 3D boxes. Meshes, point clouds and splats. Live",
         default=False, update=_on_clip_edit)
-    clip_mode: EnumProperty(name="Mode", items=CLIP_MODES, default="CUT_ANY",
+    clip_mode: EnumProperty(name="Mode", items=CLIP_MODES, default="KEEP_ANY",
                             update=_on_clip_edit)
     clip_geometry: BoolProperty(
         name="Slower: Also cut in solid view/exports",
@@ -700,7 +705,8 @@ class TilesSceneProps(PropertyGroup):
     )
     xray_strength: FloatProperty(
         name="Strength",
-        description="Light added by each point. Lower it where the cloud is dense and burns to white",
+        description="Light added by each point, and by each mesh face seen edge-on. Lower it where the cloud is "
+                    "dense, or many walls line up, and it burns to white",
         default=0.3, min=0.001, soft_max=2.0, max=50.0, precision=3, update=_on_xray_params,
     )
     xray_radius: FloatProperty(
@@ -716,16 +722,11 @@ class TilesSceneProps(PropertyGroup):
         default=True,
         update=_on_xray,
     )
-    xray_mesh_strength: FloatProperty(
-        name="Mesh strength",
-        description="Light added by a face seen edge-on. Lower it where many walls line up and burn to white",
-        default=0.5, min=0.001, soft_max=2.0, max=50.0, precision=3, update=_on_xray_params,
-    )
     xray_mesh_edge: FloatProperty(
         name="Mesh edges",
         description="0: every face adds the same light, as a double exposure of the textures. Higher: faces "
                     "seen edge-on (walls, outlines) stand out and faces turned to you fade",
-        default=1.0, min=0.0, soft_max=4.0, max=16.0, precision=2, update=_on_xray_params,
+        default=3.0, min=0.0, soft_max=4.0, max=16.0, precision=2, update=_on_xray_params,
     )
     xray_tint: FloatVectorProperty(
         name="Tint", subtype="COLOR", size=3, min=0.0, max=1.0, default=(0.55, 0.8, 1.0),
@@ -733,7 +734,8 @@ class TilesSceneProps(PropertyGroup):
     )
     xray_tint_amount: FloatProperty(
         name="Tint amount",
-        description="0: the points keep their own colours. 1: one colour for all, as on a radiograph",
+        description="0: every tile keeps its own colours. 1: one colour for all, the tint, as on a radiograph. "
+                    "In between: a mix of the two",
         default=0.0, min=0.0, max=1.0, subtype="FACTOR", update=_on_xray_params,
     )
     point_radius_mode: EnumProperty(
@@ -817,6 +819,13 @@ class TilesSceneProps(PropertyGroup):
                     "Tiles are still selected where the dataset says it is. cesium-native backend; applies "
                     "to tiles loaded from now on",
         default=True)
+    dataset_markers: BoolProperty(
+        name="Markers for every dataset (beta)",
+        description="Beta. In a tileset that only gathers other tilesets, an Empty for every dataset its "
+                    "tileset.json lists, before any tile of it is loaded: a sphere of the dataset's size at its "
+                    "centre, named after the dataset. Scene Origin > Dataset then lists them all, so the origin "
+                    "can go to a dataset that is not loaded yet",
+        default=False)
     read_metadata: BoolProperty(
         name="Read feature metadata",
         description="Keep each tile's feature table: columns become vertex attributes "

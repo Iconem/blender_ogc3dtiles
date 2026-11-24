@@ -225,6 +225,10 @@ class _GlbPreparer:
                         fh.write(bytes(png))
                     png_files[i] = p
             cs.gltf.content.GltfUtilities.collapse_to_single_buffer(model)
+            if len(model.buffers) > 1:
+                # EXT_meshopt_compression: cesium-native decodes into new buffers and leaves the empty
+                # "fallback" buffer behind, which no buffer view uses any more (3D BAG)
+                cs.gltf.content.GltfUtilities.remove_unused_buffers(model)
             buf = model.buffers[0].cesium.data if model.buffers else np.zeros(0, np.uint8)
             res = cs.gltf.writer.GltfWriter().write_glb(model, bytes(buf))
             glb = bytes(res.gltf_bytes)

@@ -36,7 +36,21 @@ A `tileset.json` can be nothing but a tree of grouping tiles whose leaves are ot
 dataset: every survey of a city, every dataset of a server. With the cesium-native backend each of
 those datasets gets its own Empty under the tileset's root, named after the dataset, and its tiles are
 parented to it. The name is the dataset's `name` in the aggregate's 3D Tiles 1.1 tile metadata (else `title`,
-`scene` or `label`, with its `project` in front), and only without one the last telling part of its URL. The grouping tiles get none.
+`scene` or `label`, with its `project` in front), and only without one the last telling part of its URL.
+
+**Markers for all N datasets (beta)**, under *An Empty per dataset*, makes those Empties at Start for every
+dataset the aggregate's `tileset.json` lists, before any tile of it is loaded: a sphere of the dataset's size at
+its centre. *Scene Origin > Dataset* then lists them all, so the origin can go to a dataset on the other side
+of the world, and its tiles load there. A marker becomes the dataset's ordinary Empty with its first tile.
+Unticking removes the markers no tile took over. It reads the root `tileset.json` only: datasets listed in
+a sub-tileset of a very large aggregate get no marker yet.
+
+**Markers for all N datasets (beta)**, under *An Empty per dataset*, makes those Empties at Start for every
+dataset the aggregate's `tileset.json` lists, before any tile of it is loaded: a sphere of the dataset's size at
+its centre. *Scene Origin > Dataset* then lists them all, so the origin can go to a dataset on the other side
+of the world, and its tiles load there. A marker becomes the dataset's ordinary Empty with its first tile.
+Unticking removes the markers no tile took over. It reads the root `tileset.json` only: datasets listed in
+a sub-tileset of a very large aggregate get no marker yet. The grouping tiles get none.
 
 - The Empty appears with the dataset's first tile, at the dataset's centre, with its Z along the local
   vertical. Its location, rotation and scale start at zero: what you type there is an offset.

@@ -30,7 +30,8 @@ MARK = "ogc3d_xray"                     # on a splat tile object while it is sho
 METHOD = "ogc3d_xray_method"            # a material's render method before X-ray
 
 
-VERSION_NODE = "Mesh Edge"              # presence marks an up-to-date group
+VERSION_NODE = "Mesh Edge"
+MESH_GAIN = 5.0                 # one Strength for all: a face seen edge-on adds this many times a point's light              # presence marks an up-to-date group
 
 
 def group():
@@ -185,7 +186,7 @@ def update_params(props) -> None:
     ng = group()
     for name, v in (("On", 1.0 if props.xray else 0.0), ("Strength", props.xray_strength),
                     ("Tint Amount", props.xray_tint_amount), ("Meshes", 1.0 if props.xray_meshes else 0.0),
-                    ("Mesh Strength", props.xray_mesh_strength), (VERSION_NODE, props.xray_mesh_edge)):
+                    ("Mesh Strength", props.xray_strength * MESH_GAIN), (VERSION_NODE, props.xray_mesh_edge)):
         ng.nodes[name].outputs[0].default_value = float(v)
     ng.nodes["Tint"].outputs[0].default_value = (*props.xray_tint, 1.0)
     pg = bpy.data.node_groups.get(POINTS_GROUP)

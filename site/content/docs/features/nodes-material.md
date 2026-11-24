@@ -26,11 +26,14 @@ A row of buttons at the top of the *Nodes: Material* panel sets the look of ever
 | **Lit** (default) | Tiles shaded by the scene's lights. |
 | **Shadeless** | Every tile's colours as they are, without any light. See [below](#lighting-with-your-own-lamps). |
 | **X-ray** | Every tile as an [X-ray](/features/point-clouds#x-ray) in its own colours: points, splats and [meshes](/features/point-clouds#x-ray-on-meshes), rooms and far walls showing through. |
-| **X-ray Mono** | The same in one colour, the X-ray *Tint*. |
 
-The button of the look in use stays pressed. With an X-ray look, its settings show under the presets:
-strength, tint, and for meshes a **Meshes** checkbox (ticked by default; untick it to keep mesh tiles
-opaque), *Mesh strength* and *Mesh edges*.
+The button of the look in use stays pressed. With X-ray, its settings show under the presets: **Tint**
+(0: every tile in its own colours, 1: one colour for all, anything between mixes the two) and its colour,
+**Strength** for points, splats and meshes alike, and for meshes a **Meshes** checkbox (ticked by
+default; untick it to keep mesh tiles opaque) and *Mesh edges*.
+
+The *Shared shader nodes* checkbox sits above the presets. Ticking it goes back to *Lit*, the look
+those nodes are made for; X-ray can be chosen again afterwards and works with them.
 
 ## Shared shader nodes
 

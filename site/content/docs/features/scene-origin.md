@@ -9,7 +9,7 @@ the east, Y to the north, Z up, in metres.
 
 | Mode | The origin is |
 |---|---|
-| **Auto** | The centre of the first tileset. A later Start keeps it when the new tileset is within *Reuse within* km of it (10 km by default); otherwise the scene is re-centred. |
+| **Auto** | The centre of the first tileset that has a place: a global one (Google, a terrain layer, the bare globe) waits up to 10 s for another tileset of the list to say where it is. A later Start keeps it when the new tileset is within *Reuse within* km of it (10 km by default); otherwise the scene is re-centred. |
 | **Keep current** | Never moved once set. |
 | **Custom** | The latitude, longitude and height you type. |
 | **Search place** | A place found by name. |

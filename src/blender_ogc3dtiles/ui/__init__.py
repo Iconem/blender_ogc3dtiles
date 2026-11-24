@@ -1076,6 +1076,45 @@ def _forget_tiles_data(scene) -> None:
         del scene["ogc3d_voxel_colors"]
 
 
+ORIGIN_WAIT_S = 10.0
+
+
+def _dataset_markers(scene, props, st) -> None:
+    """Beta: the Empties of an aggregate's datasets, made (or removed) when the checkbox or the list changes."""
+    from ..tileset.feature_meta import TILESET_METADATA
+    want = bool(props.dataset_markers and props.dataset_empties)
+    sig = (want, TILESET_METADATA.version, _state["origin_set"])
+    if st.get("markers_sig") == sig or not _state["origin_set"]:
+        return
+    st["markers_sig"] = sig
+    from .. import dataset_empties
+    try:
+        if want:
+            if TILESET_METADATA.datasets_of(st.get("url") or ""):
+                root_obj, coll = _root_and_coll(scene, st)
+                dataset_empties.markers(scene, st, root_obj, coll, _frame(props, st))
+        else:
+            dataset_empties.remove_markers(st)
+    except Exception as e:                           # noqa: BLE001
+        print(f"[3DTiles] dataset markers: {e}")
+
+
+def _global_waits(st, center_ecef, radius_m, now) -> bool:
+    """A global tileset (Google, a terrain layer, the bare globe) has no place of its own. While no origin is
+    set and another tileset has yet to say where it is, the global one waits, at most ORIGIN_WAIT_S, so that
+    the scene origin goes to the first tileset that has a place instead of staying where the panel had it."""
+    if _state["origin_set"]:
+        return False
+    near_centre = math.dist(center_ecef, (0.0, 0.0, 0.0)) < LOCAL_TILESET_RADIUS_M
+    if not (near_centre and (radius_m is None or radius_m >= LOCAL_TILESET_RADIUS_M)):
+        return False
+    st["is_global"] = True
+    if now - st.setdefault("origin_wait_t", now) > ORIGIN_WAIT_S:
+        return False
+    return any(o is not st and o.get("backend") is not None and not o.get("frame_set") and not o.get("is_global")
+               and not o.get("error") for o in _state["streams"].values())
+
+
 def _decide_origin(props, center_ecef, radius_m=None):
     """Scene-origin policy, evaluated when a tileset's centre becomes known.
     Only the first tileset of a session can move the origin; afterwards every
@@ -1918,8 +1957,12 @@ def _tick_native(scene, props, st, now) -> bool:
         if c is None:
             st["pending"] = 0
             return False
+        if _global_waits(st, c, backend.root_radius_m(), now):
+            st["pending"] = 0
+            return False
         st["frame"] = _decide_origin(props, c, backend.root_radius_m())
         st["frame_set"] = True
+    _dataset_markers(scene, props, st)
     if not st.get("clip_fit"):
         r = backend.root_radius_m()
         if r is not None:
@@ -2272,28 +2315,23 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
             if it.use_overlays:
                 _draw_overlays(b, it, st)
             n_ds = len(st.get("datasets") or ()) if st is not None else 0
-            if n_ds or not props.dataset_empties:      # only where it does something: an aggregate of datasets
+            from ..tileset.feature_meta import TILESET_METADATA
+            n_all = len(TILESET_METADATA.datasets_of(st.get("url") or "")) if st is not None else 0
+            if n_ds or n_all or not props.dataset_empties:   # only where it does something: an aggregate
                 layout.prop(props, "dataset_empties",
                             text=f"An Empty per dataset ({n_ds})" if n_ds else "An Empty per dataset")
+                if props.dataset_empties and (n_all or props.dataset_markers):
+                    layout.prop(props, "dataset_markers",
+                                text=f"Markers for all {n_all} datasets (beta)" if n_all
+                                else "Markers for every dataset (beta)")
             b = layout.box()
             b.prop(it, "use_clipping", text=(f"Clipping ({len(it.clip_polygons)})"
                                              if it.clip_polygons else "Clipping"))
             if it.use_clipping:
-                _draw_clipping(b, it, st)
+                _draw_clipping(b, it, st, props)
         else:
             layout.prop(props, "tileset_url", text="URL")
             layout.prop(props, "cesium_ion_token", text="Ion Token")
-        b = layout.box()                # all tilesets: the viewport's Alt+B region
-        row = b.row(align=True)
-        row.prop(props, "clip_materials", text="Clip to viewport region (Alt+B)")
-        _group_button(row, "OGC3D Clip")
-        if props.clip_materials:
-            from ..camera import find_view3d
-            r3d, _ = find_view3d()
-            on = bool(r3d is not None and r3d.use_clip_planes)
-            b.label(text="Region active (Alt+B clears it)" if on
-                    else "No region: drag one with Alt+B", icon="MOD_BOOLEAN" if on else "INFO")
-
 
 
 def _draw_overlays(b, it, st) -> None:
@@ -2341,6 +2379,10 @@ def _draw_view_source(layout, props) -> None:
         layout.prop(props, "view_camera", text="Camera")
         if props.view_camera is None:
             layout.label(text="No camera chosen: the 3D viewport is used", icon="INFO")
+    if props.view_source in ("CAMERA", "OBJECT"):       # its animation sampled into a collection of cameras
+        row = layout.row(align=True)
+        row.operator("ogc3dtiles.cameras_along_path", icon="ANIM")
+        row.prop(props, "path_camera_count", text="")
     elif props.view_source == "COLLECTION":
         from ..camera import collection_cameras
         row = layout.row(align=True)
@@ -2362,7 +2404,15 @@ def _group_button(row, name) -> None:
         op.group = name
 
 
-def _draw_clipping(b, it, st) -> None:
+def _draw_clipping(b, it, st, props) -> None:
+    row = b.row(align=True)             # every tileset: the viewport's Alt+B region, in the materials too
+    row.prop(props, "clip_materials", text="Clip to viewport region (Alt+B)")
+    _group_button(row, "OGC3D Clip")
+    if props.clip_materials:
+        from ..camera import find_view3d
+        r3d, _ = find_view3d()
+        if r3d is not None and r3d.use_clip_planes:
+            b.label(text="Region active (Alt+B clears it)", icon="MOD_BOOLEAN")
     row = b.row(align=True)
     row.prop(it, "clip_mode", text="")
     from .. import clip_nodes
@@ -2444,6 +2494,7 @@ class OGC3D_PT_LodPanel(_OGC3DSidebar, Panel):
         props = context.scene.ogc3dtiles
         _draw_view_source(layout, props)
         col = layout.column(align=True)
+        col.label(text="Settings")
         col.prop(props, "max_screen_space_error", text="Max SSE (live)")
         col.prop(props, "max_concurrent_requests", text="Concurrent Requests")
         col.prop(props, "max_elements_m", text="Max points / vertices (M, beta)")
@@ -2459,15 +2510,8 @@ class OGC3D_PT_LodPanel(_OGC3DSidebar, Panel):
                 row.prop(props, "tile_bounds_color", text="")
             row.prop(props, "tile_bounds_width", text="Width")
             row.prop(props, "tile_bounds_depth", text="", icon="HIDE_ON")
-        # how much tile building the viewport loop does per tick: viewport only, renders wait for every tile
-        perf_h, perf = layout.panel("ogc3d_lod_viewport_perf", default_closed=True)
-        perf_h.label(text="Viewport Performance")
-        if perf:
-            col = perf.column(align=True)
-            col.prop(props, "imports_per_tick", text="Imports / tick")
-            col.prop(props, "nav_build_ms", text="Build ms while navigating")
-        sub_h, sub = layout.panel("ogc3d_lod_advanced", default_closed=True)
-        sub_h.label(text="Advanced")
+        sub_h, sub = layout.panel("ogc3d_lod_cache", default_closed=False)
+        sub_h.label(text="Cache")
         if sub:
             if _python_backend_in_use(context):     # the pure Python traversal only
                 sub.prop(props, "max_loaded_tiles", text="Max Tiles / tileset")
@@ -2481,6 +2525,13 @@ class OGC3D_PT_LodPanel(_OGC3DSidebar, Panel):
             row = sub.row(align=True)
             row.prop(props, "use_disk_cache", text="Disk cache")
             row.operator("ogc3dtiles.clear_cache", icon="TRASH", text="")
+            # how much tile building the viewport loop does per tick: viewport only, renders wait for every tile
+            perf_h, perf = sub.panel("ogc3d_lod_viewport_perf", default_closed=True)
+            perf_h.label(text="Viewport Performance")
+            if perf:
+                col = perf.column(align=True)
+                col.prop(props, "imports_per_tick", text="Imports / tick")
+                col.prop(props, "nav_build_ms", text="Build ms while navigating")
             for st in _state["streams"].values():
                 if st["backend"] is None:
                     continue

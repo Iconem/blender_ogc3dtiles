@@ -30,6 +30,7 @@ from mathutils import Matrix
 
 PROP = "ogc3dtiles_dataset"            # on the Empty: the external tileset's URL
 CENTRE = "ogc3dtiles_dataset_centre"   # on the Empty: the dataset's centre, ECEF metres
+MARKER = "ogc3dtiles_dataset_marker"   # on the Empty: made from the aggregate's list, no tile of it loaded yet
 GENERIC = {"tileset", "cloud", "lod-meta", "metadata", "layer", "ept", "root", "index", "meta", "3dtiles", "tiles"}
 SAVE_EVERY_S = 1.0
 known: dict = {}                       # Empty name -> (URL, ECEF centre) of the datasets seen this session
@@ -60,9 +61,8 @@ def display_name(url: str) -> str:
     """A name for the Empty: the dataset's name in the aggregate's tile metadata (3D Tiles 1.1: `name`, else
     `title`, `scene`, `label`, with the `project` in front when the name does not hold it), else short_name()."""
     try:
-        from .tileset.feature_meta import TILESET_METADATA
-        by = TILESET_METADATA.by_content
-        props = by.get(url) or by.get(url.split("?", 1)[0]) or {}
+        from .tileset.feature_meta import TILESET_METADATA, content_key
+        props = (TILESET_METADATA.by_content.get(url) or TILESET_METADATA.by_key.get(content_key(url)) or {})
         name = next((str(props[k]).strip() for k in NAME_KEYS
                      if isinstance(props.get(k), (str, int)) and str(props[k]).strip()), "")
         if name:
@@ -120,6 +120,21 @@ def adopt(scene, st, root, coll, obj_name: str, dataset, frame) -> None:
     url, centre = dataset
     names = st.setdefault("datasets", {})
     e = bpy.data.objects.get(names.get(url, ""))
+    if (e is None or MARKER in e) and st.get("dataset_keys"):      # its marker, made before any of its tiles
+        from .tileset.feature_meta import content_key
+        e = e or bpy.data.objects.get(st["dataset_keys"].get(content_key(url), ""))
+        if e is not None and MARKER in e:
+            names.pop(e.get(PROP, ""), None)
+            del e[MARKER]
+            e.empty_display_type, e.empty_display_size = "SINGLE_ARROW", 20.0
+            e[PROP] = url
+            saved = _stored(_item(scene, st)).get(url)
+            if saved and len(saved) == 16:
+                e.matrix_basis = Matrix([saved[i:i + 4] for i in range(0, 16, 4)])
+            names[url] = e.name
+            known[e.name] = (url, tuple(e[CENTRE]))
+        else:
+            e = None
     if e is None or e.get(PROP) != url:
         e = bpy.data.objects.new(display_name(url), None)
         e.empty_display_type = "SINGLE_ARROW"          # points up: Location Z is the height offset
@@ -136,6 +151,59 @@ def adopt(scene, st, root, coll, obj_name: str, dataset, frame) -> None:
         known[e.name] = (url, tuple(float(v) for v in centre))
     obj.parent = e
     obj.matrix_parent_inverse = e.matrix_parent_inverse.inverted()
+
+
+def markers(scene, st, root, coll, frame) -> int:
+    """Beta. An Empty for every dataset the aggregate's tileset.json lists, before any of its tiles: a sphere of
+    the dataset's size at its centre, named as its Empty will be. adopt() takes it over with the first tile."""
+    from .tileset.feature_meta import TILESET_METADATA, content_key
+    if root is None:
+        return 0
+    names, keys = st.setdefault("datasets", {}), st.setdefault("dataset_keys", {})
+    for u, n in names.items():
+        keys.setdefault(content_key(u), n)
+    stored = _stored(_item(scene, st))
+    left = {o[PROP]: o for o in root.children if MARKER in o}      # of a stream stopped and started again
+    made = 0
+    for d in TILESET_METADATA.datasets_of(st.get("url") or ""):
+        if bpy.data.objects.get(keys.get(d["key"], "")) is not None:
+            continue
+        url, centre = d["url"], d["centre"]
+        if url in left:
+            e = left[url]
+            e.matrix_parent_inverse = _mx(base_matrix(frame, centre))
+            names[url] = keys[d["key"]] = e.name
+            known[e.name] = (url, tuple(float(v) for v in centre))
+            continue
+        e = bpy.data.objects.new(display_name(url), None)
+        e.empty_display_type = "SPHERE"                # its extent, until its tiles say more
+        e.empty_display_size = float(min(max(d["radius"], 20.0), 2.0e5))
+        e[PROP], e[CENTRE], e[MARKER] = url, [float(v) for v in centre], True
+        (coll or scene.collection).objects.link(e)
+        e.parent = root
+        e.matrix_parent_inverse = _mx(base_matrix(frame, centre))
+        saved = stored.get(url)
+        if saved and len(saved) == 16:
+            e.matrix_basis = Matrix([saved[i:i + 4] for i in range(0, 16, 4)])
+        names[url] = keys[d["key"]] = e.name
+        known[e.name] = (url, tuple(float(v) for v in centre))
+        made += 1
+    return made
+
+
+def remove_markers(st) -> int:
+    """The markers no tile took over."""
+    names, keys, n = st.get("datasets") or {}, st.get("dataset_keys") or {}, 0
+    for url, name in list(names.items()):
+        e = bpy.data.objects.get(name)
+        if e is not None and MARKER in e and not e.children:
+            names.pop(url, None)
+            for k in [k for k, v in keys.items() if v == name]:
+                keys.pop(k, None)
+            known.pop(name, None)
+            bpy.data.objects.remove(e)
+            n += 1
+    return n
 
 
 def refresh(st, frame) -> None:

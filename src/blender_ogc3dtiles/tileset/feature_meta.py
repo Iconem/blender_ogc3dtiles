@@ -29,7 +29,7 @@ from __future__ import annotations
 import json
 import re
 import threading
-from urllib.parse import urljoin
+from urllib.parse import parse_qs, urljoin, urlsplit
 
 import numpy as np
 
@@ -559,6 +559,57 @@ def texel_values(texel, name, registry=REGISTRY):
     return out
 
 
+def content_key(url: str) -> str:
+    """One key for a content URL however a client spells its query: scheme, host and path, plus the `url`
+    parameter of a converter link (…/stream/tileset.json?url=<source>), which is what tells two of them apart.
+    cesium-native appends the parent's query to a child's URL, so the full URL is no key."""
+    try:
+        parts = urlsplit(url)
+        base = f"{parts.scheme}://{parts.netloc}{parts.path}" if parts.scheme else parts.path
+        inner = parse_qs(parts.query).get("url")
+        return f"{base}?url={inner[0]}" if inner else base
+    except ValueError:
+        return url.split("?", 1)[0]
+
+
+def _mat4(flat):
+    """A 3D Tiles transform (16 numbers, column-major) as a 4x4, or None."""
+    if not isinstance(flat, (list, tuple)) or len(flat) != 16:
+        return None
+    return np.asarray(flat, dtype=np.float64).reshape(4, 4).T
+
+
+def volume_centre_radius(bv, transform=None):
+    """(ECEF centre, radius in metres) of a tileset.json boundingVolume, or None. Boxes and spheres are in the
+    tile's frame (``transform``: its accumulated 4x4), regions are on the ellipsoid."""
+    if not isinstance(bv, dict):
+        return None
+    try:
+        if "region" in bv:
+            from .traversal import geodetic_to_ecef
+            w, s, e, n, lo, hi = (float(v) for v in bv["region"][:6])
+            lat, lon = (s + n) / 2.0, (w + e) / 2.0
+            c = geodetic_to_ecef(float(np.degrees(lat)), float(np.degrees(lon)), (lo + hi) / 2.0)
+            r = 6_378_137.0 * 0.5 * float(np.hypot(n - s, (e - w) * np.cos(lat)))
+            return tuple(float(v) for v in c), max(r, abs(hi - lo) / 2.0)
+        if "sphere" in bv:
+            c, r = np.array([*bv["sphere"][:3], 1.0], dtype=np.float64), float(bv["sphere"][3])
+            axes = np.eye(3) * r
+        elif "box" in bv:
+            b = [float(v) for v in bv["box"][:12]]
+            c = np.array([*b[:3], 1.0], dtype=np.float64)
+            axes = np.array(b[3:12], dtype=np.float64).reshape(3, 3)
+            r = float(np.sqrt((axes ** 2).sum()))
+        else:
+            return None
+        if transform is not None:
+            c = transform @ c
+            r *= float(np.cbrt(abs(np.linalg.det(transform[:3, :3])))) or 1.0
+        return tuple(float(v) for v in c[:3]), r
+    except (TypeError, ValueError, IndexError):
+        return None
+
+
 class TilesetMetadata:
     """Metadata of tileset.json files seen so far. Written from a Python thread."""
 
@@ -566,17 +617,53 @@ class TilesetMetadata:
         self._lock = threading.Lock()
         self.tileset = {}        # {"name": value}
         self.by_content = {}     # content URL -> {"name": value}
+        self.by_key = {}         # content_key(content URL) -> {"name": value}
+        self.datasets = {}       # tileset.json URL -> [{url, key, props, centre, radius}]: its external tilesets
+        self.version = 0         # goes up with every tileset.json that lists datasets
 
     def clear(self):
         with self._lock:
-            self.tileset, self.by_content = {}, {}
+            self.tileset, self.by_content, self.by_key, self.datasets = {}, {}, {}, {}
+            self.version += 1
 
-    def note(self, url, doc):
+    def datasets_of(self, url) -> list:
+        """The external tilesets a tileset.json lists (an aggregate's datasets), by the URL it was asked with."""
+        with self._lock:
+            return list(self.datasets.get(url) or self.datasets.get(url.split("?", 1)[0]) or ())
+
+    def note(self, url, doc, asked_url=None):
         groups = doc.get("groups") or []
         found = {}
+        listed = []
 
-        def walk(tile, inherited):
+        def dataset(tile, props, transform):
+            """A tile that is another tileset: 3D Tiles metadata of class `dataset`, or a .json content that is
+            not a cell of the same tree. True when it is one, or when it has content of its own to draw."""
+            content = tile.get("content") or {}
+            uri = content.get("uri") or content.get("url")
+            if not uri:
+                return bool(tile.get("contents"))
+            meta = tile.get("metadata") if isinstance(tile.get("metadata"), dict) else {}
+            extras = tile.get("extras") if isinstance(tile.get("extras"), dict) else {}
+            external = urlsplit(uri).path.lower().endswith(".json")
+            if not (meta.get("class") == "dataset" or (external and "cell" not in extras)):
+                return not external
+            where = volume_centre_radius(tile.get("boundingVolume"), transform)
+            if where is None:
+                return True
+            full = urljoin(url, uri)
+            listed.append({"url": full, "key": content_key(full), "props": props, "centre": where[0],
+                           "radius": where[1]})
+            return True
+
+        def walk(tile, inherited, transform, below=False):
             own = {**inherited, **_entity_properties(tile.get("metadata"))}
+            local = _mat4(tile.get("transform"))
+            if local is not None:
+                transform = local if transform is None else transform @ local
+            # an aggregate's datasets hang from grouping tiles alone: below a tile that draws something, or
+            # below a dataset, a .json content is the same tileset paging itself (Google, a large mesh)
+            below = below or dataset(tile, own, transform)
             for content in ([tile["content"]] if tile.get("content") else []) + list(tile.get("contents") or []):
                 props = dict(own)
                 group = content.get("group")
@@ -586,14 +673,20 @@ class TilesetMetadata:
                 if props and content.get("uri"):
                     found[urljoin(url, content["uri"])] = props
             for child in tile.get("children") or []:
-                walk(child, own)
+                walk(child, own, transform, below)
 
         if isinstance(doc.get("root"), dict):
-            walk(doc["root"], {})
+            walk(doc["root"], {}, None)
         top = _entity_properties(doc.get("metadata"))
         with self._lock:
             self.tileset.update(top)
             self.by_content.update(found)
+            self.by_key.update({content_key(k): v for k, v in found.items()})
+            if listed:
+                self.datasets[url] = listed
+                if asked_url:
+                    self.datasets[asked_url] = listed
+                self.version += 1
 
 
 def _entity_properties(entity):
@@ -605,14 +698,14 @@ TILESET_METADATA = TilesetMetadata()
 
 def note_tileset_json(url, data):
     """Collect the metadata of a tileset.json. Anything else is left alone."""
-    if b'"metadata"' not in data or b'"root"' not in data:
+    if b'"root"' not in data or (b'"metadata"' not in data and b'.json' not in data):
         return
     try:
         doc = json.loads(data)
     except ValueError:
         return
     if isinstance(doc, dict):
-        TILESET_METADATA.note(url.split("?", 1)[0], doc)
+        TILESET_METADATA.note(url.split("?", 1)[0], doc, asked_url=url)
 
 
 def _clean_text(v):

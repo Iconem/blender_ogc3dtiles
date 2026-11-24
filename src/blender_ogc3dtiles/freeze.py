@@ -191,19 +191,25 @@ class OGC3D_OT_FreezeTiles(Operator):
 
 
 class OGC3D_OT_CamerasAlongPath(Operator):
-    """Copies of the scene camera at frames of the animation, in one collection, and 'Stream for' set to that
-    collection: the detail the whole path needs loads at once (then Freeze Tiles keeps it)"""
+    """Copies of the camera tiles are streamed for (the scene camera, or the chosen one) at frames of the
+    animation, in one collection, and 'Stream for' set to that collection: the detail the whole path needs loads at once (then Freeze Tiles keeps it)"""
     bl_idname = "ogc3dtiles.cameras_along_path"
     bl_label = "Cameras Along the Animation"
     bl_options = {"REGISTER", "UNDO"}
 
     @classmethod
     def poll(cls, context):
-        return context.scene.camera is not None
+        return cls._source(context.scene) is not None
+
+    @staticmethod
+    def _source(sc):
+        props = sc.ogc3dtiles
+        chosen = props.view_camera if props.view_source == "OBJECT" else None
+        return chosen if chosen is not None and chosen.type == "CAMERA" else sc.camera
 
     def execute(self, context):
         sc = context.scene
-        src = sc.camera
+        src = self._source(sc)
         coll = bpy.data.collections.get(PATH_COLLECTION)
         if coll is None:
             coll = bpy.data.collections.new(PATH_COLLECTION)

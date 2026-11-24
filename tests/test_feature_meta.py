@@ -282,3 +282,30 @@ def test_registry_restore_from_saved_columns():
     # a column already seen is not overwritten
     reg.restore([("intensity", "number", 5.0, 6.0)], [])
     assert reg.get("intensity").lo == 0.0
+
+
+def test_content_key_ignores_an_appended_query():
+    from blender_ogc3dtiles.tileset.feature_meta import content_key
+    assert content_key("https://x/a/tileset.json?set=cities") == content_key("https://x/a/tileset.json")
+    a = content_key("https://c/stream/tileset.json?format=potree&url=https%3A%2F%2Fd%2Fone%2Fcloud.js")
+    b = content_key("https://c/stream/tileset.json?url=https%3A%2F%2Fd%2Ftwo%2Fcloud.js&set=up")
+    assert a != b
+    assert a == content_key("https://c/stream/tileset.json?url=https%3A%2F%2Fd%2Fone%2Fcloud.js&set=up")
+
+
+def test_an_aggregate_lists_its_datasets():
+    from blender_ogc3dtiles.tileset.feature_meta import TilesetMetadata
+    doc = {"root": {"boundingVolume": {"sphere": [0, 0, 0, 7e6]}, "children": [
+        {"boundingVolume": {"region": [0.0, 0.8, 0.002, 0.802, 0, 100]}, "content": {"uri": "a/tileset.json"},
+         "metadata": {"class": "dataset", "properties": {"name": "A", "project": "P"}}},
+        {"boundingVolume": {"sphere": [10, 0, 0, 5]}, "transform": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 100, 0, 0, 1],
+         "content": {"uri": "https://y/b.json?k=1"}},
+        {"boundingVolume": {"sphere": [0, 0, 0, 5]}, "content": {"uri": "cell.json"}, "extras": {"cell": {"key": "1"}}},
+        {"boundingVolume": {"sphere": [0, 0, 0, 5]}, "content": {"uri": "tile.glb"}}]}}
+    m = TilesetMetadata()
+    m.note("https://x/agg/tileset.json", doc, asked_url="https://x/agg/tileset.json?set=s")
+    rows = m.datasets_of("https://x/agg/tileset.json?set=s")
+    assert [r["url"] for r in rows] == ["https://x/agg/a/tileset.json", "https://y/b.json?k=1"]
+    assert rows[0]["props"] == {"name": "A", "project": "P"} and 6.3e6 < sum(v * v for v in rows[0]["centre"]) ** 0.5 < 6.4e6
+    assert rows[1]["centre"] == (110.0, 0.0, 0.0) and rows[1]["radius"] == 5.0
+    assert m.by_key["https://x/agg/a/tileset.json"]["name"] == "A"

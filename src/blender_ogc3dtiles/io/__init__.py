@@ -753,15 +753,16 @@ def _set_tile_attributes(obj, columns) -> None:
 
 def set_tile_info(holder_name: str, values: dict, scene) -> None:
     """Level and geometric error of a tile just built, on its mesh objects."""
-    from ..materials import metadata_columns
     holder = bpy.data.objects.get(holder_name)
     if holder is None or not values:
         return
-    columns = metadata_columns(scene.ogc3dtiles)
+    from ..materials import ERROR_PROP, LEVEL_PROP, new_tile_values
+    from ..tileset.feature_meta import TILE_ERROR, TILE_LEVEL
+    level, error = values.get(TILE_LEVEL, 0.0), values.get(TILE_ERROR, 0.0)
     for obj in [holder, *holder.children_recursive]:
-        if obj.type == "MESH" and obj.data is not None:
-            obj[TILE_INFO_PROP] = json.dumps(values)
-            _set_tile_attributes(obj, columns)
+        if obj.type in {"MESH", "POINTCLOUD"} and obj.data is not None:
+            obj[LEVEL_PROP], obj[ERROR_PROP] = level, error      # Color tiles by > Tile reads these
+    new_tile_values(scene, level, error)
 
 
 def refresh_feature_attributes(scene):

@@ -85,6 +85,14 @@ def _on_tile_bounds_look(self, context):
         pass
 
 
+def _on_dataset_marker_size(self, context):
+    try:
+        from .. import dataset_empties
+        dataset_empties.resize(context.scene)
+    except Exception as e:                        # noqa: BLE001
+        print(f"[3DTiles] dataset markers: {e}")
+
+
 def _on_meta_color(self, context):
     try:
         from .. import materials
@@ -120,6 +128,7 @@ def _on_voxel_opacity(self, context):
 
 def _on_meta_source(self, context):
     self["meta_range_custom"] = False
+    self["meta_color"] = True                 # picking what to color by switches the coloring on
     try:
         from .. import materials
         if self.meta_source == "ELEVATION":
@@ -155,6 +164,8 @@ def _on_meta_range_custom(self, context):
     col = REGISTRY.get(self.meta_column)
     if self.meta_range_custom and self.meta_source == "ELEVATION":
         self["meta_range_min"], self["meta_range_max"] = materials.elevation_range(context.scene)
+    elif self.meta_range_custom and self.meta_source == "OBJECT":
+        self["meta_range_min"], self["meta_range_max"] = materials.tile_value_range(context.scene)
     elif self.meta_range_custom and col is not None and col.hi >= col.lo:
         self["meta_range_min"], self["meta_range_max"] = col.lo, col.hi     # no update per value
     materials.update_metadata_group(context.scene)
@@ -841,7 +852,12 @@ class TilesSceneProps(PropertyGroup):
                     "tileset.json lists, before any tile of it is loaded: a sphere of the dataset's size at its "
                     "centre, named after the dataset. Scene Origin > Dataset then lists them all, so the origin "
                     "can go to a dataset that is not loaded yet",
-        default=False)
+        default=False, update=_on_dataset_marker_size)
+    dataset_marker_km: FloatProperty(
+        name="Marker size km",
+        description="Smallest radius a dataset's sphere is drawn with, in kilometres on the globe, so that a "
+                    "small site still shows from far away. A dataset larger than this keeps its own size. Live",
+        default=50.0, min=0.001, soft_max=500.0, update=_on_dataset_marker_size)
     read_metadata: BoolProperty(
         name="Read feature metadata",
         description="Keep each tile's feature table: columns become vertex attributes "
@@ -873,6 +889,18 @@ class TilesSceneProps(PropertyGroup):
         ],
         default="COLUMN", update=_on_meta_source,
     )
+    meta_tile_by: EnumProperty(
+        name="Tile color",
+        description="What a tile's color shows. None of these needs metadata",
+        items=[
+            ("RANDOM", "Random", "One random color per tile: how the tileset is cut into tiles"),
+            ("LEVEL", "Level", "Depth of the tile below the root, through the Color Ramp: which level of "
+                               "detail is loaded where"),
+            ("ERROR", "Error", "The tile's geometric error in metres, through the Color Ramp on a log scale. "
+                               "Leaves declare 0 and show as a millimetre"),
+        ],
+        default="RANDOM", update=_on_meta_source,
+    )
     meta_column: StringProperty(
         name="Column", description="Metadata column that drives the colors",
         update=_on_meta_column,
@@ -892,9 +920,9 @@ class TilesSceneProps(PropertyGroup):
     meta_range_max: FloatProperty(name="Max", description="Value at the end of the ramp. Live",
                                   default=1.0, update=_on_meta_range)
     meta_all_columns: BoolProperty(
-        name="All columns as attributes",
-        description="Keep every column as a vertex attribute, for Geometry Nodes or your own "
-                    "shaders, not only the active one. One float per vertex per column: "
+        name="Keep every property as an attribute",
+        description="Keep every property as a vertex attribute (meta_<name>), for Geometry Nodes or your "
+                    "own shaders, not only the one picked above. One float per vertex per property: "
                     "about 40 MB per column on 10 M vertices",
         default=False, update=_on_meta_column,
     )

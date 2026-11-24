@@ -10,13 +10,14 @@ header. Blender remembers the order and which ones are folded.
 
 | Panel | What is in it |
 |---|---|
-| **OGC 3D Tiles** | Status line, Start / Stop / Clear, the tileset list and the selected tileset's fields. Below: its **Raster overlays** and its **Clipping**, each in a box with the checkbox that switches it on. **Clip to viewport region (Alt+B)** is the first row of the Clipping box and applies to all tilesets. |
+| **OGC 3D Tiles** | Status line, Start / Stop, Freeze and Clear All Tiles: what acts on every tileset. |
+| **Tilesets** | The tileset list and the selected tileset's fields. Below: its **Raster overlays** and its **Clipping**, each in a box with the checkbox that switches it on. **Clip to viewport region (Alt+B)** is the first row of the Clipping box and applies to all tilesets. |
 | **Scene Origin** | Where the Blender origin sits on the globe. |
-| **LOD / Streaming** | *Stream for* first, then the settings (Max SSE, concurrent requests, the points / vertices cap), tile bounds, the *Cache* section, and *Viewport Performance*, folded, after it. |
+| **LOD / Streaming** | *Stream for* first, then the settings (Max SSE, concurrent requests), tile bounds, the *Cache* section, and *Viewport Performance*, folded, after it, with the points / vertices cap. |
 | **Nodes: Material** | Shared shader nodes, back-face handling, a button that opens a tile's own material. |
 | **Nodes: Geometry** | Shared geometry nodes, point display and radius, relation lines. |
 | **Nodes: Compositing** | Beauty compositor nodes with their sliders. |
-| **Nodes: Metadata** | Read feature metadata, colour tiles by a column, voxel display. |
+| **Nodes: Metadata** | Read feature metadata, colour tiles by a property, elevation, tile or tileset, voxel display. |
 | **Render** | Stream for the viewport or the scene camera, converged animation. |
 | **Coordinate Info** | Origin and cursor coordinates. |
 
@@ -27,7 +28,7 @@ section.
 
 Defaults: Max SSE 8 px, 20 concurrent requests, 4 imports per tick.
 
-**Max points / vertices (M, beta)** caps what is shown, all tilesets together. Over the cap every
+**Max points / vertices (M, beta)**, in *Viewport Performance*, caps what is shown, all tilesets together. Over the cap every
 tileset is streamed coarser (its SSE is multiplied, and the panel shows by how much) until the view
 fits; detail returns when there is room. 0, the default, means no cap. The coarsest tiles of a tileset
 are always shown, so a cap below their size cannot be met.
@@ -35,7 +36,7 @@ are always shown, so a cap below their size cannot be met.
 *Viewport Performance* holds Imports / tick and the build time while navigating: how much tile building
 each step of the viewport loop does. Renders wait for every tile whatever they are.
 
-*Cache*, open by default, holds the disk cache, per-stream backend statistics, and:
+*Cache*, open by default, holds the disk cache, and:
 
 - with cesium-native, its cache size in MB. This is memory for tiles that are loaded but no longer
   shown; it is not a cap on what is shown.

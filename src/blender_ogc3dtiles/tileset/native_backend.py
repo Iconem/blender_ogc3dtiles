@@ -273,16 +273,14 @@ class _GlbPreparer:
             if not self._owner._dataset_warned:
                 self._owner._dataset_warned = True
                 print("[3DTiles/native] dataset of %s: %r" % (load_result.key, exc))
-        if self._owner.read_metadata:
-            try:                              # where the tile sits in the hierarchy
-                level, up = 0, tile.parent
-                while up is not None and level < 64:
-                    level, up = level + 1, up.parent
-                from .feature_meta import note_tile
-                self._owner.tile_info[load_result.key] = note_tile(level, tile.geometric_error,
-                                                                   load_result.key)
-            except Exception as exc:          # noqa: BLE001
-                print("[3DTiles/native] tile level of %s: %r" % (load_result.key, exc))
+        try:                                  # where the tile sits in the hierarchy
+            level, up = 0, tile.parent
+            while up is not None and level < 64:
+                level, up = level + 1, up.parent
+            from .feature_meta import tile_values
+            self._owner.tile_info[load_result.key] = tile_values(level, tile.geometric_error)
+        except Exception as exc:              # noqa: BLE001
+            print("[3DTiles/native] tile level of %s: %r" % (load_result.key, exc))
         cb = self._owner.on_main_thread_ready
         if cb is not None:
             try:

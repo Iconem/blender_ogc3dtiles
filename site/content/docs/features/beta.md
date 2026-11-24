@@ -24,7 +24,9 @@ Everything else stays Blender's own navigation.
 - Far from the ground the wheel scales that Empty instead of moving the view. The panel shows the
   scale both as a multiplier (×0.01) and as 1:N (1:100), the same value typed either way. Typing one
   resizes the Empty about the point the view looks at, under a view that stays where it is, so the world
-  grows or shrinks on screen. **To 1:1, keeping the view** brings it back and moves the view to match, with
+  grows or shrinks on screen. **The scale goes from ×1000 (1:0.001, a millimetre shown as a metre) down to
+  ×0.00000001 (1:100,000,000, the Earth 13 cm wide).** The wheel only uses 1:1 and smaller: nearer than 1:1
+  it moves the view, and it stops scaling at 1:100,000,000, where it moves the view again. **To 1:1, keeping the view** brings it back and moves the view to match, with
   nothing moving on screen. Do this before a render or an export, where metres must be metres.
 - When the gestures stop, the scene origin moves under the view and the tiles are placed again in
   double precision. **Re-anchor Scene Origin** does it at once; it is greyed while Globe Navigation

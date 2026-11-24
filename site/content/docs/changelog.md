@@ -31,7 +31,17 @@ main branch and not in a release zip yet.
   **feature id** entry: one colour per feature (a building, say). *Elevation* colours by height above the
   ellipsoid through the Color Ramp (range from the loaded tiles, or a custom one), in true metres at any world
   scale of the Globe. *Tile* gives every tile a random colour, *Tileset* one colour per tileset or per dataset of
-  an aggregate. The last three need no metadata.
+  an aggregate. The last three need no metadata. *Tile* has three values, **Random**, **Level** and **Error**:
+  the last two were entries of the property list (*tile level*, *tile error*) and needed *Read feature
+  metadata*; a file saved with one of them picked goes back to the first property. Clicking a source ticks
+  *Color tiles by*. *All columns as attributes* is now *Keep every property as an attribute*.
+- Fixed: *Color tiles by > Tileset* could show every tileset in one colour in the viewport, and close hues for
+  different tilesets. Hues are now spread, kept on each tileset's Empty, and the viewport redraws.
+- **Dataset markers: a size.** A *km* field beside *Markers for all N datasets*: the smallest radius of a
+  dataset's sphere, 50 km by default, so small sites show from space.
+- **Sidebar.** A first panel, *OGC 3D Tiles*, has the status line and Start / Stop, Freeze, Clear All Tiles; the
+  list is in *Tilesets* below it. *Max points / vertices* moved to *Viewport Performance*. The per-tileset
+  statistics lines (visited, culled, ms per tile) are gone from LOD / Streaming.
 - **Copy into project** is no longer a button under the tileset's URL: it downloads the whole tileset. The
   operator stays in the F3 search; Freeze keeps what is on screen.
 - **X-ray settings.** *Strength* comes before *Tint*.

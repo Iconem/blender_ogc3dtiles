@@ -20,6 +20,9 @@ from bpy.types import Operator
 from .tileset.feature_meta import FEATURE_ID_ATTR, MAX_CLASSES, REGISTRY, attribute_name
 
 FEATURE_COLUMN = "feature id"           # in the Property list: one colour per feature, no column of its own
+LEVEL_PROP = "ogc3d_level"              # on a tile object: its depth below the root (Color tiles by > Tile)
+ERROR_PROP = "ogc3d_error"              # ... and log2 of its geometric error in metres
+TILE_VALUE_PROPS = {"LEVEL": LEVEL_PROP, "ERROR": ERROR_PROP}
 HUE_PROP = "ogc3d_hue"                  # on a tile object: the hue of its tileset (Color tiles by > Tileset)
 RANDOM_SOURCES = ("OBJECT", "TILESET")
 
@@ -767,7 +770,9 @@ _META_LAYOUT = {
     "Use Tileset": (-1400, -1480), "Use Feature": (-1400, -1600), "Tileset Hue": (-1150, -1480),
     "Feature": (-1150, -1700), "Feature Spread": (-950, -1700), "Feature Hue": (-750, -1700),
     "Hue Tileset": (-900, -1400), "Hue Feature": (-650, -1400),
-    "Number Value": (-900, 100), "Elevation Has": (-500, -320),
+    "Number Value": (-1100, 100), "Elevation Has": (-500, -320),
+    "Use Tile Value": (-1400, -560), "Tile Value": (-1400, -380), "Number Tile": (-900, 100),
+    "Tile Has": (-300, -320),
     "Object Info": (-1400, -1200), "Object Color": (-450, -1400), "Object Pick": (250, 300), "Object Has": (250, -320),
 }
 
@@ -784,7 +789,7 @@ def _layout_metadata_group(ng, only_if_stacked=False):
 def ensure_metadata_group():
     ng = bpy.data.node_groups.get(META_GROUP)
     if ng is not None and "Texel" in ng.interface.items_tree and "Alpha" in ng.interface.items_tree \
-            and ng.nodes.get("Elevation Axis") is not None:
+            and ng.nodes.get("Tile Value") is not None:
         return ng
     stops = None
     if ng is None:
@@ -861,6 +866,19 @@ def ensure_metadata_group():
     links.new(use_elev.outputs[0], number.inputs[0])
     links.new(column.outputs[0], number.inputs[2])
     links.new(elev.outputs[0], number.inputs[3])
+    # ... or a number written on each tile object: its level, its geometric error
+    use_tile = _value_node(ng, "Use Tile Value", 0.0)
+    tile_value = nodes.new("ShaderNodeAttribute")
+    tile_value.name = "Tile Value"
+    tile_value.attribute_type = "OBJECT"
+    tile_value.attribute_name = LEVEL_PROP
+    number_tile = nodes.new("ShaderNodeMix")
+    number_tile.name = "Number Tile"
+    number_tile.data_type = "FLOAT"
+    links.new(use_tile.outputs[0], number_tile.inputs[0])
+    links.new(number.outputs[0], number_tile.inputs[2])
+    links.new(tile_value.outputs["Fac"], number_tile.inputs[3])
+    number = number_tile
 
     # numbers: min..max -> ramp, no data (0 below the range) stays uncolored
     span = nodes.new("ShaderNodeMapRange")
@@ -903,7 +921,12 @@ def ensure_metadata_group():
     elev_has.operation = "MAXIMUM"
     links.new(above.outputs[0], elev_has.inputs[0])
     links.new(use_elev.outputs[0], elev_has.inputs[1])
-    links.new(elev_has.outputs[0], has.inputs[3])
+    tile_has = nodes.new("ShaderNodeMath")
+    tile_has.name = "Tile Has"
+    tile_has.operation = "MAXIMUM"
+    links.new(elev_has.outputs[0], tile_has.inputs[0])
+    links.new(use_tile.outputs[0], tile_has.inputs[1])
+    links.new(tile_has.outputs[0], has.inputs[3])
     # object: one colour per tile object, from Blender's per-object random number
     info = nodes.new("ShaderNodeObjectInfo")
     info.name = "Object Info"
@@ -1011,8 +1034,13 @@ def update_metadata_group(scene):
         nodes["Column"].attribute_name = attr
     nodes["Strength"].outputs[0].default_value = props.meta_strength
     source = props.meta_source
+    tile_prop = TILE_VALUE_PROPS.get(props.meta_tile_by) if source == "OBJECT" else None
+    random_hue = (source in RANDOM_SOURCES and tile_prop is None) or by_feature
     nodes["Use Elevation"].outputs[0].default_value = 1.0 if source == "ELEVATION" else 0.0
-    nodes["Use Object"].outputs[0].default_value = 1.0 if source in RANDOM_SOURCES or by_feature else 0.0
+    nodes["Use Tile Value"].outputs[0].default_value = 1.0 if tile_prop else 0.0
+    if tile_prop and nodes["Tile Value"].attribute_name != tile_prop:
+        nodes["Tile Value"].attribute_name = tile_prop
+    nodes["Use Object"].outputs[0].default_value = 1.0 if random_hue else 0.0
     nodes["Use Tileset"].outputs[0].default_value = 1.0 if source == "TILESET" else 0.0
     nodes["Use Feature"].outputs[0].default_value = 1.0 if by_feature else 0.0
     update_elevation_frame(scene, force=True)
@@ -1022,7 +1050,14 @@ def update_metadata_group(scene):
         nodes["Min"].outputs[0].default_value = lo
         nodes["Max"].outputs[0].default_value = max(hi, lo + 1e-6)
         return
-    if source in RANDOM_SOURCES or by_feature:
+    if tile_prop:
+        nodes["Is Number"].outputs[0].default_value = 1.0
+        lo, hi = ((props.meta_range_min, props.meta_range_max) if props.meta_range_custom
+                  else tile_value_range(scene, rescan=True))
+        nodes["Min"].outputs[0].default_value = lo
+        nodes["Max"].outputs[0].default_value = max(hi, lo + 1e-6)
+        return
+    if random_hue:
         nodes["Is Number"].outputs[0].default_value = 1.0      # no class palette, no class opacity
         return
     is_number = col is not None and col.kind == "number"
@@ -1087,17 +1122,61 @@ def _tileset_parent(o):
     return p
 
 
+_tile_range = {"prop": None, "lo": None, "hi": None}
+
+
+def tile_value_range(scene, values=None, rescan=False):
+    """(min, max) of the per-tile number Color tiles by > Tile shows (level, or log2 of the geometric error)
+    over the loaded tiles. ``values``: those of a tile just built, which only widen the range."""
+    prop = TILE_VALUE_PROPS.get(scene.ogc3dtiles.meta_tile_by)
+    if prop is None:
+        return 0.0, 1.0
+    if rescan or _tile_range["prop"] != prop:
+        _tile_range.update(prop=prop, lo=None, hi=None)
+        values = [o[prop] for o in scene.objects if prop in o]
+    for v in values or ():
+        _tile_range["lo"] = v if _tile_range["lo"] is None else min(v, _tile_range["lo"])
+        _tile_range["hi"] = v if _tile_range["hi"] is None else max(v, _tile_range["hi"])
+    if _tile_range["lo"] is None:
+        return 0.0, 1.0
+    return _tile_range["lo"], _tile_range["hi"]
+
+
+def new_tile_values(scene, level, error) -> None:
+    """A tile just built: the automatic range of Tile > Level or Error follows it."""
+    props = scene.ogc3dtiles
+    if props.meta_source != "OBJECT" or props.meta_range_custom or not props.meta_color:
+        return
+    v = {"LEVEL": level, "ERROR": error}.get(props.meta_tile_by)
+    if v is None:
+        return
+    before = (_tile_range["lo"], _tile_range["hi"])
+    lo, hi = tile_value_range(scene, [v])
+    if before != (_tile_range["lo"], _tile_range["hi"]):
+        ng = bpy.data.node_groups.get(META_GROUP)
+        if ng is not None and ng.nodes.get("Min") is not None:
+            ng.nodes["Min"].outputs[0].default_value = lo
+            ng.nodes["Max"].outputs[0].default_value = max(hi, lo + 1e-6)
+
+
 def set_tileset_hues(objs) -> None:
-    """Write on each tile object the hue of its tileset, which Color tiles by > Tileset reads."""
-    import zlib
+    """Write on each tile object the hue of its tileset, which Color tiles by > Tileset reads. A tileset's hue is
+    kept on its Empty: golden-ratio steps in the order they were first coloured, so few tilesets differ well."""
     hues = {}
     for o in objs:
         p = _tileset_parent(o)
         name = p.name if p is not None else ""
         if name not in hues:
-            hues[name] = (zlib.crc32(name.encode("utf-8")) % 3600) / 3600.0
+            if p is None:
+                hues[name] = 0.0
+            else:
+                if HUE_PROP not in p:
+                    taken = sum(1 for e in bpy.data.objects if e.type == "EMPTY" and HUE_PROP in e)
+                    p[HUE_PROP] = (0.58 + taken * 0.6180339887) % 1.0
+                hues[name] = p[HUE_PROP]
         if o.get(HUE_PROP) != hues[name]:
             o[HUE_PROP] = hues[name]
+            o.update_tag()                  # a custom property alone does not redraw the viewport
 
 
 def new_tiles_color(scene, objs) -> None:
@@ -1566,13 +1645,22 @@ def _draw_metadata_columns(layout, props):
     node_rows.draw(layout, props, "meta_color", "Color tiles by", "METADATA")
     layout.row(align=True).prop(props, "meta_source", expand=True)
     if props.meta_source != "COLUMN":
+        by_tile = props.meta_source == "OBJECT"
+        if by_tile:
+            layout.row(align=True).prop(props, "meta_tile_by", expand=True)
         layout.prop(props, "meta_strength")
-        if props.meta_source == "ELEVATION":
+        if props.meta_source == "ELEVATION" or (by_tile and props.meta_tile_by != "RANDOM"):
             ng = bpy.data.node_groups.get(META_GROUP)
             ramp = ng.nodes.get("Ramp") if ng is not None else None
             if ramp is not None:
                 lo, hi = (ng.nodes["Min"].outputs[0].default_value, ng.nodes["Max"].outputs[0].default_value)
-                layout.label(text=f"{lo:.1f} m to {hi:.1f} m", icon="IPO_LINEAR")
+                if not by_tile:
+                    text = f"{lo:.1f} m to {hi:.1f} m"
+                elif props.meta_tile_by == "LEVEL":
+                    text = f"Level {lo:.0f} (root side) to {hi:.0f}"
+                else:
+                    text = f"{2.0 ** lo:.3g} m to {2.0 ** hi:.3g} m, log scale"
+                layout.label(text=text, icon="IPO_LINEAR")
                 layout.template_color_ramp(ramp, "color_ramp", expand=True)
             layout.prop(props, "meta_range_custom")
             if props.meta_range_custom:
@@ -1581,8 +1669,11 @@ def _draw_metadata_columns(layout, props):
                 row.prop(props, "meta_range_max")
         return
     if not props.meta_columns:
-        layout.label(text="No property loaded yet" if props.read_metadata
-                     else "Properties come with Read feature metadata", icon="INFO")
+        if props.read_metadata:
+            layout.label(text="No property loaded yet", icon="INFO")
+        else:                    # the same checkbox as in the panel above, where it is needed
+            layout.prop(props, "read_metadata")
+            layout.label(text="Properties load with it, after the next Start", icon="INFO")
         return
     layout.prop_search(props, "meta_column", props, "meta_columns", text="Property")
     layout.prop(props, "meta_strength")

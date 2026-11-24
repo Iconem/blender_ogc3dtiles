@@ -2246,9 +2246,10 @@ class _OGC3DSidebar:
         return hasattr(context.scene, "ogc3dtiles")
 
 
-class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
-    bl_label = "OGC 3D Tiles tilesets"
-    bl_idname = "OGC3D_PT_main"
+class OGC3D_PT_StreamPanel(_OGC3DSidebar, Panel):
+    """Status and the buttons that act on every tileset: first in the tab, foldable."""
+    bl_label = "OGC 3D Tiles"
+    bl_idname = "OGC3D_PT_stream"
     bl_order = 0
 
     @classmethod
@@ -2289,7 +2290,19 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
                and any(c.name == "Frozen tiles" for c in o.users_collection) for o in context.selected_objects):
             layout.operator("ogc3dtiles.export_frozen", icon="EXPORT")
 
-        # Tilesets
+
+class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
+    bl_label = "Tilesets"
+    bl_idname = "OGC3D_PT_main"
+    bl_order = 1
+
+    @classmethod
+    def poll(cls, context):
+        return hasattr(context.scene, "ogc3dtiles")
+
+    def draw(self, context):
+        layout = self.layout
+        props = context.scene.ogc3dtiles
         row = layout.row()
         row.template_list("OGC3D_UL_Tilesets", "", props, "tilesets", props, "active_tileset", rows=3)
         col = row.column(align=True)
@@ -2341,9 +2354,12 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
                 layout.prop(props, "dataset_empties",
                             text=f"An Empty per dataset ({n_ds})" if n_ds else "An Empty per dataset")
                 if props.dataset_empties and (n_all or props.dataset_markers):
-                    layout.prop(props, "dataset_markers",
-                                text=f"Markers for all {n_all} datasets (beta)" if n_all
-                                else "Markers for every dataset (beta)")
+                    row = layout.row(align=True)
+                    row.prop(props, "dataset_markers",
+                             text=f"Markers for all {n_all} datasets (beta)" if n_all
+                             else "Markers for every dataset (beta)")
+                    if props.dataset_markers:
+                        row.prop(props, "dataset_marker_km", text="km")
             b = layout.box()
             b.prop(it, "use_clipping", text=(f"Clipping ({len(it.clip_polygons)})"
                                              if it.clip_polygons else "Clipping"))
@@ -2517,10 +2533,6 @@ class OGC3D_PT_LodPanel(_OGC3DSidebar, Panel):
         col.label(text="Settings")
         col.prop(props, "max_screen_space_error", text="Max SSE (live)")
         col.prop(props, "max_concurrent_requests", text="Concurrent Requests")
-        col.prop(props, "max_elements_m", text="Max points / vertices (M, beta)")
-        if props.max_elements_m > 0 and props.is_streaming:
-            layout.label(text=f"Shown: {_state.get('cap_total', 0) / 1e6:.2f} M   "
-                              f"SSE x{_state.get('cap_factor', 1.0):.2f}", icon="INFO")
         col = layout.column(align=True)
         col.prop(props, "tile_bounds", text="Tile bounds")
         if props.tile_bounds != "OFF":
@@ -2552,23 +2564,10 @@ class OGC3D_PT_LodPanel(_OGC3DSidebar, Panel):
             col = perf.column(align=True)
             col.prop(props, "imports_per_tick", text="Imports / tick")
             col.prop(props, "nav_build_ms", text="Build ms while navigating")
-        if sub:
-            for st in _state["streams"].values():
-                if st["backend"] is None:
-                    continue
-                running = "cesium-native" if st["mode"] == "native" else "Pure Python"
-                if st["mode"] == "native":
-                    s = st.get("stats") or {}
-                    extra = (f"visited {s.get('tiles_visited', 0)} culled {s.get('tiles_culled', 0)} "
-                             f"{s.get('bytes', 0) / 1e6:.0f} MB")
-                else:
-                    sel = st["backend"].last_selection()
-                    extra = (f"visited {sel.visited} culled {sel.culled} render {len(sel.render)} "
-                             f"load {len(sel.load)}") if sel else ""
-                if st.get("import_n"):
-                    extra += f"  import {1000 * st['import_s'] / st['import_n']:.0f} ms/tile"
-                icon = "PAUSE" if (st.get("paused") or not props.is_streaming) else "PLAY"
-                layout.label(text=f"{st['name'][:18]}: {running}  {extra}", icon=icon)
+            col.prop(props, "max_elements_m", text="Max points / vertices (M, beta)")
+            if props.max_elements_m > 0 and props.is_streaming:
+                perf.label(text=f"Shown: {_state.get('cap_total', 0) / 1e6:.2f} M   "
+                                f"SSE x{_state.get('cap_factor', 1.0):.2f}", icon="INFO")
 
 
 class OGC3D_PT_DisplayPanel(_OGC3DSidebar, Panel):
@@ -3074,6 +3073,7 @@ _classes = [
     OGC3D_OT_ClearCache,
     OGC3D_OT_ModalStream,
     OGC3D_UL_Tilesets,
+    OGC3D_PT_StreamPanel,
     OGC3D_PT_MainPanel,
     OGC3D_PT_OriginPanel,
     OGC3D_PT_LodPanel,

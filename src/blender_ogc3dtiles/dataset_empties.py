@@ -112,6 +112,27 @@ def _stored(item) -> dict:
         return {}
 
 
+RADIUS = "ogc3dtiles_dataset_radius"   # on a marker: the dataset's own radius in metres
+
+
+def _look(scene, e) -> None:
+    """How a dataset's Empty is drawn. With markers on: a sphere of at least Marker size, so that a small site
+    shows from space. Without: an arrow that points up (Location Z is the height offset)."""
+    props = scene.ogc3dtiles
+    if props.dataset_markers:
+        size = max(float(e.get(RADIUS, 0.0)), props.dataset_marker_km * 1000.0)
+        e.empty_display_type, e.empty_display_size = "SPHERE", min(size, 2.0e6)
+    else:
+        e.empty_display_type, e.empty_display_size = "SINGLE_ARROW", 20.0
+
+
+def resize(scene) -> None:
+    """Marker size changed in the panel."""
+    for e in bpy.data.objects:
+        if e.type == "EMPTY" and PROP in e:
+            _look(scene, e)
+
+
 def adopt(scene, st, root, coll, obj_name: str, dataset, frame) -> None:
     """Parent the tile object to its dataset's Empty, making the Empty on the dataset's first tile."""
     obj = bpy.data.objects.get(obj_name)
@@ -126,8 +147,8 @@ def adopt(scene, st, root, coll, obj_name: str, dataset, frame) -> None:
         if e is not None and MARKER in e:
             names.pop(e.get(PROP, ""), None)
             del e[MARKER]
-            e.empty_display_type, e.empty_display_size = "SINGLE_ARROW", 20.0
             e[PROP] = url
+            _look(scene, e)
             saved = _stored(_item(scene, st)).get(url)
             if saved and len(saved) == 16:
                 e.matrix_basis = Matrix([saved[i:i + 4] for i in range(0, 16, 4)])
@@ -137,9 +158,8 @@ def adopt(scene, st, root, coll, obj_name: str, dataset, frame) -> None:
             e = None
     if e is None or e.get(PROP) != url:
         e = bpy.data.objects.new(display_name(url), None)
-        e.empty_display_type = "SINGLE_ARROW"          # points up: Location Z is the height offset
-        e.empty_display_size = 20.0
         e[PROP] = url
+        _look(scene, e)
         e[CENTRE] = [float(v) for v in centre]
         (coll or scene.collection).objects.link(e)
         e.parent = root
@@ -176,9 +196,9 @@ def markers(scene, st, root, coll, frame) -> int:
             known[e.name] = (url, tuple(float(v) for v in centre))
             continue
         e = bpy.data.objects.new(display_name(url), None)
-        e.empty_display_type = "SPHERE"                # its extent, until its tiles say more
-        e.empty_display_size = float(min(max(d["radius"], 20.0), 2.0e5))
         e[PROP], e[CENTRE], e[MARKER] = url, [float(v) for v in centre], True
+        e[RADIUS] = float(min(max(d["radius"], 20.0), 2.0e5))      # its extent, until its tiles say more
+        _look(scene, e)
         (coll or scene.collection).objects.link(e)
         e.parent = root
         e.matrix_parent_inverse = _mx(base_matrix(frame, centre))

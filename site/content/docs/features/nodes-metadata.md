@@ -21,10 +21,12 @@ and intensity. The **Nodes: Metadata** panel reads it and colours the tiles with
 
 | Source | Colours |
 |---|---|
-| **Property** | A property the tiles carry, read with their metadata: a LiDAR classification or intensity, a building's year or height, any vertex, feature or texture property. The list also has **feature id**, one colour per feature of each tile (per building in swissBUILDINGS3D, say), and three per-tile values: *tile level*, *tile error* and *tile (random color)*. |
+| **Property** | A property the tiles carry, read with their metadata: a LiDAR classification or intensity, a building's year or height, any vertex, feature or texture property. The list also has **feature id**, one colour per feature of each tile (per building in swissBUILDINGS3D, say). Without *Read feature metadata* the list is empty, and the checkbox is offered right there. |
 | **Elevation** | Height above the ellipsoid, through the Color Ramp. The range is that of the loaded tiles and widens as tiles load; *Custom range* sets it by hand. The heights are true metres at any world scale of the Globe: the material undoes the Globe's scale, rotation and offset. Far from the scene origin the Earth curves away from the scene's vertical, about 8 m at 10 km. |
-| **Tile** | One random colour per tile: how the tileset is cut into tiles, and which level of detail is loaded where. |
+| **Tile** | One value per tile, picked on the row below: **Random** (a colour per tile: how the tileset is cut), **Level** or **Error** (through the Color Ramp: which level of detail is loaded where). See [Colour by level of detail](#colour-by-level-of-detail). |
 | **Tileset** | One colour per tileset, and with *An Empty per dataset* one per dataset of an aggregate: what comes from where. |
+
+Clicking a source ticks *Color tiles by* if it was not.
 
 | Setting | What it does |
 |---|---|
@@ -32,7 +34,7 @@ and intensity. The **Nodes: Metadata** panel reads it and colours the tiles with
 | **Legend** (classes) | One colour and one opacity per class. Opacity 0 hides the class: the ground of a LiDAR cloud, for one. |
 | **Color Ramp** (numbers) | Add, move and recolour its stops. Edits are kept. |
 | **Custom range** (numbers) | Sets both ends of the ramp by hand, live. |
-| **All columns as attributes** | Keeps every column on the tiles, not only the active one, for your own shaders and Geometry Nodes. About 40 MB per column on 10 million vertices. |
+| **Keep every property as an attribute** | By default a tile only carries the property picked above, as a `meta_<name>` vertex attribute. This keeps them all, for your own shaders and Geometry Nodes. About 40 MB per property on 10 million vertices. Colouring does not need it. |
 
 ## Point clouds
 
@@ -49,18 +51,21 @@ with `&attributes=intensity,classification`.
 
 ## Colour by level of detail
 
-Two columns come from the tileset's hierarchy instead of its content, one value per tile, through the
-Color Ramp:
+The **Tile** source has two values that come from the tileset's hierarchy instead of its content, one per
+tile, through the Color Ramp. They need no metadata (cesium-native backend):
 
-- **tile level**: how deep the tile is in the hierarchy, 0 being the root. Tilesets that nest other
+- **Level**: how deep the tile is in the hierarchy, 0 being the root. Tilesets that nest other
   tilesets count those levels too.
-- **tile error (log2 m)**: the geometric error the tile declares, as a base-2 logarithm, since it
-  roughly halves at each level. 3 means 8 m, 0 means 1 m, -10 stands for tiles that declare none.
+- **Error**: the geometric error the tile declares, on a log scale since it roughly halves at each
+  level. The panel shows the range in metres. Tiles that declare none count as a millimetre.
 
-They show which level of detail is on screen where, and where two levels meet.
+They show which level of detail is on screen where, and where two levels meet. The range follows the
+loaded tiles; *Custom range* sets it by hand (for Error, as base-2 logarithms of metres: 3 is 8 m).
 
-A third one, **tile (random color)**, gives every tile one of 24 palette colours, to see the tiles
-themselves. A tile keeps its colour when it comes back.
+**Random** gives every tile its own colour, to see the tiles themselves.
+
+Before this version these were three entries of the property list (*tile level*, *tile error*, *tile
+(random color)*) and needed *Read feature metadata*.
 
 ## For your own nodes
 

@@ -87,8 +87,8 @@ under it is fine enough and stays.
 - What a value looks like depends on the tileset and on the tool that made it, since each tool
   declares its errors its own way. Tick the checkbox next to **Tileset Max SSE** on a tileset entry to
   give it its own value instead of this one.
-- To see the levels on screen, colour the tiles by *tile level* or *tile error* in
-  [Nodes: Metadata](/features/nodes-metadata).
+- To see the levels on screen, colour the tiles by *Tile*, then *Level* or *Error*, in
+  [Nodes: Metadata](/features/nodes-metadata#colour-by-level-of-detail).
 
 ## Concurrent Requests and Viewport Performance: how fast
 
@@ -108,7 +108,7 @@ tile whatever these are.
 
 ## Max points / vertices (beta)
 
-A ceiling, in millions, on what is shown across all tilesets. Over it, every tileset is streamed
+In *Viewport Performance*. A ceiling, in millions, on what is shown across all tilesets. Over it, every tileset is streamed
 coarser until the view fits, and the panel shows by how much (*SSE x1.50*). Detail returns when there
 is room. 0, the default, means no ceiling. The coarsest tiles of a tileset are always shown, so a
 ceiling below their size cannot be met.

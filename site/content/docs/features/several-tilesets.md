@@ -40,8 +40,11 @@ parented to it. The name is the dataset's `name` in the aggregate's 3D Tiles 1.1
 
 **Markers for all N datasets (beta)**, under *An Empty per dataset*, makes those Empties at Start for every
 dataset the aggregate's `tileset.json` lists, before any tile of it is loaded: a sphere at its centre. The
-sphere has the dataset's size, and at least the **km** value beside the checkbox (50 km by default, live), so
-that a site of a few metres still shows from space. With markers on, a dataset keeps its sphere once its tiles
+sphere has the dataset's size, up to a kilometre: Blender draws an Empty no larger. So each dataset also gets a
+**dot** in the 3D viewport, of the **px** radius beside the checkbox (5 pixels by default, 0 for none), the same
+at any distance and any Globe scale: a site of a few metres shows from space. Datasets with tiles loaded have a
+blue dot, the others an orange one. The dots hide behind tiles, are not in renders and cannot be clicked: pick
+a dataset in *Scene Origin > Dataset*, or its Empty in the Outliner. With markers on, a dataset keeps its sphere once its tiles
 are in. *Scene Origin > Dataset* then lists them all, so the origin can go to a dataset on the other side
 of the world, and its tiles load there. A marker becomes the dataset's ordinary Empty with its first tile.
 Unticking removes the markers no tile took over. It reads the root `tileset.json` only: datasets listed in

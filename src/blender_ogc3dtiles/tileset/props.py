@@ -787,7 +787,7 @@ class TilesSceneProps(PropertyGroup):
         update=_on_point_radius,
     )
     point_adaptive: BoolProperty(
-        name="Smaller under finer tiles (beta)",
+        name="Adaptive size under finer tiles (beta)",
         description="Point clouds that add detail (ADD refinement, as Potree octrees streamed by 3dtiled): a "
                     "coarse tile stays on screen under its finer tiles. With this on, its points shrink to the "
                     "finer spacing where finer tiles are shown, and keep their size where none is, so a dense "
@@ -862,11 +862,12 @@ class TilesSceneProps(PropertyGroup):
                     "centre, named after the dataset. Scene Origin > Dataset then lists them all, so the origin "
                     "can go to a dataset that is not loaded yet",
         default=False, update=_on_dataset_marker_size)
-    dataset_marker_km: FloatProperty(
-        name="Marker size km",
-        description="Smallest radius a dataset's sphere is drawn with, in kilometres on the globe, so that a "
-                    "small site still shows from far away. A dataset larger than this keeps its own size. Live",
-        default=50.0, min=0.001, soft_max=500.0, update=_on_dataset_marker_size)
+    dataset_marker_px: FloatProperty(
+        name="Marker size px",
+        description="Every dataset also gets a dot of this radius in pixels in the 3D viewport, whatever the "
+                    "distance and the Globe scale, so that a small site shows from space. An Empty cannot be "
+                    "drawn larger than a kilometre. Viewport only, not in renders. 0: no dot",
+        default=5.0, min=0.0, max=64.0, soft_max=20.0, update=_on_dataset_marker_size)
     read_metadata: BoolProperty(
         name="Read feature metadata",
         description="Keep each tile's feature table: columns become vertex attributes "

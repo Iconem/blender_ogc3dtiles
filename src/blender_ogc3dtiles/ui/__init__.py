@@ -2404,7 +2404,7 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
                              text=f"Markers for all {n_all} datasets (beta)" if n_all
                              else "Markers for every dataset (beta)")
                     if props.dataset_markers:
-                        row.prop(props, "dataset_marker_km", text="km")
+                        row.prop(props, "dataset_marker_px", text="px")
             b = layout.box()
             b.prop(it, "use_clipping", text=(f"Clipping ({len(it.clip_polygons)})"
                                              if it.clip_polygons else "Clipping"))
@@ -2618,7 +2618,7 @@ class OGC3D_PT_LodPanel(_OGC3DSidebar, Panel):
 class OGC3D_PT_DisplayPanel(_OGC3DSidebar, Panel):
     bl_label = "Nodes: Geometry"
     bl_idname = "OGC3D_PT_display"
-    bl_order = 4
+    bl_order = 3
 
     def draw_header(self, context):
         self.layout.label(text="", icon="OUTLINER_DATA_POINTCLOUD")
@@ -2670,7 +2670,7 @@ class OGC3D_PT_DisplayPanel(_OGC3DSidebar, Panel):
 class OGC3D_PT_MaterialsPanel(_OGC3DSidebar, Panel):
     bl_label = "Nodes: Material"
     bl_idname = "OGC3D_PT_materials"
-    bl_order = 3
+    bl_order = 4
 
     def draw_header(self, context):
         self.layout.label(text="", icon="MATERIAL")
@@ -2685,7 +2685,7 @@ class OGC3D_PT_MaterialsPanel(_OGC3DSidebar, Panel):
 class OGC3D_PT_MetadataPanel(_OGC3DSidebar, Panel):
     bl_label = "Nodes: Metadata"
     bl_idname = "OGC3D_PT_metadata"
-    bl_order = 6
+    bl_order = 5
     bl_options = {"DEFAULT_CLOSED"}
 
     def draw_header(self, context):
@@ -2716,7 +2716,7 @@ class OGC3D_PT_PhasesPanel(_OGC3DSidebar, Panel):
 class OGC3D_PT_CompositorPanel(_OGC3DSidebar, Panel):
     bl_label = "Nodes: Compositing"
     bl_idname = "OGC3D_PT_compositor"
-    bl_order = 5
+    bl_order = 6
 
     def draw_header(self, context):
         self.layout.label(text="", icon="NODE_COMPOSITING")

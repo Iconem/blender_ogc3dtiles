@@ -14,10 +14,10 @@ header. Blender remembers the order and which ones are folded.
 | **Tilesets** | The tileset list and the selected tileset's fields. Below: its **Raster overlays** and its **Clipping**, each in a box with the checkbox that switches it on. **Clip to viewport region (Alt+B)** is the first row of the Clipping box and applies to all tilesets. |
 | **Scene Origin** | Where the Blender origin sits on the globe. |
 | **LOD / Streaming** | *Stream for* first, then the settings (Max SSE, concurrent requests), tile bounds, the *Cache* section, and *Viewport Performance*, folded, after it, with the points / vertices cap. |
-| **Nodes: Material** | Shared shader nodes, back-face handling, a button that opens a tile's own material. |
 | **Nodes: Geometry** | Shared geometry nodes, point display and radius, relation lines. |
-| **Nodes: Compositing** | Beauty compositor nodes with their sliders. |
+| **Nodes: Material** | Shared shader nodes, back-face handling, a button that opens a tile's own material. |
 | **Nodes: Metadata** | Read feature metadata, colour tiles by a property, elevation, tile or tileset, voxel display. |
+| **Nodes: Compositing** | Beauty compositor nodes with their sliders. |
 | **Render** | Stream for the viewport or the scene camera, converged animation. |
 | **Coordinate Info** | Origin and cursor coordinates. |
 

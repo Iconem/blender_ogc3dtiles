@@ -115,22 +115,27 @@ def _stored(item) -> dict:
 RADIUS = "ogc3dtiles_dataset_radius"   # on a marker: the dataset's own radius in metres
 
 
+MAX_RADIUS = 1000.0                    # Blender draws an Empty no larger: empty_display_size stops there
+
+
 def _look(scene, e) -> None:
-    """How a dataset's Empty is drawn. With markers on: a sphere of at least Marker size, so that a small site
-    shows from space. Without: an arrow that points up (Location Z is the height offset)."""
-    props = scene.ogc3dtiles
-    if props.dataset_markers:
-        size = max(float(e.get(RADIUS, 0.0)), props.dataset_marker_km * 1000.0)
-        e.empty_display_type, e.empty_display_size = "SPHERE", min(size, 2.0e6)
+    """How a dataset's Empty is drawn. With markers on: a sphere of the dataset's size, up to a kilometre, which is
+    all an Empty can be; from further away dataset_dots draws a dot of a fixed size on screen. Without: an arrow
+    that points up (Location Z is the height offset)."""
+    if scene.ogc3dtiles.dataset_markers:
+        e.empty_display_type = "SPHERE"
+        e.empty_display_size = min(max(float(e.get(RADIUS, 20.0)), 20.0), MAX_RADIUS)
     else:
         e.empty_display_type, e.empty_display_size = "SINGLE_ARROW", 20.0
 
 
 def resize(scene) -> None:
-    """Marker size changed in the panel."""
+    """The markers checkbox, or the dot size, changed in the panel."""
     for e in bpy.data.objects:
         if e.type == "EMPTY" and PROP in e:
             _look(scene, e)
+    from . import dataset_dots
+    dataset_dots.invalidate()
 
 
 def adopt(scene, st, root, coll, obj_name: str, dataset, frame) -> None:

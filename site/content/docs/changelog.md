@@ -42,8 +42,12 @@ main branch and not in a release zip yet.
   *Color tiles by*. *All columns as attributes* is now *Keep every property as an attribute*.
 - Fixed: *Color tiles by > Tileset* could show every tileset in one colour in the viewport, and close hues for
   different tilesets. Hues are now spread, kept on each tileset's Empty, and the viewport redraws.
-- **Dataset markers: a size.** A *km* field beside *Markers for all N datasets*: the smallest radius of a
-  dataset's sphere, 50 km by default, so small sites show from space.
+- **Dataset markers: dots of a fixed size on screen.** A *px* field beside *Markers for all N datasets*: every
+  dataset gets a dot of that radius in the 3D viewport, 5 pixels by default, whatever the distance and the Globe
+  scale, so small sites show from space. Blender draws an Empty no larger than a kilometre, so a sphere alone
+  could not.
+- The *Nodes* panels are in the order Geometry, Material, Metadata, Compositing. *Keep every property as an
+  attribute* sits under *Read feature metadata*.
 - **Sidebar.** A first panel, *OGC 3D Tiles*, has the status line and Start / Stop, Freeze, Clear All Tiles; the
   list is in *Tilesets* below it. *Max points / vertices* moved to *Viewport Performance*. The per-tileset
   statistics lines (visited, culled, ms per tile) are gone from LOD / Streaming.

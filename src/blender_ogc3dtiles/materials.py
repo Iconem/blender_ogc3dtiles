@@ -1607,6 +1607,8 @@ _MAX_LEGEND_ROWS = 32
 def draw_metadata_panel(layout, props):
     """Body of the collapsible "Metadata" sub-panel."""
     layout.prop(props, "read_metadata")
+    if props.read_metadata:
+        layout.prop(props, "meta_all_columns")
     _draw_metadata_columns(layout, props)
     if not has_voxels():                                # a section of its own, and only with a voxel tileset
         return
@@ -1677,7 +1679,6 @@ def _draw_metadata_columns(layout, props):
         return
     layout.prop_search(props, "meta_column", props, "meta_columns", text="Property")
     layout.prop(props, "meta_strength")
-    layout.prop(props, "meta_all_columns")
     if props.meta_column == FEATURE_COLUMN:
         layout.label(text="One color per feature of each tile", icon="INFO")
         return

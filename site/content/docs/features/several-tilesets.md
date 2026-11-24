@@ -43,13 +43,6 @@ dataset the aggregate's `tileset.json` lists, before any tile of it is loaded: a
 its centre. *Scene Origin > Dataset* then lists them all, so the origin can go to a dataset on the other side
 of the world, and its tiles load there. A marker becomes the dataset's ordinary Empty with its first tile.
 Unticking removes the markers no tile took over. It reads the root `tileset.json` only: datasets listed in
-a sub-tileset of a very large aggregate get no marker yet.
-
-**Markers for all N datasets (beta)**, under *An Empty per dataset*, makes those Empties at Start for every
-dataset the aggregate's `tileset.json` lists, before any tile of it is loaded: a sphere of the dataset's size at
-its centre. *Scene Origin > Dataset* then lists them all, so the origin can go to a dataset on the other side
-of the world, and its tiles load there. A marker becomes the dataset's ordinary Empty with its first tile.
-Unticking removes the markers no tile took over. It reads the root `tileset.json` only: datasets listed in
 a sub-tileset of a very large aggregate get no marker yet. The grouping tiles get none.
 
 - The Empty appears with the dataset's first tile, at the dataset's centre, with its Z along the local

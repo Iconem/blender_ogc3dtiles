@@ -26,6 +26,9 @@ main branch and not in a release zip yet.
 - **LOD / Streaming.** *Stream for* first, a *Settings* title over the sliders, and *Advanced* is now *Cache*,
   open by default, with *Viewport Performance* folded inside. *Cameras Along the Animation* is offered for the
   scene camera and a chosen camera too, and samples the chosen one.
+- **Color tiles by Elevation or Object.** Beside a metadata *Column*: *Elevation* colours by height above the
+  ellipsoid through the Color Ramp (range from the loaded tiles, or a custom one), *Object* gives every tile object
+  a random colour, which shows how the tileset is cut and which detail is loaded where. Neither needs metadata.
 - **Nodes: Metadata.** *Color tiles by* is always shown. The voxel settings are a *Voxels* section, shown only
   with a voxel tileset.
 - **Globe Navigation.** Typing a world scale resizes the Globe under a view that stays put (it used to move the

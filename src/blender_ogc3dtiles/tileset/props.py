@@ -118,6 +118,20 @@ def _on_voxel_opacity(self, context):
         print(f"[3DTiles] voxel opacity: {e}")
 
 
+def _on_meta_source(self, context):
+    self["meta_range_custom"] = False
+    try:
+        from .. import materials
+        if self.meta_source == "ELEVATION":
+            materials.elevation_range(context.scene, rescan=True)
+        if self.meta_color:
+            materials.set_metadata_colors(context.scene)
+        else:
+            materials.update_metadata_group(context.scene)
+    except Exception as e:                        # noqa: BLE001
+        print(f"[3DTiles] color by: {e}")
+
+
 def _on_meta_column(self, context):
     self["meta_range_custom"] = False
     try:
@@ -139,7 +153,9 @@ def _on_meta_range_custom(self, context):
     from .. import materials
     from ..tileset.feature_meta import REGISTRY
     col = REGISTRY.get(self.meta_column)
-    if self.meta_range_custom and col is not None and col.hi >= col.lo:
+    if self.meta_range_custom and self.meta_source == "ELEVATION":
+        self["meta_range_min"], self["meta_range_max"] = materials.elevation_range(context.scene)
+    elif self.meta_range_custom and col is not None and col.hi >= col.lo:
         self["meta_range_min"], self["meta_range_max"] = col.lo, col.hi     # no update per value
     materials.update_metadata_group(context.scene)
 
@@ -838,6 +854,19 @@ class TilesSceneProps(PropertyGroup):
         name="Color tiles by",
         description="Mix a per-class or per-value color into every tile material",
         default=False, update=_on_meta_color,
+    )
+    meta_source: EnumProperty(
+        name="Color by",
+        description="What drives the colors",
+        items=[
+            ("COLUMN", "Column", "A metadata column: classes with a palette, numbers through the Color Ramp"),
+            ("ELEVATION", "Elevation", "Height above the ellipsoid, through the Color Ramp. Read in the "
+                                       "material from the scene's Z and the origin's height, so it needs no "
+                                       "metadata; meant for a Globe at 1:1 with the vertical along +Z"),
+            ("OBJECT", "Object", "One random color per tile object: shows how the tileset is cut into tiles "
+                                 "and which level of detail is loaded where"),
+        ],
+        default="COLUMN", update=_on_meta_source,
     )
     meta_column: StringProperty(
         name="Column", description="Metadata column that drives the colors",

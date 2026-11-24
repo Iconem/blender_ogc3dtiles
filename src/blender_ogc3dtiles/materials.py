@@ -757,6 +757,10 @@ _META_LAYOUT = {
     "Math.003": (-900, -320), "Math.002": (-700, -320),
     "Mix": (50, 300), "Mix.001": (50, -150), "Math.004": (250, -150),
     "Mix.002": (450, 250), "Group Output": (650, 250),
+    "Use Elevation": (-1400, -700), "Elevation Offset": (-1400, -820), "Use Object": (-1400, -940),
+    "Geometry": (-1400, -1080), "Elevation XYZ": (-1200, -1080), "Elevation": (-1000, -1000),
+    "Number Value": (-900, 100), "Elevation Has": (-500, -320),
+    "Object Info": (-700, -700), "Object Color": (-450, -700), "Object Pick": (250, 300), "Object Has": (250, -320),
 }
 
 
@@ -771,7 +775,8 @@ def _layout_metadata_group(ng, only_if_stacked=False):
 
 def ensure_metadata_group():
     ng = bpy.data.node_groups.get(META_GROUP)
-    if ng is not None and "Texel" in ng.interface.items_tree and "Alpha" in ng.interface.items_tree:
+    if ng is not None and "Texel" in ng.interface.items_tree and "Alpha" in ng.interface.items_tree \
+            and ng.nodes.get("Use Object") is not None:
         return ng
     stops = None
     if ng is None:
@@ -779,7 +784,7 @@ def ensure_metadata_group():
     elif "Texel" not in ng.interface.items_tree:
         ng.nodes.clear()     # a file from before texture metadata: same group, current nodes
         ng.interface.clear()
-    else:                    # from before class opacity: the sockets in use stay, with their links
+    else:                    # from before class opacity, or elevation: the sockets in use stay, with their links
         old = ng.nodes.get("Ramp")
         if old is not None:
             stops = [(e.position, tuple(e.color)) for e in old.color_ramp.elements]
@@ -825,9 +830,28 @@ def ensure_metadata_group():
     tex.extension = "EXTEND"
     links.new(uv.outputs[0], tex.inputs["Vector"])
 
+    # elevation: the shading point's height in the scene plus the origin's, so a height above the ellipsoid
+    use_elev, elev_off = _value_node(ng, "Use Elevation", 0.0), _value_node(ng, "Elevation Offset", 0.0)
+    use_obj = _value_node(ng, "Use Object", 0.0)
+    geom = nodes.new("ShaderNodeNewGeometry")
+    geom.name = "Geometry"
+    xyz = nodes.new("ShaderNodeSeparateXYZ")
+    xyz.name = "Elevation XYZ"
+    links.new(geom.outputs["Position"], xyz.inputs[0])
+    elev = nodes.new("ShaderNodeMath")
+    elev.name = "Elevation"
+    links.new(xyz.outputs["Z"], elev.inputs[0])
+    links.new(elev_off.outputs[0], elev.inputs[1])
+    number = nodes.new("ShaderNodeMix")
+    number.name = "Number Value"
+    number.data_type = "FLOAT"
+    links.new(use_elev.outputs[0], number.inputs[0])
+    links.new(column.outputs[0], number.inputs[2])
+    links.new(elev.outputs[0], number.inputs[3])
+
     # numbers: min..max -> ramp, no data (0 below the range) stays uncolored
     span = nodes.new("ShaderNodeMapRange")
-    links.new(column.outputs[0], span.inputs["Value"])
+    links.new(number.outputs[0], span.inputs["Value"])
     links.new(lo.outputs[0], span.inputs["From Min"])
     links.new(hi.outputs[0], span.inputs["From Max"])
     ramp = nodes.new("ShaderNodeValToRGB")
@@ -845,7 +869,7 @@ def ensure_metadata_group():
     links.new(span.outputs[0], ramp.inputs["Fac"])
     above = nodes.new("ShaderNodeMath")
     above.operation = "GREATER_THAN"
-    links.new(column.outputs[0], above.inputs[0])
+    links.new(number.outputs[0], above.inputs[0])
     low = nodes.new("ShaderNodeMath")
     low.operation = "SUBTRACT"
     low.inputs[1].default_value = 1e-3
@@ -861,16 +885,40 @@ def ensure_metadata_group():
     has.data_type = "FLOAT"
     links.new(numeric.outputs[0], has.inputs[0])
     links.new(tex.outputs["Alpha"], has.inputs[2])
-    links.new(above.outputs[0], has.inputs[3])
+    elev_has = nodes.new("ShaderNodeMath")              # an elevation is always data, below the range too
+    elev_has.name = "Elevation Has"
+    elev_has.operation = "MAXIMUM"
+    links.new(above.outputs[0], elev_has.inputs[0])
+    links.new(use_elev.outputs[0], elev_has.inputs[1])
+    links.new(elev_has.outputs[0], has.inputs[3])
+    # object: one colour per tile object, from Blender's per-object random number
+    info = nodes.new("ShaderNodeObjectInfo")
+    info.name = "Object Info"
+    obj_col = nodes.new("ShaderNodeCombineColor")
+    obj_col.name = "Object Color"
+    obj_col.mode = "HSV"
+    links.new(info.outputs["Random"], obj_col.inputs[0])
+    obj_col.inputs[1].default_value, obj_col.inputs[2].default_value = 0.85, 0.9
+    obj_pick = nodes.new("ShaderNodeMix")
+    obj_pick.name = "Object Pick"
+    obj_pick.data_type = "RGBA"
+    links.new(use_obj.outputs[0], obj_pick.inputs[0])
+    links.new(pick.outputs[2], obj_pick.inputs[6])
+    links.new(obj_col.outputs[0], obj_pick.inputs[7])
+    obj_has = nodes.new("ShaderNodeMath")
+    obj_has.name = "Object Has"
+    obj_has.operation = "MAXIMUM"
+    links.new(has.outputs[0], obj_has.inputs[0])
+    links.new(use_obj.outputs[0], obj_has.inputs[1])
     fac = nodes.new("ShaderNodeMath")
     fac.operation = "MULTIPLY"
     links.new(strength.outputs[0], fac.inputs[0])
-    links.new(has.outputs[0], fac.inputs[1])
+    links.new(obj_has.outputs[0], fac.inputs[1])
     out = nodes.new("ShaderNodeMix")
     out.data_type = "RGBA"
     links.new(fac.outputs[0], out.inputs[0])
     links.new(gin.outputs[0], out.inputs[6])
-    links.new(pick.outputs[2], out.inputs[7])
+    links.new(obj_pick.outputs[2], out.inputs[7])
     links.new(out.outputs[2], gout.inputs[0])
 
     # class opacity: only where the column is a class and the cell has one
@@ -916,6 +964,19 @@ def update_metadata_group(scene):
     if nodes["Column"].attribute_name != attr:
         nodes["Column"].attribute_name = attr
     nodes["Strength"].outputs[0].default_value = props.meta_strength
+    source = props.meta_source
+    nodes["Use Elevation"].outputs[0].default_value = 1.0 if source == "ELEVATION" else 0.0
+    nodes["Use Object"].outputs[0].default_value = 1.0 if source == "OBJECT" else 0.0
+    nodes["Elevation Offset"].outputs[0].default_value = props.origin_height if props.origin_valid else 0.0
+    if source == "ELEVATION":
+        nodes["Is Number"].outputs[0].default_value = 1.0
+        lo, hi = (props.meta_range_min, props.meta_range_max) if props.meta_range_custom else elevation_range(scene)
+        nodes["Min"].outputs[0].default_value = lo
+        nodes["Max"].outputs[0].default_value = max(hi, lo + 1e-6)
+        return
+    if source == "OBJECT":
+        nodes["Is Number"].outputs[0].default_value = 1.0      # no class palette, no class opacity
+        return
     is_number = col is not None and col.kind == "number"
     nodes["Is Number"].outputs[0].default_value = 1.0 if is_number else 0.0
     if is_number and col.hi >= col.lo:
@@ -923,6 +984,48 @@ def update_metadata_group(scene):
         nodes["Min"].outputs[0].default_value = lo
         nodes["Max"].outputs[0].default_value = max(hi, lo + 1e-6)
     write_palette(scene)
+
+
+_elevation = {"lo": None, "hi": None}
+
+
+def _object_heights(o):
+    from mathutils import Vector
+    mw = o.matrix_world
+    return [(mw @ Vector(c)).z for c in o.bound_box]
+
+
+def elevation_range(scene, objs=None, rescan=False):
+    """(min, max) height of the loaded tiles, as the group's Elevation reads it: scene Z plus the origin's
+    height. ``objs``: tiles just built, which only widen the range. Without tiles: 0 to 100 m around the origin."""
+    props = scene.ogc3dtiles
+    off = props.origin_height if props.origin_valid else 0.0
+    if rescan or (objs is None and _elevation["lo"] is None):
+        _elevation["lo"] = _elevation["hi"] = None
+        objs = [o for o in scene.objects if o.type in {"MESH", "POINTCLOUD"} and _is_tile_object(o)
+                and not o.get("tile_bbox")]
+    zs = [z for o in (objs or ()) if getattr(o, "bound_box", None) for z in _object_heights(o)]
+    if zs:
+        lo, hi = min(zs), max(zs)
+        _elevation["lo"] = lo if _elevation["lo"] is None else min(lo, _elevation["lo"])
+        _elevation["hi"] = hi if _elevation["hi"] is None else max(hi, _elevation["hi"])
+    if _elevation["lo"] is None:
+        return off, off + 100.0
+    return _elevation["lo"] + off, _elevation["hi"] + off
+
+
+def new_tiles_elevation(scene, objs) -> None:
+    """Tiles just built: the automatic elevation range follows them."""
+    props = scene.ogc3dtiles
+    if props.meta_source != "ELEVATION" or props.meta_range_custom:
+        return
+    before = (_elevation["lo"], _elevation["hi"])
+    lo, hi = elevation_range(scene, objs)
+    if before != (_elevation["lo"], _elevation["hi"]):
+        ng = bpy.data.node_groups.get(META_GROUP)
+        if ng is not None and ng.nodes.get("Min") is not None:
+            ng.nodes["Min"].outputs[0].default_value = lo
+            ng.nodes["Max"].outputs[0].default_value = max(hi, lo + 1e-6)
 
 
 def sync_metadata(scene, force=False):
@@ -1147,6 +1250,8 @@ def set_metadata_colors(scene) -> int:
     """Follow the panel's checkbox on the tiles already loaded."""
     enabled = scene.ogc3dtiles.meta_color
     if enabled:
+        if scene.ogc3dtiles.meta_source == "ELEVATION":
+            elevation_range(scene, rescan=True)
         sync_metadata(scene, force=True)
         from .io import refresh_feature_attributes
         refresh_feature_attributes(scene)
@@ -1338,6 +1443,22 @@ def _draw_metadata_columns(layout, props):
             box.label(text=f"{name}: {value}")
     from . import node_rows
     node_rows.draw(layout, props, "meta_color", "Color tiles by", "METADATA")
+    layout.row(align=True).prop(props, "meta_source", expand=True)
+    if props.meta_source != "COLUMN":
+        layout.prop(props, "meta_strength")
+        if props.meta_source == "ELEVATION":
+            ng = bpy.data.node_groups.get(META_GROUP)
+            ramp = ng.nodes.get("Ramp") if ng is not None else None
+            if ramp is not None:
+                lo, hi = (ng.nodes["Min"].outputs[0].default_value, ng.nodes["Max"].outputs[0].default_value)
+                layout.label(text=f"{lo:.1f} m to {hi:.1f} m", icon="IPO_LINEAR")
+                layout.template_color_ramp(ramp, "color_ramp", expand=True)
+            layout.prop(props, "meta_range_custom")
+            if props.meta_range_custom:
+                row = layout.row(align=True)
+                row.prop(props, "meta_range_min")
+                row.prop(props, "meta_range_max")
+        return
     if not props.meta_columns:
         layout.label(text="No metadata column loaded yet" if props.read_metadata
                      else "Columns come with Read feature metadata", icon="INFO")

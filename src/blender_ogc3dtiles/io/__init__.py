@@ -1669,9 +1669,13 @@ def _new_tile_hooks(scene, objs, mats):
         from ..materials import apply_clip
         for m in mats:
             apply_clip(m)
-    if getattr(props, "read_metadata", False):
-        from ..materials import apply_metadata, sync_metadata
-        sync_metadata(scene)
+    by_column = getattr(props, "meta_source", "COLUMN") == "COLUMN"
+    if getattr(props, "read_metadata", False) or (not by_column and getattr(props, "meta_color", False)):
+        from ..materials import apply_metadata, new_tiles_elevation, sync_metadata
+        if by_column:
+            sync_metadata(scene)
+        else:
+            new_tiles_elevation(scene, objs)
         if getattr(props, "meta_color", False):
             for m in mats:
                 apply_metadata(m)

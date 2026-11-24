@@ -13,10 +13,17 @@ and intensity. The **Nodes: Metadata** panel reads it and colours the tiles with
 ## Use it
 
 1. Tick **Read feature metadata** before pressing Start. It needs the cesium-native backend. The
-   *Color tiles by* row is always shown; its columns come with the metadata. The
    *Color tiles by* row is always shown; its columns come with the metadata.
 2. Once tiles are in, tick **Color tiles by** and pick a **Column**.
 3. Text and class columns get a legend, numbers get a colour ramp.
+
+Two other sources, under *Color tiles by*, need no metadata and work on any tileset:
+
+| Source | Colours |
+|---|---|
+| **Column** | A metadata column, as described on this page. |
+| **Elevation** | Height above the ellipsoid, through the Color Ramp. The range is that of the loaded tiles and widens as tiles load; *Custom range* sets it by hand. The material reads the scene's Z plus the origin's height, so it is meant for a Globe at 1:1 with the vertical along +Z. |
+| **Object** | One random colour per tile object: how the tileset is cut into tiles, and which level of detail is loaded where. |
 
 | Setting | What it does |
 |---|---|

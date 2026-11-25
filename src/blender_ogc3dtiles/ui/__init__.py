@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import time
 import uuid
 
@@ -221,11 +222,21 @@ class OGC3D_OT_TilesetAdd(Operator):
         return {"FINISHED"}
 
 
-def item_url(item) -> str:
-    """What the backend loads for a list entry: a URL, ``ion://<id>`` or the globe."""
+def item_url(item, post: bool = False) -> str:
+    """What the backend loads for a list entry: a URL, ``ion://<id>`` or the globe. ``post``: on Start, the
+    manifest file of a 3dtiled aggregate is sent to its server (ValueError says why it could not)."""
     kind = getattr(item, "kind", "TILESET")
     if kind == "GLOBE":
         return GLOBE_URL
+    if kind == "AGGREGATE":
+        from .. import aggregate
+        from ..io import addon_pref
+        value = item.url.strip()
+        if value.startswith("//") and not value.startswith("///"):
+            value = bpy.path.abspath(value)
+        server = addon_pref("aggregate_server", aggregate.DEFAULT_SERVER)
+        u = aggregate.tileset_url(server, value, item.agg_params, post=post)
+        return u or (f"aggregate:{value}" if value else "")   # not sent yet: Start sends it
     if kind == "ION":
         return f"ion://{item.ion_asset_id}" if item.ion_asset_id > 0 else ""
     return resolve_url(item.url)
@@ -969,9 +980,15 @@ class OGC3D_OT_StartStream(Operator):
 def _start_item(scene, props, item) -> dict:
     """Create and start the stream for one list entry; registers it in
     ``_state`` (with ``error`` set when the start failed)."""
-    url = item_url(item)
+    failed = ""
+    try:
+        url = item_url(item, post=True)
+    except Exception as e:                           # noqa: BLE001
+        url, failed = item_url(item), str(e)
     default_name = ("WGS84 globe" if url == GLOBE_URL else
-                    f"ion {url[6:]}" if url.startswith("ion://") else _short_label(url))
+                    f"ion {url[6:]}" if url.startswith("ion://") else
+                    os.path.splitext(os.path.basename(item.url.strip().replace("\\", "/")))[0][:40] or "aggregate"
+                    if item.kind == "AGGREGATE" else _short_label(url))
     st = _new_stream(_item_key(item), item.name or default_name,
                      url, item_token(item, props), effective_sse(props, item))
     st["overlays"] = _overlay_specs(item)
@@ -979,6 +996,8 @@ def _start_item(scene, props, item) -> dict:
     if item.use_clipping:
         st["clip_dirty_t"] = 0.0          # masks once the scene origin is known
     try:
+        if failed:
+            raise RuntimeError(failed)
         _start_stream(scene, props, st, _state["choice"], _state["cache"])
         if st["name"] != item.name:
             item.name = st["name"]
@@ -1444,24 +1463,73 @@ def _teardown_stream(st, remove_objects: bool):
             bpy.data.collections.remove(coll)
 
 
-class OGC3D_OT_BlendMatchHeights(Operator):
-    """Move every dataset up or down onto this terrain, once: its lowest heights are compared with the terrain's where they overlap, and its root Empty moves by the median difference. Run it before judging the fades. Undo, or the Empty's location, brings it back"""
-    bl_idname = "ogc3dtiles.blend_match_heights"
-    bl_label = "Match Dataset Heights to Terrain"
+class OGC3D_OT_MatchHeights(Operator):
+    """Move the selected tileset up or down onto the terrain under it, once: its lowest heights are compared with the terrain's where they overlap, and its Empty moves by the median difference. In a tileset of tilesets each dataset with tiles shown moves by its own amount. On a terrain entry, every other tileset moves onto it. Any terrain, globe with terrain, Google or Bing 3D Tiles entry that streams is the terrain. Undo, or the Empty's location, brings it back"""
+    bl_idname = "ogc3dtiles.match_heights"
+    bl_label = "Match Height to Terrain"
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
-        from .. import blend
+        from .. import blend, height_match
+        props = context.scene.ogc3dtiles
+        if not 0 <= props.active_tileset < len(props.tilesets):
+            return {"CANCELLED"}
+        it = props.tilesets[props.active_tileset]
+        on_terrain = it.use_blend or blend.is_background(it, _state["streams"].get(it.uid))
         try:
-            moved = blend.match_heights(context.scene.ogc3dtiles, _state["streams"])
+            moved = (height_match.match(props, _state["streams"], terrain=it) if on_terrain
+                     else height_match.match(props, _state["streams"], datasets=[it]))
         except RuntimeError as e:
             self.report({"WARNING"}, str(e))
             return {"CANCELLED"}
         if not moved:
-            self.report({"WARNING"}, "No dataset shown over the terrain")
+            self.report({"WARNING"}, "No tile of a dataset is shown: Start streaming and wait for the tiles")
             return {"CANCELLED"}
-        self.report({"INFO"}, "; ".join(f"{n[:24]}: {dz:+.1f} m" if dz is not None else f"{n[:24]}: no terrain under it"
-                                        for n, dz in moved))
+        _state["height_match"] = [(n, dz) for n, dz in moved]
+        done = [(n, dz) for n, dz in moved if dz is not None]
+        text = "; ".join(f"{n[:24]}: {dz:+.1f} m" for n, dz in done[:6])
+        if len(done) > 6:
+            text += f"; and {len(done) - 6} more (see the console)"
+            print("[3DTiles] Match Height to Terrain:", "; ".join(f"{n}: {dz:+.2f} m" for n, dz in done))
+        if len(done) < len(moved):
+            text += f"{'; ' if text else ''}{len(moved) - len(done)} with no terrain under their tiles"
+        self.report({"INFO"}, text)
+        return {"FINISHED"}
+
+
+class OGC3D_OT_ColorMatch(Operator):
+    """Fill Gain and Gamma so this tileset's colors match the tileset chosen in Match to: both are sampled where they overlap, seen from above, at the level of detail shown. Both have to be streaming"""
+    bl_idname = "ogc3dtiles.color_match"
+    bl_label = "Match Colors"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        from .. import color_correct
+        props = context.scene.ogc3dtiles
+        if not 0 <= props.active_tileset < len(props.tilesets):
+            return {"CANCELLED"}
+        it = props.tilesets[props.active_tileset]
+        try:
+            n = color_correct.match(props, _state["streams"], it)
+        except RuntimeError as e:
+            self.report({"WARNING"}, str(e))
+            return {"CANCELLED"}
+        self.report({"INFO"}, f"Matched over {n} ground cells: gain " + " ".join(f"{v:.2f}" for v in it.color_gain)
+                    + ", gamma " + " ".join(f"{v:.2f}" for v in it.color_gamma))
+        return {"FINISHED"}
+
+
+class OGC3D_OT_ColorReset(Operator):
+    """Gain, gamma, exposure, saturation and contrast back to no correction"""
+    bl_idname = "ogc3dtiles.color_reset"
+    bl_label = "Reset"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        from .. import color_correct
+        props = context.scene.ogc3dtiles
+        if 0 <= props.active_tileset < len(props.tilesets):
+            color_correct.reset(props.tilesets[props.active_tileset])
         return {"FINISHED"}
 
 
@@ -1603,6 +1671,11 @@ def stream_tick(context) -> bool:
             changed |= blend.tick(scene, props, _state["streams"], now)
         except Exception as e:                       # noqa: BLE001
             print(f"[3DTiles] terrain blending: {e}")
+        try:
+            from .. import color_correct
+            changed |= color_correct.tick(props, _state["streams"], now)
+        except Exception as e:                       # noqa: BLE001
+            print(f"[3DTiles] color correction: {e}")
     # kept in _state, not in scene properties: a scene property write tags the
     # scene for update and restarts the Cycles viewport render every tick
     _tick_cap(props, now, pending)
@@ -2393,6 +2466,17 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
             b.prop(it, "kind", text="Type")
             if it.kind == "GLOBE":
                 b.label(text="Bare WGS84 ellipsoid: add raster overlays below", icon="WORLD")
+            elif it.kind == "AGGREGATE":
+                row = b.row(align=True)
+                row.prop(it, "url", text="Set")
+                row.operator("ogc3dtiles.tileset_browse", text="", icon="FILEBROWSER")
+                b.prop(it, "agg_params")
+                from .. import aggregate
+                value = it.url.strip()
+                if value and not aggregate.is_set_name(value):
+                    b.label(text="Manifest file: sent to the 3dtiled server on Start", icon="INFO")
+                elif not value:
+                    b.label(text="A set name (opendata), or a manifest file", icon="INFO")
             elif it.kind == "ION":
                 b.prop(it, "ion_asset_id", text="Asset id")
                 b.prop(it, "ion_token", text="Ion Token")
@@ -2418,11 +2502,14 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
                     b.label(text=f"Root: {root.name}", icon="EMPTY_AXIS")
                 if st.get("error"):
                     b.label(text=st["error"][:60], icon="ERROR")
+            from .. import blend
+            background = blend.is_background(it, st)
+            if st is not None and st.get("backend") is not None and not background and not it.use_blend:
+                b.operator("ogc3dtiles.match_heights", icon="TRIA_DOWN_BAR")
             # per tileset, each in its own box so they read as things to switch on
             b = layout.box()            # raster overlays draped on this tileset (cesium-native backend)
-            b.prop(it, "use_overlays", text=(f"Raster overlays ({len(it.overlays)})"
-                                             if it.overlays else "Raster overlays"))
-            if it.use_overlays:
+            if _fold_header(b, it, "use_overlays", "show_overlays",
+                            f"Raster overlays ({len(it.overlays)})" if it.overlays else "Raster overlays"):
                 _draw_overlays(b, it, st)
             n_ds = len(st.get("datasets") or ()) if st is not None else 0
             from ..tileset.feature_meta import TILESET_METADATA
@@ -2438,19 +2525,54 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
                                 text=f"Markers for all {n_all} datasets (beta)" if n_all
                                 else "Markers for every dataset (beta)")
             b = layout.box()
-            b.prop(it, "use_clipping", text=(f"Clipping ({len(it.clip_polygons)})"
-                                             if it.clip_polygons else "Clipping"))
-            if it.use_clipping:
+            if _fold_header(b, it, "use_clipping", "show_clipping",
+                            f"Clipping ({len(it.clip_polygons)})" if it.clip_polygons else "Clipping"):
                 _draw_clipping(b, it, st, props)
-            from .. import blend
-            if blend.enabled() and (it.use_blend or blend.is_background(it, st)):
+            b = layout.box()
+            if _fold_header(b, it, "use_color", "show_color", "Color correction"):
+                _draw_color(b, it, st, props)
+            if blend.enabled() and (it.use_blend or background):
                 b = layout.box()
-                b.prop(it, "use_blend", text="Blend datasets into this terrain (beta)")
-                if it.use_blend:
+                if _fold_header(b, it, "use_blend", "show_blend", "Terrain blending (beta)"):
                     _draw_blend(b, it, st, props)
         else:
             layout.prop(props, "tileset_url", text="URL")
             layout.prop(props, "cesium_ion_token", text="Ion Token")
+
+
+def _fold_header(b, it, use: str, show: str, text: str) -> bool:
+    """The first row of a per-tileset box: its checkbox and, once ticked, an arrow that folds the box.
+    True when the box's content is to be drawn."""
+    row = b.row(align=True)
+    row.prop(it, use, text=text)
+    if not getattr(it, use):
+        return False
+    row.prop(it, show, text="", icon="TRIA_DOWN" if getattr(it, show) else "TRIA_LEFT", emboss=False)
+    return getattr(it, show)
+
+
+def _draw_color(b, it, st, props) -> None:
+    from .. import color_correct
+    b.prop(it, "color_exposure")
+    col = b.column(align=True)
+    row = col.row(align=True)
+    row.prop(it, "color_gain", text="")
+    row = col.row(align=True)
+    row.prop(it, "color_gamma", text="")
+    row = b.row(align=True)
+    row.label(text="Gain (top) and Gamma: R, G, B")
+    _group_button(row, color_correct.group_name(it))
+    row = b.row(align=True)
+    row.prop(it, "color_saturation")
+    row.prop(it, "color_contrast")
+    b.prop_search(it, "color_ref", props, "tilesets", text="Match to", icon="IMAGE_REFERENCE")
+    row = b.row(align=True)
+    sub = row.row(align=True)
+    sub.enabled = bool(it.color_ref) and it.color_ref != it.name
+    sub.operator("ogc3dtiles.color_match", icon="COLOR")
+    row.operator("ogc3dtiles.color_reset", icon="LOOP_BACK", text="")
+    if st is None:
+        b.label(text="Applies while streaming", icon="INFO")
 
 
 def _draw_overlays(b, it, st) -> None:
@@ -2539,7 +2661,7 @@ def _draw_blend(b, it, st, props) -> None:
     root = bpy.data.objects.get(st["root_obj"] or "") if st is not None else None
     if root is not None:
         b.prop(root, "location", index=2, text="Height offset")
-    b.operator("ogc3dtiles.blend_match_heights", icon="TRIA_DOWN_BAR")
+    b.operator("ogc3dtiles.match_heights", icon="TRIA_DOWN_BAR", text="Match Dataset Heights to Terrain")
     if st is None:
         b.label(text="Applies while streaming", icon="INFO")
     elif blend._state["info"]:
@@ -3179,7 +3301,9 @@ _classes = [
     OGC3D_OT_PlacePick,
     OGC3D_OT_RelationLines,
     OGC3D_OT_ClearTiles,
-    OGC3D_OT_BlendMatchHeights,
+    OGC3D_OT_MatchHeights,
+    OGC3D_OT_ColorMatch,
+    OGC3D_OT_ColorReset,
     OGC3D_OT_ClearCache,
     OGC3D_OT_ModalStream,
     OGC3D_UL_Tilesets,

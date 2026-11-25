@@ -53,13 +53,14 @@ fade into the terrain.
 
 1. Add the dataset and the background to the list: a *WGS84 globe*, a *Quantized-mesh terrain*, Cesium
    World Terrain, Google Photorealistic 3D Tiles or Bing.
-2. Select the background. Under *Clipping*, tick **Blend datasets into this terrain (beta)**. The box only
+2. Select the background. Under *Color correction*, tick **Terrain blending (beta)**. The box only
    shows on an entry of type *WGS84 globe* or *Quantized-mesh terrain*, and on any tileset whose root
    volume is more than 1000 km in radius once it streams (Google, Bing, Cesium World Terrain). A Cesium
-   ion entry shows it before the first Start too, since it may be a terrain.
+   ion entry shows it before the first Start too, since it may be a terrain. A tileset of tilesets is never
+   a background, however far apart its datasets are.
 3. Start. Every other tileset that is shown blends into it. A tileset whose eye is closed does not.
 
-![The settings on a cut across a dataset's border: the dataset fades in over Dataset fade, the terrain is whole over Terrain inset and fades out over Terrain fade](/img/terrain_blend_settings.png)
+![The settings on a cut across a dataset's border. Seen from above: the dataset fades in over Dataset fade, the terrain is whole over Terrain inset and fades out over Terrain fade. Then the two opacities against the distance inside the border, and a cut seen from the side with Keep terrain below](/img/terrain_blend_settings.png)
 
 | Setting | What it does |
 |---|---|
@@ -69,7 +70,7 @@ fade into the terrain.
 | **Terrain fade** | Metres over which the terrain fades out past the inset. 0 is a sharp cut. |
 | **Keep terrain below** | On by default. The terrain stays wherever it lies under the dataset, and only the terrain that would poke through it goes. It is the ground seen between the points of a sparse cloud, and under a dataset that floats. The number beside it is the margin: how far under the dataset's lowest point the terrain has to be. Raise it if terrain still shows through the dataset's ground. |
 | **Height offset** | The background's own *Location Z*: raises or lowers it. Rarely needed. |
-| **Match Dataset Heights to Terrain** | A button. Moves every dataset up or down onto this terrain, once: the dataset's lowest heights are compared with the terrain's where they overlap, and its root Empty moves by the median difference. Run it before judging the fades. Nothing holds the dataset there afterwards: Undo, or the Empty's location, brings it back. |
+| **Match Dataset Heights to Terrain** | A button. Moves every dataset up or down onto this terrain, once: the dataset's lowest heights are compared with the terrain's where they overlap, and its Empty moves by the median difference. Run it before judging the fades. The same button is on every dataset entry as *Match Height to Terrain*, with or without blending: see [Match Height to Terrain](/features/height-references#match-height-to-terrain). |
 
 The distances are one setting for the scene, and they are live.
 
@@ -107,8 +108,8 @@ Limits, for now:
   a cloud has such points the terrain is cut although it would sit under the real ground.
 - Gaussian splats cut the terrain but do not fade themselves.
 - A dataset cannot yet blend into another dataset (a square inside a city model inside Google).
-- Datasets moved by their own Empty in a tileset of tilesets need a Stop and Start to redraw the image,
-  and *Match Dataset Heights to Terrain* moves such a tileset as one piece.
+- Datasets moved by hand through their own Empty in a tileset of tilesets need a Stop and Start to redraw
+  the image. *Match Height to Terrain* redraws it itself.
 
 ## Preferences
 

@@ -56,6 +56,9 @@ one, share a team one on the NAS: the preferences take several files, separated 
 
 A .blend keeps the URL of an entry once added, so it still opens if the library changes.
 
+The picker also lists a few public entries that need no library file, after yours: the open-data
+[3dtiled aggregate sets](/features/several-tilesets#a-3dtiled-aggregate-set).
+
 A library can also hold raster overlay presets, in an `overlays` list next to `tilesets`. They show
 in the bookmark menu of the overlay list: that is the place for overlays that need a key.
 

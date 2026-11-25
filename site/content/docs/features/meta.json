@@ -6,6 +6,7 @@
     "lod-streaming",
     "raster-overlays",
     "clipping",
+    "height-references",
     "---Tileset types---",
     "meshes",
     "point-clouds",

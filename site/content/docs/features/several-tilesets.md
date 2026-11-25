@@ -14,6 +14,7 @@ same camera: a drone scan inside the city model around it, a point cloud over a 
 | **Cesium ion** | An asset id and your access token. The token is only sent to Cesium ion. |
 | **WGS84 globe** | A bare globe to drape imagery on. Its *Raster overlays* box is ticked for you. |
 | **Quantized-mesh terrain** | The `layer.json` URL of a terrain server. For Cesium World Terrain, use a Cesium ion entry. |
+| **3dtiled aggregate** | Many datasets as one [tileset of tilesets](#a-3dtiled-aggregate-set), built by a 3dtiled server from a set name or a manifest file. |
 
 Ion, globe and terrain entries need the cesium-native backend.
 
@@ -29,6 +30,11 @@ Ion, globe and terrain entries need the cesium-native backend.
 - Editing the URL of a running entry restarts it with the new URL.
 - Each tileset has a root Empty, `3D Tiles · <name>`, and a collection, `Tiles · <name>`. Move, rotate
   or scale the Empty to place the tileset; streaming follows.
+- Under the entry's fields, each of *Raster overlays*, *Clipping*, *Color correction* and *Terrain blending
+  (beta)* is a box with a checkbox. Once ticked, the arrow at the right of its first row folds the box
+  without switching it off.
+- **Match Height to Terrain** and **Color correction** are on
+  [Heights and colors between tilesets](/features/height-references).
 
 ## A tileset of tilesets
 
@@ -82,6 +88,39 @@ a sub-tileset of a very large aggregate get no marker yet. The grouping tiles ge
   loaded from then on.
 - A tileset that pages its own hierarchy through external files, as Google Photorealistic 3D Tiles
   does, has no datasets and gets no extra Empty.
+
+## A 3dtiled aggregate set
+
+[3dtiled](https://github.com/Iconem/3dtiled-to-3dtiles) is a tile server that can build such a tileset of tilesets on
+request, from a list of datasets: 3D Tiles, and Potree or COPC point clouds it converts as they stream. An
+entry of type **3dtiled aggregate** asks it for one. Its **Set** field takes either:
+
+- **A set name** the server knows. `opendata` is public: ten photogrammetry meshes of cities on four
+  continents. `open` is every open dataset the server lists, 607 of them. Both are in the library picker
+  (the bookmark button), under *3dtiled aggregate sets*, with no library file needed.
+- **A manifest file**: a JSON list of datasets, kept wherever the team keeps it, a NAS share for one.
+
+  ```json
+  {"label": "Our sites",
+   "entries": [
+     {"url": "https://example.org/a/cloud.js", "format": "potree", "name": "Site A, 2024"},
+     {"url": "https://example.org/b/tileset.json", "format": "3dtiles", "name": "Site B"}]}
+  ```
+
+  `format` is `potree`, `copc` or `3dtiles`. On Start the file is sent to the server, which answers with a
+  set name made of a hash of the entries. The server never lists that set: whoever has the file can open
+  it, nobody else can guess it. Sending the same file again gives the same set, so the file is the
+  up-to-date source: edit it, and a running entry restarts on the new list. The server keeps a posted set a
+  week after its last use; Start sends it again in any case.
+
+![An entry of type 3dtiled aggregate whose set is a manifest file on a network share](/img/aggregate_entry.png)
+
+**Parameters** is more of the server's query, as in a URL: `nest=geodetic` (the default here) or
+`nest=mercator` choose how the datasets are grouped, `only=`, `exclude=` and `format=` choose among them.
+
+The server is *3dtiled Server* in the add-on preferences, `https://3dtiled.iconem.com` by default. A
+manifest's links are sent to that server and to no one else, and are not kept in the add-on or in the
+.blend, which holds the file's path. A library entry of this type holds the path too.
 
 ## Level of detail
 

@@ -116,6 +116,12 @@ class OGC3DTilesPreferences(AddonPreferences):
                     "of a searched place (default: AWS open-data Terrain Tiles)",
         default="https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png",
     )
+    aggregate_server: StringProperty(
+        name="3dtiled server",
+        description="The 3dtiled server that builds the tileset of entries of type 3dtiled aggregate. A "
+                    "manifest file is sent to it on Start: it holds your share links",
+        default="https://3dtiled.iconem.com",
+    )
     geoid_url: StringProperty(
         name="EGM96 geoid grid",
         description="WW15MGH.DAC (2 MB, downloaded once into the cache): sea level to "
@@ -172,7 +178,7 @@ class OGC3DTilesPreferences(AddonPreferences):
         default=False)
     beta_terrain_blend: BoolProperty(
         name="Terrain blending",
-        description="A 'Blend datasets into this terrain' box on globe, terrain, Google and Bing entries: the "
+        description="A 'Terrain blending' box on globe, terrain, Google and Bing entries: the "
                     "terrain becomes transparent under the other tilesets, and their borders fade into it",
         default=False)
     beta_material_controls: BoolProperty(
@@ -270,6 +276,7 @@ class OGC3DTilesPreferences(AddonPreferences):
         col.prop(self, "photon_url", text="Geocoder")
         col.prop(self, "terrain_tiles_url", text="Terrain Tiles")
         col.prop(self, "geoid_url", text="Geoid Grid")
+        boxp.prop(self, "aggregate_server", text="3dtiled Server")
 
         # ── Beta features ──────────────────────────────────────────────────────
         boxb = layout.box()

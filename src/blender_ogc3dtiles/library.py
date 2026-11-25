@@ -16,6 +16,10 @@ add-on or its repository. Several files can be listed in the preferences
        {"name": "Google satellite", "kind": "GOOGLE", "key": "...", "layer": "satellite"}
      ]}
 
+An entry of ``kind`` AGGREGATE is a 3dtiled aggregate set: its ``url`` is a set name (``opendata``) or the
+path of a manifest file, and ``agg_params`` more of the server's query. The public sets in BUILTIN_TILESETS
+are offered next to the libraries' entries.
+
 The top-level ``overlays`` are raster overlay presets, offered next to the
 key-less ones below by the overlay list's library button.
 
@@ -31,7 +35,7 @@ import tempfile
 
 VERSION = 1
 ITEM_FIELDS = ("name", "kind", "url", "ion_asset_id", "ion_token", "use_own_sse",
-               "max_sse", "use_overlays")
+               "max_sse", "use_overlays", "agg_params")
 OVERLAY_FIELDS = ("name", "kind", "url", "key", "layer", "style", "matrix_set",
                   "image_format", "min_level", "max_level", "detail_px", "enabled", "alpha")
 
@@ -48,6 +52,16 @@ BUILTIN_OVERLAYS = (
     {"name": "IGN orthophotos, France (WMS)", "kind": "WMS", "url": "https://data.geopf.fr/wms-r",
      "layer": "ORTHOIMAGERY.ORTHOPHOTOS", "image_format": "image/jpeg", "max_level": 19},
 )
+
+BUILTIN_TILESETS = (
+    {"name": "3dtiled open data (10 city meshes)", "kind": "AGGREGATE", "url": "opendata",
+     "agg_params": "nest=geodetic", "group": "3dtiled aggregate sets", "content": "MESH",
+     "notes": "Public photogrammetry meshes of cities on four continents, as one tileset of tilesets"},
+    {"name": "3dtiled open data, everything (607 datasets)", "kind": "AGGREGATE", "url": "open",
+     "agg_params": "nest=geodetic", "group": "3dtiled aggregate sets",
+     "notes": "Every open dataset the server lists: city meshes, national LiDAR point clouds, heritage scans, splats"},
+)
+BUILTIN_PATH = "Built in"
 
 CONTENT_WORDS = (("VOXELS", ("voxel",)),
                  ("SPLATS", ("splat", "3dgs", "spz")),
@@ -127,6 +141,11 @@ def read_all(paths) -> list:
         except (OSError, ValueError) as exc:
             out.append((p, {"error": str(exc)}))
     return out
+
+
+def builtin_rows() -> list:
+    """The public entries every install offers, as read_all() rows."""
+    return [(BUILTIN_PATH, dict(e)) for e in BUILTIN_TILESETS]
 
 
 def entry_from_item(item) -> dict:

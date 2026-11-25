@@ -8,6 +8,23 @@ main branch and not in a release zip yet.
 
 ## Unreleased
 
+- **Match Height to Terrain, without terrain blending.** A button on every dataset entry that streams: the
+  tileset moves up or down onto the terrain, Google or Bing 3D Tiles under it, by the median difference of
+  their lowest heights. In a tileset of tilesets each dataset with tiles shown moves by its own amount. See
+  [Heights and colors between tilesets](/features/height-references), which also has a diagram of the height
+  references (ellipsoid, geoid, national datums) and what each background measured.
+- **Color correction per tileset, and Match Colors.** A box under *Clipping*: exposure, gain and gamma per
+  channel, saturation, contrast, in the tile materials. *Match Colors* fills gain and gamma from another
+  tileset, sampled where the two overlap.
+- **Entry type 3dtiled aggregate.** A set name of a 3dtiled server, or a manifest file that is sent to it on
+  Start and answered with a set only the file's holders can open. The public open-data sets are in the
+  library picker without a library file. See
+  [A 3dtiled aggregate set](/features/several-tilesets#a-3dtiled-aggregate-set).
+- **The per-tileset boxes fold.** *Raster overlays*, *Clipping*, *Color correction* and *Terrain blending
+  (beta)* (renamed from *Blend datasets into this terrain*) get an arrow once ticked.
+- Terrain blending: the settings diagram redrawn, with the two opacities against the distance.
+- Fixed: a tileset of tilesets whose datasets span continents was taken for a background by terrain blending,
+  so it got the *Terrain blending* box and did not blend into a terrain.
 - **Terrain blending (beta): distances from the dataset's size, and Match Dataset Heights to Terrain.** The
   three distances follow the smallest dataset shown unless you untick *Distances from the dataset's size*. A
   button moves every dataset up or down onto the terrain, once. The coverage image follows the tiles at most

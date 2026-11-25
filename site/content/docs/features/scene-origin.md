@@ -66,6 +66,10 @@ by *Search place*:
 - the **geoid grid** converts that height above sea level into the height above the ellipsoid, which
   is what 3D Tiles use.
 
+The geoid is not applied to any tileset: each is shown where it says it is. Which sources count heights
+from the ellipsoid and which from sea level is on
+[Heights and colors between tilesets](/features/height-references#height-references).
+
 They are not terrain to display. To show terrain, add a *Quantized-mesh terrain* or a Cesium ion
 entry: see [Raster overlays](/features/raster-overlays).
 

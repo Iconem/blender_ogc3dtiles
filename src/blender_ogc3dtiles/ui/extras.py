@@ -214,9 +214,7 @@ class OGC3D_OT_LibraryAdd(Operator):
     query: StringProperty(name="Search", options={"TEXTEDIT_UPDATE", "SKIP_SAVE"})
 
     def invoke(self, context, event):
-        if not _library_paths():
-            return _no_library(self, context)
-        _lib_rows[:] = library.read_all(_library_paths())
+        _lib_rows[:] = library.read_all(_library_paths()) + library.builtin_rows()   # the public sets last
         rows = context.window_manager.ogc3d_lib_rows
         rows.clear()
         for i in range(len(_lib_rows)):

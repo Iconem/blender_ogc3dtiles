@@ -1,0 +1,393 @@
+"""Color correction per tileset, and Match Colors.
+
+A tileset with *Color correction* ticked gets one small shader group of its own, ``OGC3D Color <uid>``, put
+in every tile material between the tile's color (its texture, or the point colors) and what uses it:
+
+    color → ^ Gamma (per channel) → × Gain (per channel) × 2^Exposure → Saturation → Contrast
+
+The numbers are nodes of that group: moving a slider recompiles nothing. It sits before the metadata
+colors (*Color tiles by*), which are not corrected.
+
+*Match Colors* fills Gain and Gamma from another tileset: both are sampled where they overlap, from above,
+one mean color per ground cell each (color_match fits the numbers). The samples are the raw colors of the
+tiles shown: the vertices of a mesh looked up in its texture, or the point colors.
+"""
+from __future__ import annotations
+
+import time
+
+import bpy
+import numpy as np
+
+from . import blend_raster as br
+from . import color_match as cm
+
+NODE = "OGC3D Color"
+MARK = "ogc3d_color"
+SCAN_PERIOD_S = 0.5
+RECHECK_PERIOD_S = 3.0      # materials other features rebuilt (shared shader nodes) get the node again
+BUDGET_S = 0.006
+SAMPLES_PER_TILE = 3000
+MAX_TILES = 600
+MAX_PIXELS = 4096 * 4096
+
+_state = {"done": {}, "t_scan": 0.0, "t_recheck": 0.0, "vis": {}, "strip": set()}
+
+
+def group_name(item) -> str:
+    return f"{NODE} {item.uid[:8]}"
+
+
+def _value(ng, name, v):
+    n = ng.nodes.get(name)
+    if n is None:
+        n = ng.nodes.new("ShaderNodeValue")
+        n.name = n.label = name
+    n.outputs[0].default_value = float(v)
+    return n
+
+
+def _triple(ng, name, v):
+    n = ng.nodes.get(name)
+    if n is None:
+        n = ng.nodes.new("ShaderNodeCombineXYZ")
+        n.name = n.label = name
+    for i in range(3):
+        n.inputs[i].default_value = float(v[i])
+    return n
+
+
+def ensure_group(item):
+    name = group_name(item)
+    ng = bpy.data.node_groups.get(name)
+    if ng is not None and ng.nodes.get("Contrast") is not None:
+        return ng
+    ng = ng or bpy.data.node_groups.new(name, "ShaderNodeTree")
+    ng.nodes.clear()
+    ng.interface.clear()
+    ng.interface.new_socket("Color", in_out="INPUT", socket_type="NodeSocketColor")
+    ng.interface.new_socket("Color", in_out="OUTPUT", socket_type="NodeSocketColor")
+    N, L = ng.nodes.new, ng.links.new
+    gin, gout = N("NodeGroupInput"), N("NodeGroupOutput")
+    gamma, gain = _triple(ng, "Gamma", (1, 1, 1)), _triple(ng, "Gain", (1, 1, 1))
+    sep_c, sep_gamma, sep_gain = N("ShaderNodeSeparateColor"), N("ShaderNodeSeparateXYZ"), N("ShaderNodeSeparateXYZ")
+    L(gin.outputs[0], sep_c.inputs[0])
+    L(gamma.outputs[0], sep_gamma.inputs[0])
+    L(gain.outputs[0], sep_gain.inputs[0])
+    exposure = _value(ng, "Exposure Gain", 1.0)
+    comb = N("ShaderNodeCombineColor")
+    for i in range(3):
+        pos = N("ShaderNodeMath")                    # a negative color has no power
+        pos.operation = "MAXIMUM"
+        pos.inputs[1].default_value = 0.0
+        L(sep_c.outputs[i], pos.inputs[0])
+        pw = N("ShaderNodeMath")
+        pw.operation = "POWER"
+        L(pos.outputs[0], pw.inputs[0])
+        L(sep_gamma.outputs[i], pw.inputs[1])
+        mul = N("ShaderNodeMath")
+        mul.operation = "MULTIPLY"
+        L(pw.outputs[0], mul.inputs[0])
+        L(sep_gain.outputs[i], mul.inputs[1])
+        ex = N("ShaderNodeMath")
+        ex.operation = "MULTIPLY"
+        L(mul.outputs[0], ex.inputs[0])
+        L(exposure.outputs[0], ex.inputs[1])
+        L(ex.outputs[0], comb.inputs[i])
+    hsv = N("ShaderNodeHueSaturation")
+    L(comb.outputs[0], hsv.inputs["Color"])
+    L(_value(ng, "Saturation", 1.0).outputs[0], hsv.inputs["Saturation"])
+    bc = N("ShaderNodeBrightContrast")
+    L(hsv.outputs[0], bc.inputs["Color"])
+    L(_value(ng, "Contrast", 0.0).outputs[0], bc.inputs["Contrast"])
+    L(bc.outputs[0], gout.inputs[0])
+    from .node_layout import arrange
+    arrange(ng)
+    set_params(item)
+    return ng
+
+
+def set_params(item) -> None:
+    ng = bpy.data.node_groups.get(group_name(item))
+    if ng is None or ng.nodes.get("Contrast") is None:
+        return
+    _triple(ng, "Gamma", item.color_gamma)
+    _triple(ng, "Gain", item.color_gain)
+    _value(ng, "Exposure Gain", 2.0 ** item.color_exposure)
+    _value(ng, "Saturation", item.color_saturation)
+    _value(ng, "Contrast", item.color_contrast)
+
+
+# ── tile materials ───────────────────────────────────────────────────────────
+def _ours(nt):
+    return [n for n in nt.nodes if n.type == "GROUP" and n.get(MARK)]
+
+
+def _targets(mat) -> list:
+    """The inputs the tile's own color reaches: behind the metadata colors, which stay as they are."""
+    from .materials import META_NODE, _color_target, _emission_target
+    out = []
+    for t in (_color_target(mat), _emission_target(mat)):
+        while t is not None and t.links and t.links[0].from_node.name.startswith(META_NODE):
+            t = t.links[0].from_node.inputs[0]
+        if t is not None and t.links:
+            out.append(t)
+    return out
+
+
+def _remove(nt) -> bool:
+    found = False
+    for n in _ours(nt):
+        src = n.inputs[0].links[0].from_socket if n.inputs[0].links else None
+        dst = [lk.to_socket for lk in n.outputs[0].links]
+        nt.nodes.remove(n)
+        if src is not None:
+            for s in dst:
+                nt.links.new(src, s)
+        found = True
+    return found
+
+
+def apply_material(mat, ng) -> bool:
+    """Put the tileset's color group in a tile material (``ng`` None takes it out). True when it changed."""
+    if mat is None or mat.node_tree is None:
+        return False
+    nt = mat.node_tree
+    if ng is None:
+        return _remove(nt)
+    changed = False
+    for target in _targets(mat):
+        src_node = target.links[0].from_node
+        if src_node.type == "GROUP" and src_node.get(MARK):
+            if src_node.node_tree != ng:
+                src_node.node_tree = ng
+                changed = True
+            continue
+        src = target.links[0].from_socket
+        node = next((lk.to_node for lk in src.links if lk.to_node.type == "GROUP" and lk.to_node.get(MARK)), None)
+        if node is None:
+            node = nt.nodes.new("ShaderNodeGroup")
+            node.node_tree = ng
+            node.name = node.label = NODE
+            node[MARK] = True
+            node.location = (target.node.location.x - 220, target.node.location.y + 420)
+            nt.links.new(src, node.inputs[0])
+        nt.links.new(node.outputs[0], target)
+        changed = True
+    return changed
+
+
+def _stream_objects(st, visible_only=True):
+    objs = bpy.data.objects
+    for rec in st["tiles"].values():
+        if visible_only and not rec.visible:
+            continue
+        o = objs.get(rec.holder)
+        if o is None:
+            continue
+        if o.type == "MESH":
+            yield o
+        else:
+            yield from (c for c in o.children if c.type == "MESH")
+
+
+def _strip(st) -> None:
+    for o in _stream_objects(st, visible_only=False):
+        for m in o.data.materials:
+            apply_material(m, None)
+
+
+def tick(props, streams, now) -> bool:
+    """One step, from the streaming tick: the tiles that came in get their tileset's group."""
+    changed = False
+    for uid in list(_state["strip"]):
+        _state["strip"].discard(uid)
+        _state["done"].pop(uid, None)
+        st = streams.get(uid)
+        if st is not None and st.get("backend") is not None:
+            _strip(st)
+            changed = True
+    items = [it for it in props.tilesets if it.use_color and it.uid and streams.get(it.uid) is not None
+             and streams[it.uid].get("backend") is not None]
+    if not items:
+        return changed
+    if now - _state["t_recheck"] >= RECHECK_PERIOD_S:
+        _state["t_recheck"] = now
+        _state["done"].clear()
+    if now - _state["t_scan"] >= SCAN_PERIOD_S or changed:
+        _state["t_scan"] = now
+        _state["vis"] = {it.uid: [o.name for o in _stream_objects(streams[it.uid])] for it in items}
+    t0 = time.perf_counter()
+    objs = bpy.data.objects
+    for it in items:
+        ng = None
+        done = _state["done"].setdefault(it.uid, set())
+        for name in _state["vis"].get(it.uid, ()):
+            if name in done:
+                continue
+            o = objs.get(name)
+            if o is not None and o.data is not None:
+                ng = ng or ensure_group(it)
+                for m in o.data.materials:
+                    changed |= apply_material(m, ng)
+            done.add(name)
+            if time.perf_counter() - t0 > BUDGET_S:
+                return True
+    return changed
+
+
+def on_change(item, context) -> None:
+    """The checkbox or a slider of a tileset's color correction."""
+    try:
+        if item.use_color:
+            ensure_group(item)
+            set_params(item)
+            _state["done"].pop(item.uid, None)
+        else:
+            _state["strip"].add(item.uid)
+    except Exception as e:                           # noqa: BLE001
+        print(f"[3DTiles] color correction: {e}")
+
+
+def reset(item) -> None:
+    item.color_gain = (1.0, 1.0, 1.0)
+    item.color_gamma = (1.0, 1.0, 1.0)
+    item.color_exposure = 0.0
+    item.color_saturation = 1.0
+    item.color_contrast = 0.0
+
+
+# ── Match Colors ─────────────────────────────────────────────────────────────
+def _texture(mat):
+    """(image, UV map name or "") a tile material takes its color from."""
+    if mat is None or mat.node_tree is None:
+        return None, ""
+    for n in mat.node_tree.nodes:
+        img = n.image if n.type == "TEX_IMAGE" else None
+        if img is None or img.colorspace_settings.name == "Non-Color" or img.channels < 3 or not n.outputs["Color"].links:
+            continue
+        uv = n.inputs["Vector"].links[0].from_node if n.inputs["Vector"].links else None
+        return img, (uv.uv_map if uv is not None and uv.type == "UVMAP" else "")
+    return None, ""
+
+
+def _pixels(img, cache):
+    if img.name not in cache:
+        w, h = img.size
+        px = None
+        if w and h and w * h <= MAX_PIXELS:
+            buf = np.empty(w * h * img.channels, np.float32)
+            img.pixels.foreach_get(buf)
+            px = buf.reshape(h, w, img.channels)
+        cache[img.name] = px
+    return cache[img.name]
+
+
+def tile_samples(o, to_frame, rng, cache):
+    """(positions N x 3 in the frame, linear colors N x 3) of some of a tile's vertices; None without colors."""
+    me = o.data
+    m = to_frame @ np.array(o.matrix_world, np.float64)
+    n_v = len(me.vertices)
+    if not n_v:
+        return None
+    co = np.empty(n_v * 3, np.float32)
+    me.vertices.foreach_get("co", co)
+    co = co.reshape(-1, 3).astype(np.float64)
+    n_p = len(me.polygons)
+    if n_p and me.uv_layers and len(me.loops) == 3 * n_p:
+        # points spread over the triangles by their area seen from above: a coarse tile is a few large triangles
+        vi = np.empty(3 * n_p, np.int32)
+        me.loops.foreach_get("vertex_index", vi)
+        vi = vi.reshape(-1, 3)
+        mi = np.zeros(n_p, np.int32)
+        me.polygons.foreach_get("material_index", mi)
+        pos = co @ m[:3, :3].T + m[:3, 3]
+        a, b, c = pos[vi[:, 0]], pos[vi[:, 1]], pos[vi[:, 2]]
+        area = np.abs((b[:, 0] - a[:, 0]) * (c[:, 1] - a[:, 1]) - (b[:, 1] - a[:, 1]) * (c[:, 0] - a[:, 0])) + 1e-9
+        tri = rng.choice(n_p, SAMPLES_PER_TILE, p=area / area.sum())
+        u, v = rng.random(SAMPLES_PER_TILE), rng.random(SAMPLES_PER_TILE)
+        flip = u + v > 1.0
+        u[flip], v[flip] = 1.0 - u[flip], 1.0 - v[flip]
+        w = np.stack([1.0 - u - v, u, v], 1)
+        xyz, rgb = [], []
+        for slot, mat in enumerate(me.materials):
+            img, uv_name = _texture(mat)
+            sel = mi[tri] == slot
+            layer = me.uv_layers.get(uv_name) if uv_name else me.uv_layers.get("UVMap") or me.uv_layers[0]
+            px = _pixels(img, cache) if img is not None and layer is not None and sel.any() else None
+            if px is None:
+                continue
+            uv = np.empty(6 * n_p, np.float32)
+            layer.data.foreach_get("uv", uv)
+            uv = (uv.reshape(-1, 3, 2)[tri[sel]] * w[sel][:, :, None]).sum(1)
+            h, wd = px.shape[:2]
+            x = np.clip((uv[:, 0] % 1.0 * wd).astype(np.int64), 0, wd - 1)
+            y = np.clip((uv[:, 1] % 1.0 * h).astype(np.int64), 0, h - 1)
+            col = px[y, x, :3]
+            if not img.is_float and img.colorspace_settings.name == "sRGB":
+                col = cm.srgb_to_linear(col)
+            xyz.append((pos[vi[tri[sel]]] * w[sel][:, :, None]).sum(1))
+            rgb.append(col)
+        if xyz:
+            return np.concatenate(xyz), np.concatenate(rgb)
+    col = me.color_attributes.get("Col")
+    if col is not None and col.domain == "POINT":
+        c = np.empty(n_v * 4, np.float32)
+        col.data.foreach_get("color", c)
+        pick = rng.choice(n_v, min(SAMPLES_PER_TILE, n_v), replace=False)
+        return co[pick] @ m[:3, :3].T + m[:3, 3], c.reshape(-1, 4)[pick, :3]
+    return None
+
+
+def _cell_colors(objs, to_frame, cell, rng, box=None):
+    cache, keys, rgb = {}, [], []
+    for o in objs:
+        if box is not None:
+            p = np.array([(*c, 1.0) for c in o.bound_box]) @ (to_frame @ np.array(o.matrix_world, np.float64))[:2].T
+            if (p.max(0) < box[0]).any() or (p.min(0) > box[1]).any():
+                continue
+        try:
+            s = tile_samples(o, to_frame, rng, cache)
+        except Exception as e:                       # noqa: BLE001
+            print(f"[3DTiles] color match: {o.name}: {e}")
+            s = None
+        if s is None:
+            continue
+        ij = np.floor(s[0][:, :2] / cell).astype(np.int64)
+        keys.append(br.pack(ij[:, 0], ij[:, 1]))
+        rgb.append(s[1])
+    if not keys:
+        return cm.cell_means(np.empty(0, np.int64), np.empty((0, 3)))
+    return cm.cell_means(np.concatenate(keys), np.concatenate(rgb))
+
+
+def match(props, streams, item) -> int:
+    """Fill ``item``'s Gain and Gamma so its colors match its reference tileset's where they overlap.
+    Returns the number of ground cells compared; RuntimeError says why it could not."""
+    from .height_match import local_frame
+    ref = next((it for it in props.tilesets if it.name == item.color_ref and it.uid != item.uid), None)
+    if ref is None:
+        raise RuntimeError("Pick the tileset to match to")
+    st, st_ref = streams.get(item.uid), streams.get(ref.uid)
+    if st is None or st_ref is None or st.get("backend") is None or st_ref.get("backend") is None:
+        raise RuntimeError("Both tilesets have to be streaming")
+    mine = list(_stream_objects(st))[:MAX_TILES]
+    frame = local_frame(st, mine)
+    if frame is None:
+        raise RuntimeError(f"{item.name}: no tile shown")
+    to_frame = np.linalg.inv(frame)
+    boxes = np.array([np.array([(*c, 1.0) for c in o.bound_box]) @ (to_frame @ np.array(o.matrix_world, np.float64))[:2].T
+                      for o in mine]).reshape(-1, 2)
+    lo, hi = boxes.min(0), boxes.max(0)
+    cell = 2.0 * br.cell_size(float((hi - lo).max()))
+    rng = np.random.default_rng(0)
+    k_a, c_a = _cell_colors(mine, to_frame, cell, rng)
+    k_b, c_b = _cell_colors(list(_stream_objects(st_ref))[:4 * MAX_TILES], to_frame, cell, rng, box=(lo, hi))
+    a, b = cm.shared(k_a, c_a, k_b, c_b)
+    res = cm.fit(a, b)
+    if res is None:
+        raise RuntimeError(f"Too little overlap with {ref.name}: {len(a)} ground cells with colors in both")
+    item.color_gain, item.color_gamma = res[0].tolist(), res[1].tolist()
+    if not item.use_color:
+        item.use_color = True
+    return len(a)

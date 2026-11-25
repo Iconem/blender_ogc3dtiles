@@ -39,6 +39,7 @@ TRANSPARENT = "OGC3D Blend Transparent"
 KEEP = "OGC3D Blend Keep"
 OUTPUTS = {"terrain": "Terrain Keep", "dataset": "Dataset Keep"}
 GLOBAL_RADIUS_M = 1.0e6
+DATASET_CENTRE_M = 6.3e6     # a dataset's centre is at least this far from the Earth's: under 70 km deep
 SCAN_PERIOD_S = 0.25
 CELLS_BUDGET_S = 0.015      # rasterising new tiles, per tick
 MATS_BUDGET_S = 0.008       # material edits, per tick
@@ -55,10 +56,37 @@ def enabled() -> bool:
     return bool(addon_pref(PREF, False))
 
 
+def _is_aggregate(st) -> bool:
+    """Do this stream's tiles come from datasets of a tileset of tilesets? A dataset has a place on the
+    surface. Google pages its own hierarchy through external files: those "datasets" are regions so wide
+    that their centres lie 150 km and more under the surface (a 1000 km wide country: 20 km), and do not
+    count."""
+    seen = getattr(st.get("backend"), "tile_dataset", None)
+    if not seen:
+        return False
+    memo = st.get("blend_aggregate")
+    if memo is None or memo[0] != len(seen):
+        local = False
+        for v in {id(v): v for v in list(seen.values()) if v}.values():
+            try:
+                local = float(np.linalg.norm(np.asarray(v[1], np.float64)[:3])) > DATASET_CENTRE_M
+            except Exception:                        # noqa: BLE001
+                local = False
+            if local:
+                break
+        memo = st["blend_aggregate"] = (len(seen), local)
+    return memo[1]
+
+
 def is_background(item, st) -> bool:
-    """A globe, a terrain layer, or a tileset that spans the planet (Google, Bing)."""
+    """A globe, a terrain layer, or a tileset that spans the planet (Google, Bing). A tileset of tilesets is
+    never one, however wide its datasets are spread."""
     if item.kind in ("GLOBE", "TERRAIN"):
         return True
+    if item.kind == "AGGREGATE":
+        return False
+    if st and _is_aggregate(st):
+        return False
     b = st.get("backend") if st else None
     r = b.root_radius_m() if b is not None and hasattr(b, "root_radius_m") else None
     if r is None:
@@ -515,53 +543,6 @@ def tick(scene, props, streams, now) -> bool:
     _state["t_build"] = now
     _state["now"] = False
     return True
-
-
-def match_heights(props, streams) -> list:
-    """Move every dataset up or down onto the blended terrain: [(dataset name, metres moved)]. Each dataset's
-    lowest heights are compared with the terrain's over the ground cells they share, and the dataset's root
-    Empty moves by the median difference along the local vertical. Once: nothing keeps it in place afterwards."""
-    rl = roles(props, streams)
-    frame = bpy.data.objects.get(FRAME)
-    cell = _state["cell"]
-    if frame is None or cell is None or "terrain" not in rl.values():
-        raise RuntimeError("Start streaming with Blend datasets into this terrain ticked, and wait for the tiles")
-    bpy.context.view_layer.update()
-    frame_world = _np(frame.matrix_world)
-    to_frame = np.linalg.inv(frame_world)
-    terrain = [o for uid in rl if rl[uid] == "terrain" for o in _tile_objects(streams[uid]) if o.type == "MESH"]
-    out = []
-    for uid in [u for u in rl if rl[u] == "dataset"]:
-        st = streams[uid]
-        root = bpy.data.objects.get(st.get("root_obj") or "")
-        mine = br.merge([_tile_cells(o, to_frame, cell) for o in _tile_objects(st)])
-        if root is None or not len(mine[0]):
-            continue
-        ix, iy = br.unpack(mine[0])
-        lo, hi = np.array([ix.min(), iy.min()]) * cell, (np.array([ix.max(), iy.max()]) + 1) * cell
-        near = []
-        for o in terrain:                            # the terrain tiles over the dataset
-            p = np.array([(*c, 1.0) for c in o.bound_box]) @ (to_frame @ _np(o.matrix_world))[:2].T
-            if (p.max(0) >= lo).all() and (p.min(0) <= hi).all():
-                near.append(_tile_cells(o, to_frame, cell))
-        ground = br.merge(near)
-        _k, i_d, i_t = np.intersect1d(mine[0], ground[0], assume_unique=True, return_indices=True)
-        if len(i_d) < 8:
-            out.append((st["name"], None, root))
-            continue
-        out.append((st["name"], float(np.median(ground[1][i_t] - mine[1][i_d])), root))
-    from mathutils import Vector
-    up = Vector(frame_world[:3, 2].tolist())         # the frame's Z: one metre, up
-    for _name, dz, root in out:                      # moved last: the frame rides the first dataset's root
-        if dz is not None:
-            m = root.matrix_world.copy()
-            m.translation = m.translation + up * dz
-            root.matrix_world = m
-    out = [(name, dz) for name, dz, _root in out]
-    _state["cells"].clear()
-    _state["boxes"].clear()
-    mark_dirty()
-    return out
 
 
 def on_change(self, context) -> None:

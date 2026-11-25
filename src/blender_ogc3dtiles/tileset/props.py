@@ -385,6 +385,8 @@ TILESET_KINDS = [
      "overlays on (needs the cesium-native backend)"),
     ("TERRAIN", "Quantized-mesh terrain", "layer.json URL of a quantized-mesh server, streamed like a "
      "tileset (needs the cesium-native backend). For Cesium World Terrain, use a Cesium ion entry"),
+    ("AGGREGATE", "3dtiled aggregate", "Many datasets as one tileset of tilesets, built by a 3dtiled server: "
+     "the name of a set the server knows, or a manifest file (a list of datasets) that is sent to it on Start"),
 ]
 
 
@@ -401,6 +403,11 @@ def _on_clip_edit(self, context):
 
 def _on_blend(self, context):
     from ..blend import on_change
+    on_change(self, context)
+
+
+def _on_color(self, context):
+    from ..color_correct import on_change
     on_change(self, context)
 
 
@@ -515,11 +522,48 @@ class TilesetItem(PropertyGroup):
     clip_mode: EnumProperty(name="Mode", items=CLIP_MODES, default="KEEP_ANY",
                             update=_on_clip_edit)
     use_blend: BoolProperty(
-        name="Blend datasets into this terrain",
+        name="Terrain blending",
         description="Beta. This tileset is a background (a globe, a terrain layer, Google or Bing 3D Tiles): "
                     "it becomes transparent under every other tileset shown, and their borders fade into it. "
                     "Meshes and point clouds; splats only cut the terrain. cesium-native backend. Live",
         default=False, update=_on_blend)
+    agg_params: StringProperty(
+        name="Parameters",
+        description="3dtiled aggregate: more of the server's query, as written in a URL. nest=geodetic or "
+                    "nest=mercator choose how the datasets are grouped; only=, exclude= and format= choose "
+                    "among them. Empty: the server's defaults",
+        default="nest=geodetic")
+    # folded or not, for the boxes that are switched on
+    show_overlays: BoolProperty(name="Show", description="Unfold the raster overlays", default=True)
+    show_clipping: BoolProperty(name="Show", description="Unfold the clipping settings", default=True)
+    show_color: BoolProperty(name="Show", description="Unfold the color correction", default=True)
+    show_blend: BoolProperty(name="Show", description="Unfold the terrain blending settings", default=True)
+    use_color: BoolProperty(
+        name="Color correction",
+        description="Correct the colors of this tileset in its tile materials: gamma and gain per channel, "
+                    "exposure, saturation, contrast. Match Colors fills them from another tileset. Meshes "
+                    "and point clouds. Live",
+        default=False, update=_on_color)
+    color_exposure: FloatProperty(
+        name="Exposure", description="Stops: +1 doubles the light, -1 halves it",
+        default=0.0, soft_min=-3.0, soft_max=3.0, update=_on_color)
+    color_gain: FloatVectorProperty(
+        name="Gain", description="Red, green, blue: each channel is multiplied by its number",
+        size=3, default=(1.0, 1.0, 1.0), min=0.0, soft_max=4.0, update=_on_color)
+    color_gamma: FloatVectorProperty(
+        name="Gamma", description="Red, green, blue: each channel is raised to this power before the gain. "
+                                  "Over 1 darkens the mid tones, under 1 lifts them",
+        size=3, default=(1.0, 1.0, 1.0), min=0.1, soft_max=3.0, update=_on_color)
+    color_saturation: FloatProperty(
+        name="Saturation", description="0 is grey, 1 leaves the colors as they are",
+        default=1.0, min=0.0, soft_max=2.0, update=_on_color)
+    color_contrast: FloatProperty(
+        name="Contrast", description="0 leaves the contrast as it is",
+        default=0.0, soft_min=-0.5, soft_max=0.5, update=_on_color)
+    color_ref: StringProperty(
+        name="Match to",
+        description="The tileset whose colors Match Colors brings this one onto: Google Photorealistic "
+                    "3D Tiles under a photogrammetry mesh, for one")
     clip_geometry: BoolProperty(
         name="Slower: Also cut in solid view/exports",
         description="Also delete the mesh faces that are entirely cut (Geometry Nodes), so "

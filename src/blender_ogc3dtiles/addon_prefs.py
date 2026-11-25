@@ -170,6 +170,11 @@ class OGC3DTilesPreferences(AddonPreferences):
         description="In the Phases panel: outlines drawn on the surface with Annotate or "
                     "Grease Pencil become phase volumes. Needs Phases timeline",
         default=False)
+    beta_terrain_blend: BoolProperty(
+        name="Terrain blending",
+        description="A 'Blend datasets into this terrain' box on globe, terrain, Google and Bing entries: the "
+                    "terrain becomes transparent under the other tilesets, and their borders fade into it",
+        default=False)
     beta_material_controls: BoolProperty(
         name="Material controls",
         description="Relight sliders in the Nodes: Material panel, gold transfer included. Off, the "
@@ -271,6 +276,7 @@ class OGC3DTilesPreferences(AddonPreferences):
         boxb.label(text="Beta features", icon="EXPERIMENTAL")
         col = boxb.column()
         col.prop(self, "beta_material_controls")
+        col.prop(self, "beta_terrain_blend")
         col.prop(self, "beta_phases")
         sub = col.row()
         sub.active = self.beta_phases

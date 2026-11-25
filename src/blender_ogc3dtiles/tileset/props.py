@@ -399,6 +399,11 @@ def _on_clip_edit(self, context):
     clip_mark_dirty(context.scene, self)
 
 
+def _on_blend(self, context):
+    from ..blend import on_change
+    on_change(self, context)
+
+
 def _camera_poll(self, obj):
     return obj.type == "CAMERA"
 
@@ -509,6 +514,12 @@ class TilesetItem(PropertyGroup):
         default=False, update=_on_clip_edit)
     clip_mode: EnumProperty(name="Mode", items=CLIP_MODES, default="KEEP_ANY",
                             update=_on_clip_edit)
+    use_blend: BoolProperty(
+        name="Blend datasets into this terrain",
+        description="Beta. This tileset is a background (a globe, a terrain layer, Google or Bing 3D Tiles): "
+                    "it becomes transparent under every other tileset shown, and their borders fade into it. "
+                    "Meshes and point clouds; splats only cut the terrain. cesium-native backend. Live",
+        default=False, update=_on_blend)
     clip_geometry: BoolProperty(
         name="Slower: Also cut in solid view/exports",
         description="Also delete the mesh faces that are entirely cut (Geometry Nodes), so "
@@ -862,6 +873,31 @@ class TilesSceneProps(PropertyGroup):
                     "centre, named after the dataset. Scene Origin > Dataset then lists them all, so the origin "
                     "can go to a dataset that is not loaded yet",
         default=False, update=_on_dataset_marker_size)
+    blend_dataset_fade: FloatProperty(
+        name="Dataset fade",
+        description="Terrain blending: metres over which a dataset fades in from its border, so that its edge "
+                    "dissolves into the terrain. 0: the dataset keeps its hard edge",
+        default=20.0, min=0.0, soft_max=200.0, unit="LENGTH", update=_on_blend)
+    blend_terrain_inset: FloatProperty(
+        name="Terrain inset",
+        description="Terrain blending: metres inside a dataset's border where the terrain is still whole. "
+                    "Raise it with Dataset fade, so that the terrain is there behind the faded border",
+        default=10.0, min=0.0, soft_max=200.0, unit="LENGTH", update=_on_blend)
+    blend_terrain_fade: FloatProperty(
+        name="Terrain fade",
+        description="Terrain blending: metres over which the terrain fades out past the inset. 0: a sharp cut",
+        default=10.0, min=0.0, soft_max=200.0, unit="LENGTH", update=_on_blend)
+    blend_keep_below: BoolProperty(
+        name="Keep terrain below",
+        description="Terrain blending: the terrain stays where it lies under the dataset, as the ground seen "
+                    "through a sparse point cloud or under a dataset that floats. Only the terrain that would "
+                    "poke through the dataset goes",
+        default=True, update=_on_blend)
+    blend_below_margin: FloatProperty(
+        name="Margin",
+        description="Terrain blending: the terrain is kept when it is at least this far under the lowest point "
+                    "of the dataset above it. Raise it when terrain still shows through the dataset's ground",
+        default=2.0, min=0.0, soft_max=50.0, unit="LENGTH", update=_on_blend)
     dataset_marker_px: FloatProperty(
         name="Marker size px",
         description="Every dataset Empty also gets a white dot of this radius in pixels in the 3D viewport, whatever the "

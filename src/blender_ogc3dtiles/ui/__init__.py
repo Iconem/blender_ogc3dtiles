@@ -1576,6 +1576,12 @@ def stream_tick(context) -> bool:
         pending += st.get("pending", 0)
         visible += len(st["render_keys"])
         parts.append(f"{st['name'][:14]} {len(st['render_keys'])}/{len(st['tiles'])}")
+    if _state["streams"]:
+        try:
+            from .. import blend
+            changed |= blend.tick(scene, props, _state["streams"], now)
+        except Exception as e:                       # noqa: BLE001
+            print(f"[3DTiles] terrain blending: {e}")
     # kept in _state, not in scene properties: a scene property write tags the
     # scene for update and restarts the Cycles viewport render every tick
     _tick_cap(props, now, pending)
@@ -2414,6 +2420,12 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
                                              if it.clip_polygons else "Clipping"))
             if it.use_clipping:
                 _draw_clipping(b, it, st, props)
+            from .. import blend
+            if blend.enabled() and (it.use_blend or blend.is_background(it, st)):
+                b = layout.box()
+                b.prop(it, "use_blend", text="Blend datasets into this terrain (beta)")
+                if it.use_blend:
+                    _draw_blend(b, it, st, props)
         else:
             layout.prop(props, "tileset_url", text="URL")
             layout.prop(props, "cesium_ion_token", text="Ion Token")
@@ -2487,6 +2499,28 @@ def _group_button(row, name) -> None:
         op = row.operator("ogc3dtiles.open_nodes", text="", icon="NODETREE")
         op.kind = "NAMED"
         op.group = name
+
+
+def _draw_blend(b, it, st, props) -> None:
+    from .. import blend
+    col = b.column(align=True)
+    col.prop(props, "blend_dataset_fade")
+    col.prop(props, "blend_terrain_inset")
+    col.prop(props, "blend_terrain_fade")
+    row = b.row(align=True)
+    row.prop(props, "blend_keep_below")
+    sub = row.row(align=True)
+    sub.active = props.blend_keep_below
+    sub.prop(props, "blend_below_margin", text="")
+    root = bpy.data.objects.get(st["root_obj"] or "") if st is not None else None
+    if root is not None:
+        b.prop(root, "location", index=2, text="Height offset")
+    if st is None:
+        b.label(text="Applies while streaming", icon="INFO")
+    elif blend._state["info"]:
+        b.label(text="Coverage: " + blend._state["info"], icon="IMAGE_DATA")
+    else:
+        b.label(text="No other tileset shown to blend", icon="INFO")
 
 
 def _draw_clipping(b, it, st, props) -> None:

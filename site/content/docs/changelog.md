@@ -8,6 +8,12 @@ main branch and not in a release zip yet.
 
 ## Unreleased
 
+- **Terrain blending (beta).** A dataset shown over a globe, a terrain layer, Google or Bing 3D Tiles: the
+  background becomes transparent under the dataset, and the dataset's border fades into it. Tick *Terrain
+  blending* in the add-on preferences (Beta features), then *Blend datasets into this terrain* on the
+  background entry. Live settings: *Dataset fade*, *Terrain inset*, *Terrain fade*, and *Keep terrain below*,
+  which only removes the terrain that would poke through the dataset. See
+  [Terrain blending](/features/beta#terrain-blending).
 - **A hidden dataset stops streaming.** In an aggregate, closing the eye (or unticking) a dataset's collection, or
   closing the eye of its Empty, takes the dataset out of the selection: its tiles go, nothing more of it loads,
   and it comes back when shown again.

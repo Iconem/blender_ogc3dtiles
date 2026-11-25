@@ -45,6 +45,11 @@ const camPano = shot('camera_pano.jpg');
 const camPerspTop = shot('camera_persp_top.jpg');
 const camOrthoTop = shot('camera_ortho_top.jpg');
 const camPanoTop = shot('camera_pano_top.jpg');
+const entryBoxes = shot('panel_boxes_match_to.png');
+const matchBefore = shot('giza_match_before.jpg');
+const matchAfter = shot('giza_match_after.jpg');
+const blendGiza = shot('terrain_blend_giza_view.jpg');
+const markersGlobe = shot('markers_globe.jpg');
 
 export const design: DesignSystem = {
   palette: { bg: '#ffffff', text: '#0a0a0a', accent: '#C2570A' },
@@ -786,6 +791,76 @@ const P24Overlays: Page = () => (
   </Frame>
 );
 
+const P24bEntry: Page = () => (
+  <Frame eyebrow="One entry of the list" title="What a tileset can be, and what you can do to it">
+    <TwoCol
+      leftWidth={1180}
+      left={
+        <>
+          <div style={{ display: 'flex', gap: 14, marginBottom: 26 }}>
+            {[
+              ['3D Tiles', 'a tileset.json: meshes, points, splats, voxels'],
+              ['Cesium ion', 'an asset id and a token'],
+              ['Terrain', 'quantized-mesh: a layer.json'],
+              ['WGS84 globe', 'the bare ellipsoid, for imagery'],
+              ['Aggregate', 'a tileset of tilesets from a 3dtiled server'],
+            ].map(([k, v]) => (
+              <div key={k} style={{ flex: 1, background: ink.panel, borderRadius: 10, padding: '14px 16px' }}>
+                <div style={{ fontSize: 22, fontWeight: 500 }}>{k}</div>
+                <div style={{ fontSize: 17, color: ink.muted, lineHeight: 1.3, marginTop: 4 }}>{v}</div>
+              </div>
+            ))}
+          </div>
+          <Bullets size={24}>
+            <Li k="Raster overlays">imagery draped on it: OpenStreetMap, Esri, IGN, Bing, Google, any URL template, WMTS or WMS.</Li>
+            <Li k="Markers">in a tileset of tilesets, an Empty and a white dot per dataset: click one to select it.</Li>
+            <Li k="Clipping">cut it with Blender objects: polygons seen from above, or 3D boxes.</Li>
+            <Li k="Color correction">gamma and gain per channel, exposure, saturation, contrast, or matched to another tileset.</Li>
+            <Li k="Terrain blending">a background goes transparent under it and its border fades into the ground. Beta.</Li>
+            <Li k="Match Height to Terrain">one button moves it up or down onto the terrain under it.</Li>
+          </Bullets>
+        </>
+      }
+      right={<Shot src={entryBoxes} width={452} height={660} position="50% 58%" caption="Each box has a checkbox and folds" />}
+    />
+  </Frame>
+);
+
+const P24cSetIn: Page = () => (
+  <Frame eyebrow="A dataset in its terrain" title="Three clicks from floating and grey to set in the ground">
+    <div style={{ display: 'flex', gap: 24 }}>
+      <Shot src={matchBefore} width={544} height={360} caption="As loaded: a photogrammetry mesh of Giza, 25 m under Google's ground and darker" />
+      <Shot src={matchAfter} width={544} height={360} caption="Match Height to Terrain, then Match Colors onto Google" />
+      <Shot src={blendGiza} width={544} height={360} position="0% 0%" caption="Terrain blending: Google is transparent under the mesh, and the border fades over 20 m" />
+    </div>
+    <div style={{ marginTop: 20 }}>
+      <Bullets size={23}>
+        <Li k="Match Height to Terrain">compares the lowest heights of both over the ground they share, and moves the tileset's Empty by the median: +25 m here.</Li>
+        <Li k="Match Colors">reads both from above where they overlap, 7,242 ground cells here, and fits a gain and a gamma per channel.</Li>
+        <Li k="Terrain blending">a coverage raster of the dataset's tiles, read by the terrain's material. Any globe, terrain layer, Google or Bing 3D Tiles is the background.</Li>
+      </Bullets>
+    </div>
+  </Frame>
+);
+
+const P24dAggregate: Page = () => (
+  <Frame eyebrow="A tileset of tilesets" title="Every dataset of a server, as one entry with a dot each">
+    <TwoCol
+      leftWidth={720}
+      left={
+        <Bullets size={25}>
+          <Li k="One entry">a set served by a 3dtiled server, or your own manifest of links, as one tileset.json whose leaves are datasets.</Li>
+          <Li k="An Empty per dataset">named after it, its tiles parented to it: move one dataset, or hide it and it stops streaming.</Li>
+          <Li k="A dot per dataset">a fixed size on screen, faint behind tiles, gone behind the globe. Click it to select the Empty.</Li>
+          <Li k="Fly to it">Globe Navigation zooms from the planet to a site; numpad period frames the selected dataset at real size.</Li>
+          <Li k="Mixed content">meshes, LiDAR point clouds and splats in the same set, converted to 3D Tiles by the server on the way.</Li>
+        </Bullets>
+      }
+      right={<Shot src={markersGlobe} width={912} height={604} caption="470 open datasets up to 20 km wide, over a globe with imagery, from 7,500 km" />}
+    />
+  </Frame>
+);
+
 const P25Metadata: Page = () => (
   <Frame eyebrow="Feature metadata" title="Colour by class or by number">
     <div style={{ display: 'flex', gap: 40 }}>
@@ -906,6 +981,9 @@ export const notes: (string | undefined)[] = [
   `Blender cannot pause a render to wait for tiles. The converged animation steps through the frames itself and renders each one once its tiles are in.`,
   `Files: local and NAS tilesets, libraries, copy into project, exports.`,
   `Raster overlays the way Cesium for Unreal does them, with presets that need no key.`,
+  `Everything about one entry: the five types, then the six things its boxes do.`,
+  `Giza: as loaded, after the two Match buttons, and with terrain blending. Numbers are from this scene.`,
+  `A whole server as one entry. The dots are Empties you can select, hide or fly to.`,
   `Metadata as colours: classes with a palette, numbers with a ramp.`,
   `Voxels as blocks, volumes, or as colours on other tilesets. Phases, in beta, build on the same voxel grid.`,
   `What it was tested on, kept generic.`,
@@ -943,6 +1021,9 @@ export default [
   P22Converged,
   P23Files,
   P24Overlays,
+  P24bEntry,
+  P24cSetIn,
+  P24dAggregate,
   P25Metadata,
   P26Voxels,
   P27Tested,

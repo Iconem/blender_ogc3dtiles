@@ -1620,7 +1620,7 @@ def draw_reload_for_metadata(layout, props) -> bool:
     if not (props.read_metadata and loaded_without_metadata()):
         return False
     col = layout.column(align=True)                  # a warning, not an error: the yellow triangle, no red
-    col.label(text="The tiles on screen were loaded without them", icon="ERROR")
+    col.label(text="Tiles were loaded without them", icon="ERROR")
     col.operator("ogc3dtiles.reload_tiles", icon="FILE_REFRESH", text="Reload Tiles with their Properties")
     return True
 

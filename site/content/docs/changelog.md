@@ -8,6 +8,18 @@ main branch and not in a release zip yet.
 
 ## Unreleased
 
+## 0.6.9 (2026-11-26)
+
+- **Color correction reaches every tile at once.** Ticking the box, or Match Colors on a tileset that had it
+  off, now corrects all the tiles the tileset has loaded, shown or not. It used to be left to the streaming
+  tick, one tile at a time: 5 of 82 materials after 6 s on a scene at rest, and Match Colors even took the
+  correction out again on its next tick. Tiles changed color one by one for a minute.
+- **Match Colors no longer burns the light surfaces.** The gamma is the slope of the reference over the
+  tileset, cell by cell, between 0.8 and 1.3, and the gain keeps the bright end under the reference's. On
+  Giza over Google the old fit gave gain 2.6, 3.0, 3.1 with gamma up to 1.3 and a white site; the new one
+  1.45, 1.44, 1.35 with gamma 0.8.
+- **Globe Navigation follows Blender's own tools.** A view moved by Shift+B, View Selected, a numpad view or
+  the gizmo also moves the scene origin under it and levels the Globe, as after a gesture of the mode.
 - **Match Height to Terrain no longer freezes, and no longer reads the far side of the Earth.** A terrain tile
   is now read only where it is under the dataset. On the Autzen point cloud over Cesium World Terrain it
   took 66 s and found nothing; it takes 0.5 s and moves the cloud down 316 m (2.2 s over Google, same

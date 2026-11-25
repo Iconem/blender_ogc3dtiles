@@ -116,6 +116,8 @@ have both streaming with the overlap in view, and press **Match Colors**. *Match
 picker: its eyedropper takes any tile of the reference in the 3D view, and the list holds the root Empty of
 each streaming tileset (and their tiles). The field then shows the root Empty of the tileset picked.
 
+![The boxes of a tileset: Properties, Raster overlays, Markers and Clipping folded or unticked, Color correction open with gamma and gain per channel and Match to set to the root Empty of Google](/img/panel_boxes_match_to.png)
+
 The reference is read as it is drawn: a terrain with raster overlays gives the colors of its imagery, and
 a reference with its own color correction gives its corrected colors. Terrain blending hides nothing from
 it: whole tiles are read, not what the fade leaves visible.
@@ -124,9 +126,18 @@ Both tilesets are sampled over the area they share, seen from above, and nowhere
 tile shown there, each looked up in the tile's texture (or the point's own color), averaged per ground
 cell. So it works both ways: a small mesh onto Google, or Google onto the small mesh. Over the cells both
 have, a gain and a gamma are fitted per channel so that *reference = gain x color ^ gamma*: the gamma
-brings the spread of the colors together, the gain their level. On Giza over Google it compared 8,084
-cells in 0.5 s and gave gain 1.24, 1.50, 1.28 and gamma 0.73, 0.87, 0.79; Google onto the mesh, 8,089
-cells.
+brings the spread of the colors together, the gain their level. The gamma is the slope of the reference over
+the tileset from cell to cell, kept between 0.8 and 1.3: where the two differ cell by cell (another date,
+another light) it asks for less contrast, never more. The gain keeps the bright end of the tileset under the
+reference's, so light surfaces are not burned. On Giza over Google, in a 4K viewport with 74 mesh tiles shown,
+it compared 7,242 cells in 7 s and gave gain 1.45, 1.44, 1.35 and gamma 0.80 on the three channels.
+
+![Giza before Match Colors: the photogrammetry mesh is darker and greyer than Google Photorealistic 3D Tiles around it](/img/giza_match_before.jpg)
+
+![Giza after Match Height to Terrain (+25 m) and Match Colors onto Google: the mesh sits in the terrain with its colors](/img/giza_match_after.jpg)
+
+Ticking the box, or matching a tileset that had it off, corrects every tile the tileset has loaded at once,
+shown or not; tiles that load later are corrected as they are built.
 
 If the reference has a color correction of its own, the match is to what it looks like with it (its
 gamma, gain, exposure and saturation; not its contrast): raise Google's exposure, then match the mesh to

@@ -431,6 +431,12 @@ def _on_color(self, context):
 def _on_use_color(self, context):
     _unfold(self, "use_color", "show_color")
     _on_color(self, context)
+    if self.use_color:
+        try:
+            from ..color_correct import apply_all
+            apply_all(self)
+        except Exception as e:                       # noqa: BLE001
+            print(f"[3DTiles] color correction: {e}")
 
 
 def tileset_of(obj):

@@ -772,6 +772,30 @@ class OGC3D_OT_GlobeNav(Operator):
         except ReferenceError:
             self._stop_anim(context, finish=False)
 
+    @staticmethod
+    def _watch_view(context) -> None:
+        """A view moved by Blender's own tools (Shift+B zoom region, View Selected, a numpad view, the gizmo):
+        the scene origin follows it too, as after a gesture of this mode."""
+        area = next((a for a in context.window.screen.areas if a.type == "VIEW_3D"), None)
+        lv = _nav.get("last_view")
+        try:
+            if lv is None:
+                if area is None:
+                    return
+                region = next((r for r in area.regions if r.type == "WINDOW"), None)
+                if region is None or region.data is None:
+                    return
+                lv = _nav["last_view"] = (region, region.data)
+            sig = tuple(round(v, 4) for row in lv[1].view_matrix for v in row)
+        except ReferenceError:
+            _nav["last_view"] = None
+            return
+        if sig != _nav.get("view_sig"):
+            if _nav.get("view_sig") is not None:
+                _nav["last_t"] = time.monotonic()
+                _nav["dirty"] = True
+            _nav["view_sig"] = sig
+
     def _end(self, context):
         self._stop_anim(context, finish=True)
         context.window_manager.event_timer_remove(self._timer)
@@ -793,6 +817,7 @@ class OGC3D_OT_GlobeNav(Operator):
                 for a in context.window.screen.areas:
                     a.tag_redraw()
             else:
+                self._watch_view(context)
                 _maybe_reanchor(context)
             return {"PASS_THROUGH"}
         drag = _nav["drag"]

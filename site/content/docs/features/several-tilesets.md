@@ -39,6 +39,8 @@ Ion, globe and terrain entries need the cesium-native backend.
 
 ## A tileset of tilesets
 
+![The open datasets of a 3dtiled server over a globe with imagery, seen from 7,500 km: a white dot per dataset, 470 of them, most over Europe](/img/markers_globe.jpg)
+
 A `tileset.json` can be nothing but a tree of grouping tiles whose leaves are other tilesets, one per
 dataset: every survey of a city, every dataset of a server. With the cesium-native backend each of
 those datasets gets its own Empty under the tileset's root, named after the dataset, and its tiles are

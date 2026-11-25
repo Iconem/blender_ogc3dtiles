@@ -27,14 +27,15 @@ from . import color_match as cm
 NODE = "OGC3D Color"
 MARK = "ogc3d_color"
 SCAN_PERIOD_S = 0.5
-RECHECK_PERIOD_S = 3.0      # materials other features rebuilt (shared shader nodes) get the node again
+RECHECK_PER_TICK = 6        # tiles looked at again each tick, in turn: a material another feature rebuilt gets the
+                            # node back. (Starting over every 3 s never reached the tiles at the end of a long list.)
 BUDGET_S = 0.006
 SAMPLES_PER_TILE = 3000
 MAX_TILES = 600
 MAX_PIXELS = 4096 * 4096
 FAR_BELOW_M = 100_000.0
 
-_state = {"done": {}, "t_scan": 0.0, "t_recheck": 0.0, "vis": {}, "strip": set()}
+_state = {"done": {}, "t_scan": 0.0, "vis": {}, "strip": set(), "cursor": {}}
 
 
 def group_name(item) -> str:
@@ -214,15 +215,12 @@ def tick(props, streams, now) -> bool:
              and streams[it.uid].get("backend") is not None]
     if not items:
         return changed
-    if now - _state["t_recheck"] >= RECHECK_PERIOD_S:
-        _state["t_recheck"] = now
-        _state["done"].clear()
     if now - _state["t_scan"] >= SCAN_PERIOD_S or changed:
         _state["t_scan"] = now
         _state["vis"] = {it.uid: [o.name for o in _stream_objects(streams[it.uid])] for it in items}
     t0 = time.perf_counter()
     objs = bpy.data.objects
-    for it in items:
+    for it in items:                                 # first the tiles not corrected yet, all of them over the ticks
         ng = None
         done = _state["done"].setdefault(it.uid, set())
         for name in _state["vis"].get(it.uid, ()):
@@ -236,6 +234,19 @@ def tick(props, streams, now) -> bool:
             done.add(name)
             if time.perf_counter() - t0 > BUDGET_S:
                 return True
+    for it in items:                                 # then a few of the others again, in turn
+        names = _state["vis"].get(it.uid, ())
+        if not names:
+            continue
+        ng = None
+        at = _state["cursor"].get(it.uid, 0)
+        for k in range(min(RECHECK_PER_TICK, len(names))):
+            o = objs.get(names[(at + k) % len(names)])
+            if o is not None and o.data is not None:
+                ng = ng or ensure_group(it)
+                for m in o.data.materials:
+                    changed |= apply_material(m, ng)
+        _state["cursor"][it.uid] = (at + RECHECK_PER_TICK) % len(names)
     return changed
 
 
@@ -253,10 +264,35 @@ def new_tile(props, st, obj) -> None:
                 apply_material(m, ng)
 
 
+def apply_all(item) -> int:
+    """The box was just ticked: every tile the tileset has loaded gets the group now, shown or not, so that
+    none shows uncorrected later. (Left to the streaming tick it took one tile per tick: over a minute on a
+    scene at rest, with the tiles changing color one by one.) Returns the number of materials changed."""
+    try:
+        from .ui import _state as ui_state
+        st = ui_state["streams"].get(item.uid)
+    except Exception:                                # noqa: BLE001
+        st = None
+    if st is None or st.get("backend") is None:
+        return 0
+    ng = ensure_group(item)
+    done = _state["done"].setdefault(item.uid, set())
+    n = 0
+    for o in _stream_objects(st, visible_only=False):
+        if o.data is not None:
+            for m in o.data.materials:
+                n += bool(apply_material(m, ng))
+        done.add(o.name)
+    return n
+
+
 def on_change(item, context) -> None:
     """The checkbox or a slider of a tileset's color correction."""
     try:
         if item.use_color:
+            # a slider moved while the box was off (Match Colors fills them first) asked for the groups to be
+            # taken out: not any more, or the next tick removed them from every tile just corrected
+            _state["strip"].discard(item.uid)
             ensure_group(item)
             set_params(item)
             _state["done"].pop(item.uid, None)

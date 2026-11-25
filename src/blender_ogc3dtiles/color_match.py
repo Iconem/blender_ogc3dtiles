@@ -12,11 +12,15 @@ exposure or a contrast difference.
 """
 from __future__ import annotations
 
+import math
+
 import numpy as np
 
 FLOOR = 0.002                # linear: below this a cell is black, its log says nothing
 GAIN_RANGE = (0.2, 5.0)
-GAMMA_RANGE = (0.6, 1.6)
+GAMMA_RANGE = (0.8, 1.3)     # two captures of a place differ by exposure and white balance more than by contrast;
+                             # a wider range let noisy cells ask for 1.6 and burn the light surfaces
+HIGHLIGHT_MARGIN = 1.1       # the 98th percentile of the corrected colors may pass the reference's by this much
 MIN_CELLS = 16
 
 
@@ -59,9 +63,15 @@ def fit(src: np.ndarray, ref: np.ndarray):
         if len(s) < MIN_CELLS:
             s, r = ls[:, c], lr[:, c]
         sd = float(s.std())
-        g = float(np.clip(r.std() / sd, *GAMMA_RANGE)) if sd > 1e-4 else 1.0
+        # the slope of the reference over the source, not the ratio of their spreads: where the two differ
+        # cell by cell (another date, another light) the ratio still asked for more contrast and burned the
+        # light surfaces; the slope asks for less the less they agree
+        g = float(np.clip(((s - s.mean()) * (r - r.mean())).mean() / (sd * sd), *GAMMA_RANGE)) if sd > 1e-4 else 1.0
         gamma[c] = g
-        gain[c] = float(np.clip(np.exp(r.mean() - g * s.mean()), *GAIN_RANGE))
+        # the bright end is kept under the reference's: a gamma above 1 fitted on the mid tones otherwise
+        # sends the lightest surfaces (limestone, sand in the sun) to white
+        top = math.exp(hi_r[c] - g * hi[c]) * HIGHLIGHT_MARGIN
+        gain[c] = float(np.clip(min(math.exp(r.mean() - g * s.mean()), top), *GAIN_RANGE))
     return gain, gamma
 
 

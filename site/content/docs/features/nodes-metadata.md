@@ -17,6 +17,11 @@ and intensity. The **Nodes: Metadata** panel reads it and colours the tiles with
    offers **Reload Tiles with their Properties**, which loads the tiles on screen again. It needs the
    cesium-native backend. The
    *Color tiles by* row is always shown; its properties come with the metadata.
+
+   ![Read feature metadata ticked while streaming: a warning line and the button Reload Tiles with their Properties](/img/metadata_reload.png)
+
+   ![The Autzen stadium point cloud, colored by its LiDAR classification after one reload](/img/metadata_reload_classes.jpg)
+
 2. Once tiles are in, tick **Color tiles by**, leave the source on **Property** and pick one.
 3. Text and class properties get a legend, numbers get a colour ramp.
 

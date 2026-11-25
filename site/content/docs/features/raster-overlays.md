@@ -13,6 +13,9 @@ do. It needs the cesium-native backend.
 1. Select a tileset and tick **Raster overlays** in its box.
 2. Press the **bookmark button** under + / - and pick a preset (type a few letters to narrow the list down),
    or press **+** and fill in a source.
+
+   ![The overlay library with "bing" typed in its search box: two presets left](/img/overlay_library_search.png)
+
 3. Press Start. If the tileset is already streaming, the overlay appears at once.
 
 | Preset | Key |

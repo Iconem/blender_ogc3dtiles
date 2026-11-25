@@ -54,3 +54,14 @@ def test_cell_means_and_shared():
 
 def test_srgb_to_linear():
     assert np.allclose(cm.srgb_to_linear(np.array([0.0, 1.0, 0.5])), [0.0, 1.0, 0.2140], atol=1e-3)
+
+
+def test_fit_keeps_the_highlights_under_the_reference():
+    # mid tones ask for a strong gamma and gain; the lightest cells of the source must not end far above the
+    # lightest of the reference
+    rng = np.random.default_rng(3)
+    src = np.concatenate([rng.uniform(0.05, 0.3, (400, 3)), rng.uniform(0.6, 0.8, (40, 3))])
+    ref = np.concatenate([np.clip(3.5 * src[:400] ** 1.5, 0.0, None), rng.uniform(0.7, 0.9, (40, 3))])
+    gain, gamma = cm.fit(src, ref)
+    out = cm.apply(src, gain, gamma)
+    assert np.percentile(out, 98, axis=0).max() <= 1.15 * np.percentile(ref, 98, axis=0).max()

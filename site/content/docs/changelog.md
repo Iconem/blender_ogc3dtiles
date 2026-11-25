@@ -8,6 +8,12 @@ main branch and not in a release zip yet.
 
 ## Unreleased
 
+- **Terrain blending (beta): distances from the dataset's size, and Match Dataset Heights to Terrain.** The
+  three distances follow the smallest dataset shown unless you untick *Distances from the dataset's size*. A
+  button moves every dataset up or down onto the terrain, once. The coverage image follows the tiles at most
+  every 3 seconds while navigating.
+- **Max SSE in the first panel**, under Start / Stop, Freeze and Clear All Tiles. It is the same setting as in
+  *LOD / Streaming*.
 - **Terrain blending (beta).** A dataset shown over a globe, a terrain layer, Google or Bing 3D Tiles: the
   background becomes transparent under the dataset, and the dataset's border fades into it. Tick *Terrain
   blending* in the add-on preferences (Beta features), then *Blend datasets into this terrain* on the

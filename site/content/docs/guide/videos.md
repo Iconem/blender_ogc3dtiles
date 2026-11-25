@@ -96,4 +96,17 @@ and the chapels appear through the walls.
 **X-ray on Gaussian splats.** Kirants monastery in its forest, as splat tiles in EEVEE. A diagonal wipe turns
 every splat into a point of light in its own colour, and a second one into a single tint.
 
+## What they were rendered on
+
+A laptop: Intel Core i7-12800H, 32 GB of RAM, NVIDIA RTX A1000 Laptop GPU with 4 GB of VRAM, Blender 5.3 beta
+on Windows 11.
+
+- Frames are 1280 x 720. EEVEE at 16 or 32 samples, Cycles at 24 or 32 samples with OptiX denoising, or the
+  Workbench Solid view, as each caption says.
+- Max SSE was 10 for the one-color-per-tile clip and 16 for the other Google Photorealistic 3D Tiles clips.
+- On Google tiles with a view to the horizon, a frame took 6 to 10 seconds at Max SSE 10 to 16, nearly all of
+  it waiting for tiles. At Max SSE 6 the same views never finished loading: over 1000 tiles were still queued
+  after 67 seconds per frame.
+- The time of each clip was not recorded.
+
 The scripts that made these clips are in the repository (see [Screencasts](/dev/screencasts)).

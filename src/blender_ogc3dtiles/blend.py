@@ -42,9 +42,12 @@ GLOBAL_RADIUS_M = 1.0e6
 SCAN_PERIOD_S = 0.25
 CELLS_BUDGET_S = 0.015      # rasterising new tiles, per tick
 MATS_BUDGET_S = 0.008       # material edits, per tick
+REBUILD_PERIOD_S = 3.0      # the coverage follows the tiles shown at most this often (at once in a render)
+AUTO_SHARE = 0.05           # Auto: the dataset fades over this share of the smallest dataset's width
 
 _state = {"cells": {}, "boxes": {}, "cell": None, "sig": None, "frame_ecef": None, "frame_sig": None,
-          "done": {}, "t_scan": 0.0, "vis": {}, "info": "", "build_ms": 0.0}
+          "done": {}, "t_scan": 0.0, "vis": {}, "info": "", "build_ms": 0.0, "t_build": -1e9, "now": False,
+          "auto": False}
 
 
 def enabled() -> bool:
@@ -377,6 +380,39 @@ def _upload(dist, low, x0, y0, c, max_m) -> None:
 
 def mark_dirty() -> None:
     _state["sig"] = None
+    _state["now"] = True
+
+
+def _rendering() -> bool:
+    """A render is waiting for its tiles: the coverage must be the frame's, not three seconds old."""
+    if bpy.app.background:
+        return True
+    try:
+        from .ui import _state as ui_state
+        return ui_state.get("render_req") is not None or bool(ui_state.get("render_hold"))
+    except Exception:                                # noqa: BLE001
+        return False
+
+
+def _auto_distances(props, vis, rl, boxes) -> None:
+    """Auto: the three distances from the size of the smallest dataset shown."""
+    sizes = []
+    for uid, names in vis.items():
+        b = np.array([boxes[n] for n in names if n in boxes]) if rl[uid] == "dataset" else np.empty((0, 4))
+        if len(b):
+            sizes.append(min(b[:, 2].max() - b[:, 0].min(), b[:, 3].max() - b[:, 1].min()))
+    if not sizes:
+        return
+    fade = float(np.clip(round(AUTO_SHARE * min(sizes), 1), 0.5, 500.0))
+    if abs(fade - props.blend_dataset_fade) <= 0.1 * fade:
+        return                                       # close enough: tiles refining must not make it flicker
+    _state["auto"] = True                            # these writes are ours, not the user's
+    try:
+        props.blend_dataset_fade = fade
+        props.blend_terrain_inset = fade / 2
+        props.blend_terrain_fade = fade / 2
+    finally:
+        _state["auto"] = False
 
 
 def tick(scene, props, streams, now) -> bool:
@@ -432,6 +468,8 @@ def tick(scene, props, streams, now) -> bool:
     sig = (frozenset(data), moved, round(max_m, 2))
     if sig == _state["sig"]:
         return changed
+    if now - _state["t_build"] < REBUILD_PERIOD_S and not _state["now"] and not _rendering():
+        return True                                  # the tiles changed: the coverage follows a little later
     if _state.get("moved") != moved:
         _state["cells"].clear()
         _state["boxes"].clear()
@@ -447,6 +485,10 @@ def tick(scene, props, streams, now) -> bool:
         _state["cells"].clear()
         _state["cell"] = cell
     cells = _state["cells"]
+    if props.blend_auto:
+        _auto_distances(props, vis, rl, boxes)
+        max_m = max(props.blend_terrain_inset + props.blend_terrain_fade, props.blend_dataset_fade, 1.0)
+        sig = (sig[0], sig[1], round(max_m, 2))
     t0 = time.perf_counter()
     for o in tiles:
         if o.name in cells:
@@ -470,11 +512,62 @@ def tick(scene, props, streams, now) -> bool:
         del cells[k]
         boxes.pop(k, None)
     _state["sig"] = sig
+    _state["t_build"] = now
+    _state["now"] = False
     return True
+
+
+def match_heights(props, streams) -> list:
+    """Move every dataset up or down onto the blended terrain: [(dataset name, metres moved)]. Each dataset's
+    lowest heights are compared with the terrain's over the ground cells they share, and the dataset's root
+    Empty moves by the median difference along the local vertical. Once: nothing keeps it in place afterwards."""
+    rl = roles(props, streams)
+    frame = bpy.data.objects.get(FRAME)
+    cell = _state["cell"]
+    if frame is None or cell is None or "terrain" not in rl.values():
+        raise RuntimeError("Start streaming with Blend datasets into this terrain ticked, and wait for the tiles")
+    bpy.context.view_layer.update()
+    frame_world = _np(frame.matrix_world)
+    to_frame = np.linalg.inv(frame_world)
+    terrain = [o for uid in rl if rl[uid] == "terrain" for o in _tile_objects(streams[uid]) if o.type == "MESH"]
+    out = []
+    for uid in [u for u in rl if rl[u] == "dataset"]:
+        st = streams[uid]
+        root = bpy.data.objects.get(st.get("root_obj") or "")
+        mine = br.merge([_tile_cells(o, to_frame, cell) for o in _tile_objects(st)])
+        if root is None or not len(mine[0]):
+            continue
+        ix, iy = br.unpack(mine[0])
+        lo, hi = np.array([ix.min(), iy.min()]) * cell, (np.array([ix.max(), iy.max()]) + 1) * cell
+        near = []
+        for o in terrain:                            # the terrain tiles over the dataset
+            p = np.array([(*c, 1.0) for c in o.bound_box]) @ (to_frame @ _np(o.matrix_world))[:2].T
+            if (p.max(0) >= lo).all() and (p.min(0) <= hi).all():
+                near.append(_tile_cells(o, to_frame, cell))
+        ground = br.merge(near)
+        _k, i_d, i_t = np.intersect1d(mine[0], ground[0], assume_unique=True, return_indices=True)
+        if len(i_d) < 8:
+            out.append((st["name"], None, root))
+            continue
+        out.append((st["name"], float(np.median(ground[1][i_t] - mine[1][i_d])), root))
+    from mathutils import Vector
+    up = Vector(frame_world[:3, 2].tolist())         # the frame's Z: one metre, up
+    for _name, dz, root in out:                      # moved last: the frame rides the first dataset's root
+        if dz is not None:
+            m = root.matrix_world.copy()
+            m.translation = m.translation + up * dz
+            root.matrix_world = m
+    out = [(name, dz) for name, dz, _root in out]
+    _state["cells"].clear()
+    _state["boxes"].clear()
+    mark_dirty()
+    return out
 
 
 def on_change(self, context) -> None:
     """A blend setting edited."""
+    if _state["auto"]:
+        return
     try:
         props = context.scene.ogc3dtiles
         set_params(props)

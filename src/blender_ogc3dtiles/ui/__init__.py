@@ -1444,6 +1444,27 @@ def _teardown_stream(st, remove_objects: bool):
             bpy.data.collections.remove(coll)
 
 
+class OGC3D_OT_BlendMatchHeights(Operator):
+    """Move every dataset up or down onto this terrain, once: its lowest heights are compared with the terrain's where they overlap, and its root Empty moves by the median difference. Run it before judging the fades. Undo, or the Empty's location, brings it back"""
+    bl_idname = "ogc3dtiles.blend_match_heights"
+    bl_label = "Match Dataset Heights to Terrain"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        from .. import blend
+        try:
+            moved = blend.match_heights(context.scene.ogc3dtiles, _state["streams"])
+        except RuntimeError as e:
+            self.report({"WARNING"}, str(e))
+            return {"CANCELLED"}
+        if not moved:
+            self.report({"WARNING"}, "No dataset shown over the terrain")
+            return {"CANCELLED"}
+        self.report({"INFO"}, "; ".join(f"{n[:24]}: {dz:+.1f} m" if dz is not None else f"{n[:24]}: no terrain under it"
+                                        for n, dz in moved))
+        return {"FINISHED"}
+
+
 class OGC3D_OT_ClearTiles(Operator):
     """Remove all loaded tile objects and their mesh data from scene"""
     bl_idname = "ogc3dtiles.clear_tiles"
@@ -2341,6 +2362,7 @@ class OGC3D_PT_StreamPanel(_OGC3DSidebar, Panel):
             row.operator("ogc3dtiles.stop_stream", icon="PAUSE", text="Stop")
         row.operator("ogc3dtiles.freeze_tiles", icon="FREEZE", text="Freeze")
         row.operator("ogc3dtiles.clear_tiles", icon="TRASH", text="Clear All Tiles")
+        layout.prop(props, "max_screen_space_error", text="Max SSE (live)")    # also in LOD / Streaming
         if any(o.type == "MESH" and "tile_url" not in o and o.users_collection
                and any(c.name == "Frozen tiles" for c in o.users_collection) for o in context.selected_objects):
             layout.operator("ogc3dtiles.export_frozen", icon="EXPORT")
@@ -2503,7 +2525,9 @@ def _group_button(row, name) -> None:
 
 def _draw_blend(b, it, st, props) -> None:
     from .. import blend
+    b.prop(props, "blend_auto", text="Distances from the dataset's size")
     col = b.column(align=True)
+    col.enabled = not props.blend_auto
     col.prop(props, "blend_dataset_fade")
     col.prop(props, "blend_terrain_inset")
     col.prop(props, "blend_terrain_fade")
@@ -2515,6 +2539,7 @@ def _draw_blend(b, it, st, props) -> None:
     root = bpy.data.objects.get(st["root_obj"] or "") if st is not None else None
     if root is not None:
         b.prop(root, "location", index=2, text="Height offset")
+    b.operator("ogc3dtiles.blend_match_heights", icon="TRIA_DOWN_BAR")
     if st is None:
         b.label(text="Applies while streaming", icon="INFO")
     elif blend._state["info"]:
@@ -3154,6 +3179,7 @@ _classes = [
     OGC3D_OT_PlacePick,
     OGC3D_OT_RelationLines,
     OGC3D_OT_ClearTiles,
+    OGC3D_OT_BlendMatchHeights,
     OGC3D_OT_ClearCache,
     OGC3D_OT_ModalStream,
     OGC3D_UL_Tilesets,

@@ -887,6 +887,11 @@ class TilesSceneProps(PropertyGroup):
         name="Terrain fade",
         description="Terrain blending: metres over which the terrain fades out past the inset. 0: a sharp cut",
         default=10.0, min=0.0, soft_max=200.0, unit="LENGTH", update=_on_blend)
+    blend_auto: BoolProperty(
+        name="Auto",
+        description="Terrain blending: the three distances follow the size of the smallest dataset shown: it "
+                    "fades over 5% of its width, and the terrain goes over the inner half of that band",
+        default=True, update=_on_blend)
     blend_keep_below: BoolProperty(
         name="Keep terrain below",
         description="Terrain blending: the terrain stays where it lies under the dataset, as the ground seen "

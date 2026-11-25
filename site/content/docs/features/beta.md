@@ -16,7 +16,7 @@ view shows it is on, and the same button stops it.
 | Wheel | Zooms about the point under the cursor. |
 | Middle drag | Orbits around the point under the cursor. |
 | Shift + middle drag | Grabs the globe and turns it. |
-| Numpad . | View Selected: frames the selection, and brings the world back to the scale that fits it (real size for a site). A selected dataset Empty is framed with its tiles. |
+| Numpad . | View Selected: glides to the selection over 0.3 s, and brings the world back to the scale that fits it (real size for a site). A selected dataset Empty is framed with its tiles. Also *Frame Selected (Globe)* in the panel and at the end of the View menu, for keyboards without a numpad; Blender's own *View > Frame Selected* moves the view but leaves the world at its scale. |
 
 Everything else stays Blender's own navigation.
 
@@ -32,11 +32,12 @@ Everything else stays Blender's own navigation.
 - When the gestures stop, the scene origin moves under the view and the tiles are placed again in
   double precision. **Re-anchor Scene Origin** does it at once; it is greyed while Globe Navigation
   is off.
-- Re-anchoring changes nothing on screen, so after a long way on the globe the ground under the view
-  is no longer level in Blender: its vertical leans away from +Z by the angle travelled (0.09° per
-  10 km). The panel shows that angle, and **Reset** next to it puts the origin under the view with
-  +Z up and +Y north, turning the view with it. Do this before adding lights, physics or anything
-  else that needs a true vertical.
+- Each time the origin moves this way the Globe is also levelled there: +Z up and +Y north at the new
+  origin, with every 3D view turned with it, so nothing changes on screen. The vertical therefore leans
+  by no more than the last few kilometres travelled (0.09° per 10 km). Objects that are not parented to
+  the Globe do not turn with it. The panel shows the angle, and **Reset Vertical** does the same at once
+  when it is not zero: after a grab that left the view looking at the sky, or in a camera view that
+  cannot be moved, where the Globe is not levelled by itself.
 - A place search, or a new scene origin typed in the Scene Origin panel, puts the Globe back in place
   at 1:1 with the view on the new origin. **Reset Globe** does the same for the current origin, when
   the planet has gone out of sight.

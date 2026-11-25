@@ -113,6 +113,11 @@ async function push(name) {
   const { dir, stamp, lock: lockFile } = paths(name)
   const files = await untrackedFiles(name)
   if (!files.length) throw new Error(`docs/${SETS[name].folder} has no untracked files to pack`)
+  // a file of zeros (a crash or a full disk while it was written) once went up as a picture and broke every docs build
+  for (const f of files) {
+    const head = (await readFile(join(dir, f))).subarray(0, 64)
+    if (!head.length || head.every((v) => v === 0)) throw new Error(`docs/${SETS[name].folder}/${f} is empty or all zeros: restore it before pushing`)
+  }
   await mkdir(CACHE, { recursive: true })
   const list = join(CACHE, `${name}-files.txt`), tmp = join(CACHE, `${name}-new.tar`)
   await writeFile(list, files.map((f) => `${SETS[name].folder}/${f}`).join("\n") + "\n")

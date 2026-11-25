@@ -396,10 +396,21 @@ def _on_relation_lines(self, context):
     _set_relationship_lines(context, not self.hide_relation_lines)
 
 
+def _unfold(self, use: str, show: str) -> None:
+    """Ticking a box opens it: its settings are what comes next."""
+    if getattr(self, use) and not getattr(self, show):
+        setattr(self, show, True)
+
+
 def _on_clip_edit(self, context):
     """Clipping list / mode edited: rebuild the masks of a running tileset."""
     from ..ui import clip_mark_dirty
     clip_mark_dirty(context.scene, self)
+
+
+def _on_use_clipping(self, context):
+    _unfold(self, "use_clipping", "show_clipping")
+    _on_clip_edit(self, context)
 
 
 def _on_blend(self, context):
@@ -407,32 +418,58 @@ def _on_blend(self, context):
     on_change(self, context)
 
 
+def _on_use_blend(self, context):
+    _unfold(self, "use_blend", "show_blend")
+    _on_blend(self, context)
+
+
 def _on_color(self, context):
     from ..color_correct import on_change
     on_change(self, context)
 
 
-_ref_items: list = []                    # Blender keeps no reference to the strings of a dynamic enum
+def _on_use_color(self, context):
+    _unfold(self, "use_color", "show_color")
+    _on_color(self, context)
 
 
-def _others(self):
+def tileset_of(obj):
+    """(uid of the streaming tileset this object belongs to, its root Empty): a tile, a dataset Empty or the
+    root itself. (None, None) for anything else."""
+    try:
+        from ..ui import _state
+        roots = {st.get("root_obj"): uid for uid, st in _state["streams"].items() if st.get("root_obj")}
+    except Exception:                                # noqa: BLE001
+        return None, None
+    while obj is not None:
+        if obj.name in roots:
+            return roots[obj.name], obj
+        obj = obj.parent
+    return None, None
+
+
+def _color_ref_poll(self, obj):
+    uid, _root = tileset_of(obj)
+    return uid is not None and uid != self.uid
+
+
+def _on_color_ref_obj(self, context):
+    """A tile or a root picked: the reference is its tileset, shown as the tileset's root Empty."""
+    obj = self.color_ref_obj
+    if obj is None:
+        if self.color_ref:
+            self.color_ref = ""
+        return
+    uid, root = tileset_of(obj)
     props = getattr(self.id_data, "ogc3dtiles", None)
-    return [it for it in props.tilesets if it != self and it.name] if props is not None else []
-
-
-def _color_ref_items(self, context):
-    _ref_items[:] = [("NONE", "None", "No reference tileset")] + [
-        (f"T{i}", it.name, f"Match this tileset's colors to {it.name}") for i, it in enumerate(_others(self))]
-    return _ref_items
-
-
-def _color_ref_get(self):
-    return next((i + 1 for i, it in enumerate(_others(self)) if it.name == self.color_ref), 0)
-
-
-def _color_ref_set(self, value):
-    others = _others(self)
-    self.color_ref = others[value - 1].name if 0 < value <= len(others) else ""
+    it = next((x for x in props.tilesets if x.uid == uid), None) if props is not None and uid else None
+    if it is None or uid == self.uid:
+        self.color_ref_obj = None
+        return
+    if self.color_ref != it.name:
+        self.color_ref = it.name
+    if root != obj:
+        self.color_ref_obj = root
 
 
 def _camera_poll(self, obj):
@@ -482,6 +519,7 @@ def _on_item_kind(self, context):
 
 
 def _on_item_use_overlays(self, context):
+    _unfold(self, "use_overlays", "show_overlays")
     from ..ui import overlays_live_toggle
     overlays_live_toggle(context.scene, self)
 
@@ -542,7 +580,7 @@ class TilesetItem(PropertyGroup):
         name="Clipping",
         description="Cut this tileset with Blender objects: vertical polygons from their "
                     "outlines, or 3D boxes. Meshes, point clouds and splats. Live",
-        default=False, update=_on_clip_edit)
+        default=False, update=_on_use_clipping)
     clip_mode: EnumProperty(name="Mode", items=CLIP_MODES, default="KEEP_ANY",
                             update=_on_clip_edit)
     use_blend: BoolProperty(
@@ -550,7 +588,7 @@ class TilesetItem(PropertyGroup):
         description="Beta. This tileset is a background (a globe, a terrain layer, Google or Bing 3D Tiles): "
                     "it becomes transparent under every other tileset shown, and their borders fade into it. "
                     "Meshes and point clouds; splats only cut the terrain. cesium-native backend. Live",
-        default=False, update=_on_blend)
+        default=False, update=_on_use_blend)
     agg_params: StringProperty(
         name="Parameters",
         description="3dtiled aggregate: more of the server's query, as written in a URL. nest=geodetic or "
@@ -558,19 +596,20 @@ class TilesetItem(PropertyGroup):
                     "among them. max_km=20 is the add-on's own: only the datasets up to 20 km wide. "
                     "Empty: the server's defaults",
         default="nest=geodetic")
-    # folded or not, for the boxes that are switched on
+    # folded or not, whether the box is ticked or not (a panel with a checkbox in its header, as Blender's own);
+    # ticking a box opens it
     show_properties: BoolProperty(name="Properties", default=True,
                                   description="Unfold the tileset's type, address and own Max SSE")
-    show_overlays: BoolProperty(name="Show", description="Unfold the raster overlays", default=True)
-    show_clipping: BoolProperty(name="Show", description="Unfold the clipping settings", default=True)
-    show_color: BoolProperty(name="Show", description="Unfold the color correction", default=True)
-    show_blend: BoolProperty(name="Show", description="Unfold the terrain blending settings", default=True)
+    show_overlays: BoolProperty(name="Show", description="Unfold the raster overlays", default=False)
+    show_clipping: BoolProperty(name="Show", description="Unfold the clipping settings", default=False)
+    show_color: BoolProperty(name="Show", description="Unfold the color correction", default=False)
+    show_blend: BoolProperty(name="Show", description="Unfold the terrain blending settings", default=False)
     use_color: BoolProperty(
         name="Color correction",
         description="Correct the colors of this tileset in its tile materials: gamma and gain per channel, "
                     "exposure, saturation, contrast. Match Colors fills them from another tileset. Meshes "
                     "and point clouds. Live",
-        default=False, update=_on_color)
+        default=False, update=_on_use_color)
     color_exposure: FloatProperty(
         name="Exposure", description="Stops: +1 doubles the light, -1 halves it",
         default=0.0, soft_min=-3.0, soft_max=3.0, update=_on_color)
@@ -591,11 +630,11 @@ class TilesetItem(PropertyGroup):
         name="Match to",
         description="The tileset whose colors Match Colors brings this one onto: Google Photorealistic "
                     "3D Tiles under a photogrammetry mesh, for one")
-    color_ref_pick: EnumProperty(
-        name="Match to",
+    color_ref_obj: bpy.props.PointerProperty(
+        name="Match to", type=bpy.types.Object, poll=_color_ref_poll, update=_on_color_ref_obj,
         description="The tileset whose colors Match Colors brings this one onto: Google Photorealistic "
-                    "3D Tiles under a photogrammetry mesh, for one. Every other tileset of the list",
-        items=_color_ref_items, get=_color_ref_get, set=_color_ref_set, options={'SKIP_SAVE'})
+                    "3D Tiles under a photogrammetry mesh, for one. Pick one of its tiles in the 3D view with "
+                    "the eyedropper, or its root Empty in the list or the Outliner. It has to be streaming")
     clip_geometry: BoolProperty(
         name="Slower: Also cut in solid view/exports",
         description="Also delete the mesh faces that are entirely cut (Geometry Nodes), so "

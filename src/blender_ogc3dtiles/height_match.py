@@ -19,6 +19,7 @@ import numpy as np
 from . import blend_raster as br
 
 MIN_CELLS = 8
+FAR_BELOW_M = 100_000.0     # terrain this far under the dataset is the other side of the Earth, not its ground
 
 
 def _np(m) -> np.ndarray:
@@ -72,11 +73,13 @@ def measure(objs, terrain, st) -> float | None:
     lo, hi = boxes.min(0), boxes.max(0)
     cell = br.cell_size(float((hi - lo).max()))
     mine = br.merge([_tile_cells(o, to_frame, cell) for o in objs])
+    z_floor = (float(mine[1].min()) if len(mine[1]) else 0.0) - FAR_BELOW_M
     near = []
     for o in terrain:                                # the terrain tiles over the dataset
         p = np.array([(*c, 1.0) for c in o.bound_box]) @ (to_frame @ _np(o.matrix_world))[:2].T
         if (p.max(0) >= lo).all() and (p.min(0) <= hi).all():
-            near.append(_tile_cells(o, to_frame, cell))
+            # only what is under the dataset, and not the far side of a globe
+            near.append(_tile_cells(o, to_frame, cell, box=(lo, hi), z_min=z_floor))
     ground = br.merge(near)
     _k, i_d, i_t = np.intersect1d(mine[0], ground[0], assume_unique=True, return_indices=True)
     if len(i_d) < MIN_CELLS:

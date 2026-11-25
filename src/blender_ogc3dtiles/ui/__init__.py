@@ -389,6 +389,9 @@ def _process_overlay_events(scene, props, st) -> bool:
             continue
         try:
             ovl.apply_event(obj, ev, alpha_for, order_for)
+            if ev[0] == "attach":                    # the overlay is this tile's color: corrected at once
+                from .. import color_correct
+                color_correct.new_tile(props, st, obj)
         except Exception as e:                       # noqa: BLE001
             print(f"[3DTiles] overlay {ev[0]} failed on {key}: {e}")
     return True
@@ -2104,6 +2107,10 @@ def _build_native_tile(scene, props, st, rt) -> bool:
                         ovl.apply_event(obj, ev, alpha_for, order_for)
                     except Exception as e:           # noqa: BLE001
                         print(f"[3DTiles] overlay attach failed on {rt.key}: {e}")
+                try:
+                    color_correct.new_tile(props, st, obj)
+                except Exception as e:               # noqa: BLE001
+                    print(f"[3DTiles] color correction: {e}")
         return True
     return False
 
@@ -2494,15 +2501,17 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
                 _draw_properties(b, it, st)
             # per tileset, each in its own box so they read as things to switch on
             b = layout.box()            # raster overlays draped on this tileset (cesium-native backend)
-            if _fold_header(b, it, "use_overlays", "show_overlays",
-                            f"Raster overlays ({len(it.overlays)})" if it.overlays else "Raster overlays"):
-                _draw_overlays(b, it, st)
+            body = _fold_header(b, it, "use_overlays", "show_overlays",
+                                f"Raster overlays ({len(it.overlays)})" if it.overlays else "Raster overlays")
+            if body is not None:
+                _draw_overlays(body, it, st)
             n_ds = len(st.get("datasets") or ()) if st is not None else 0
             from ..tileset.feature_meta import TILESET_METADATA
             n_all = len(TILESET_METADATA.datasets_of(st.get("url") or "")) if st is not None else 0
             b = layout.box()            # the datasets of a tileset of tilesets: both settings are the scene's
-            if _fold_header(b, props, "dataset_empties", "show_markers",
-                            f"Markers - datasets locations ({n_ds})" if n_ds else "Markers - datasets locations"):
+            b = _fold_header(b, props, "dataset_empties", "show_markers",
+                             f"Markers - datasets locations ({n_ds})" if n_ds else "Markers - datasets locations")
+            if b is not None:
                 b.prop(props, "dataset_marker_px", text="Dot radius (px)")
                 b.prop(props, "dataset_markers",
                        text=f"Also the {n_all - n_ds} datasets not loaded yet (beta)" if n_all > n_ds
@@ -2512,16 +2521,17 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
                 elif not n_ds and not n_all:
                     b.label(text="This tileset has no datasets of its own", icon="INFO")
             b = layout.box()
-            if _fold_header(b, it, "use_clipping", "show_clipping",
-                            f"Clipping ({len(it.clip_polygons)})" if it.clip_polygons else "Clipping"):
-                _draw_clipping(b, it, st, props)
-            b = layout.box()
-            if _fold_header(b, it, "use_color", "show_color", "Color correction"):
-                _draw_color(b, it, st, props)
+            body = _fold_header(b, it, "use_clipping", "show_clipping",
+                                f"Clipping ({len(it.clip_polygons)})" if it.clip_polygons else "Clipping")
+            if body is not None:
+                _draw_clipping(body, it, st, props)
+            body = _fold_header(layout.box(), it, "use_color", "show_color", "Color correction")
+            if body is not None:
+                _draw_color(body, it, st, props)
             if blend.enabled() and (it.use_blend or background):
-                b = layout.box()
-                if _fold_header(b, it, "use_blend", "show_blend", "Terrain blending (beta)"):
-                    _draw_blend(b, it, st, props)
+                body = _fold_header(layout.box(), it, "use_blend", "show_blend", "Terrain blending (beta)")
+                if body is not None:
+                    _draw_blend(body, it, st, props)
         else:
             layout.prop(props, "tileset_url", text="URL")
             layout.prop(props, "cesium_ion_token", text="Ion Token")
@@ -2573,15 +2583,18 @@ def _draw_properties(b, it, st) -> None:
         b.operator("ogc3dtiles.match_heights", icon="TRIA_DOWN_BAR")
 
 
-def _fold_header(b, it, use: str, show: str, text: str) -> bool:
-    """The first row of a per-tileset box: its checkbox and, once ticked, an arrow that folds the box.
-    True when the box's content is to be drawn."""
+def _fold_header(b, it, use: str, show: str, text: str):
+    """The first row of a box: its checkbox and an arrow that folds it, ticked or not, as a Blender panel with
+    a checkbox in its header. Returns the layout to draw the content in, greyed while the box is unticked;
+    None when folded."""
     row = b.row(align=True)
     row.prop(it, use, text=text)
-    if not getattr(it, use):
-        return False
     row.prop(it, show, text="", icon="TRIA_DOWN" if getattr(it, show) else "TRIA_LEFT", emboss=False)
-    return getattr(it, show)
+    if not getattr(it, show):
+        return None
+    col = b.column()
+    col.active = bool(getattr(it, use))
+    return col
 
 
 def _draw_color(b, it, st, props) -> None:
@@ -2598,10 +2611,12 @@ def _draw_color(b, it, st, props) -> None:
     row = b.row(align=True)
     row.prop(it, "color_saturation")
     row.prop(it, "color_contrast")
-    b.prop(it, "color_ref_pick", icon="IMAGE_REFERENCE")
+    b.prop(it, "color_ref_obj")                      # Blender's own picker: a list with a search, and an eyedropper
+    if it.color_ref and it.color_ref_obj is None:
+        b.label(text=f"Reference: {it.color_ref[:40]}", icon="IMAGE_REFERENCE")
     row = b.row(align=True)
     sub = row.row(align=True)
-    sub.enabled = it.color_ref_pick != "NONE"
+    sub.enabled = bool(it.color_ref)
     sub.operator("ogc3dtiles.color_match", icon="COLOR")
     row.operator("ogc3dtiles.color_reset", icon="LOOP_BACK", text="")
     if st is None:

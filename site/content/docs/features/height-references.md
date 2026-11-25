@@ -111,8 +111,14 @@ it never shows uncorrected.
 
 ### Match Colors
 
-Pick the reference in **Match to**, a list of the other tilesets (Google Photorealistic 3D Tiles under a photogrammetry mesh, for one),
-have both streaming with the overlap in view, and press **Match Colors**.
+Pick the reference in **Match to** (Google Photorealistic 3D Tiles under a photogrammetry mesh, for one),
+have both streaming with the overlap in view, and press **Match Colors**. *Match to* is Blender's object
+picker: its eyedropper takes any tile of the reference in the 3D view, and the list holds the root Empty of
+each streaming tileset (and their tiles). The field then shows the root Empty of the tileset picked.
+
+The reference is read as it is drawn: a terrain with raster overlays gives the colors of its imagery, and
+a reference with its own color correction gives its corrected colors. Terrain blending hides nothing from
+it: whole tiles are read, not what the fade leaves visible.
 
 Both tilesets are sampled over the area they share, seen from above, and nowhere else: 3000 points per
 tile shown there, each looked up in the tile's texture (or the point's own color), averaged per ground

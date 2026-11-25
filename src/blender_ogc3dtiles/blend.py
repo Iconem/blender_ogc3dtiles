@@ -377,10 +377,21 @@ def _xyz(o, to_frame):
     return co.reshape(-1, 3).astype(np.float64) @ m[:3, :3].T + m[:3, 3]
 
 
-def _tile_cells(o, to_frame, cell):
+def _tile_cells(o, to_frame, cell, box=None, z_min=-math.inf):
+    """The ground cells a tile covers. ``box`` (lo, hi in the frame): only the part of the tile over it and
+    above ``z_min``, for a terrain tile far wider than the dataset it is compared with."""
     xy = _xyz(o, to_frame)
     if not len(xy):
         return br.EMPTY
+    if box is not None:
+        if o.type != "POINTCLOUD" and len(o.data.polygons):
+            o.data.calc_loop_triangles()
+            tris = np.empty(len(o.data.loop_triangles) * 3, np.int32)
+            o.data.loop_triangles.foreach_get("vertices", tris)
+            return br.cells_of_triangles_in(xy, tris, cell, *box, z_min=z_min)
+        xy = xy[((xy[:, :2] >= box[0]) & (xy[:, :2] <= box[1])).all(1) & (xy[:, 2] >= z_min)]
+        if not len(xy):
+            return br.EMPTY
     span = xy.max(0) - xy.min(0)
     spacing = math.sqrt(max(span[0] * span[1], 1e-9) / len(xy))
     me = o.data

@@ -1619,8 +1619,7 @@ def draw_reload_for_metadata(layout, props) -> bool:
     """The red line and its button when the properties were asked for after the tiles came in."""
     if not (props.read_metadata and loaded_without_metadata()):
         return False
-    col = layout.column(align=True)
-    col.alert = True
+    col = layout.column(align=True)                  # a warning, not an error: the yellow triangle, no red
     col.label(text="The tiles on screen were loaded without them", icon="ERROR")
     col.operator("ogc3dtiles.reload_tiles", icon="FILE_REFRESH", text="Reload Tiles with their Properties")
     return True
@@ -1628,10 +1627,6 @@ def draw_reload_for_metadata(layout, props) -> bool:
 
 def draw_metadata_panel(layout, props):
     """Body of the collapsible "Metadata" sub-panel."""
-    layout.prop(props, "read_metadata")
-    draw_reload_for_metadata(layout, props)
-    if props.read_metadata:
-        layout.prop(props, "meta_all_columns")
     _draw_metadata_columns(layout, props)
     if not has_voxels():                                # a section of its own, and only with a voxel tileset
         return
@@ -1693,13 +1688,14 @@ def _draw_metadata_columns(layout, props):
                 row.prop(props, "meta_range_min")
                 row.prop(props, "meta_range_max")
         return
+    layout.prop(props, "read_metadata")          # here only: properties are what it reads
+    reload = draw_reload_for_metadata(layout, props)
+    if props.read_metadata:
+        layout.prop(props, "meta_all_columns")
     if not props.meta_columns:
-        if not props.read_metadata:              # the same checkbox as at the top, where it is needed
-            layout.prop(props, "read_metadata")
+        if not props.read_metadata:
             layout.label(text="Tick it to load the tiles' properties", icon="INFO")
-        elif loaded_without_metadata():
-            layout.label(text="Press Reload Tiles with their Properties, above", icon="INFO")
-        else:
+        elif not reload:
             layout.label(text="No property loaded yet", icon="INFO")
         return
     layout.prop_search(props, "meta_column", props, "meta_columns", text="Property")

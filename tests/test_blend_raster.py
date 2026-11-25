@@ -67,3 +67,28 @@ def test_a_long_fade_or_a_wide_footprint_coarsens_the_raster():
 
 def test_no_cells_no_coverage():
     assert br.coverage([br.EMPTY], 1.0, 10.0) is None
+
+
+def test_cells_of_triangles_in_a_huge_triangle_under_a_small_box():
+    # a terrain triangle 2000 km wide, sloping 1 m per km along x, under a dataset 100 m wide
+    xyz = np.array([(-1e6, -1e6, -1000.0), (1e6, -1e6, 1000.0), (0.0, 1e6, 0.0)])
+    cells, z = br.cells_of_triangles_in(xyz, [(0, 1, 2)], 1.0, (0.0, 0.0), (100.0, 100.0))
+    ix, iy = br.unpack(cells)
+    assert len(cells) == 101 * 101 and ix.min() == 0 and ix.max() == 100 and iy.min() == 0
+    assert np.allclose(z, (ix + 0.5) * 1e-3, atol=1e-4)
+
+
+def test_cells_of_triangles_in_leaves_out_what_is_beside_the_box():
+    xyz = np.array([(500.0, 500.0, 0.0), (600.0, 500.0, 0.0), (500.0, 600.0, 0.0)])
+    assert len(br.cells_of_triangles_in(xyz, [(0, 1, 2)], 1.0, (0.0, 0.0), (100.0, 100.0))[0]) == 0
+    near = np.array([(10.0, 10.0, 5.0), (14.0, 10.0, 5.0), (10.0, 14.0, 5.0)])     # a few cells wide: sampled
+    cells, z = br.cells_of_triangles_in(near, [(0, 1, 2)], 1.0, (0.0, 0.0), (100.0, 100.0))
+    assert len(cells) >= 10 and np.allclose(z, 5.0)
+
+
+def test_cells_of_triangles_in_leaves_out_the_far_side_of_the_earth():
+    near = [(-1e3, -1e3, 0.0), (1e3, -1e3, 0.0), (0.0, 1e3, 0.0)]
+    far = [(-1e3, -1e3, -1.27e7), (1e3, -1e3, -1.27e7), (0.0, 1e3, -1.27e7)]
+    cells, z = br.cells_of_triangles_in(np.array(near + far), [(0, 1, 2), (3, 4, 5)], 1.0, (0.0, 0.0), (50.0, 50.0),
+                                        z_min=-1e5)
+    assert len(cells) == 51 * 51 and np.allclose(z, 0.0)

@@ -54,7 +54,7 @@ REANCHOR_MIN_M = 2000.0     # the view centre must be this far from the scene or
 MIN_SCALE = 1e-8
 
 _nav = {"active": False, "draw": None, "draw_px": None, "depth": {}, "last_t": 0.0, "dirty": False, "drag": None,
-        "last_view": None, "cap_ms": 0.0, "anchors": 0}
+        "last_view": None, "cap_ms": 0.0, "anchors": 0, "anim": None}
 
 
 # ── matrices ───────────────────────────────────────────────────────────────────────────────────────────────────
@@ -467,19 +467,22 @@ def _selection_points(context):
     return pts, under
 
 
-def frame_selected(context, area, region, space) -> bool:
-    """Numpad period while Globe Navigation is on: Blender's View Selected, with the world brought back to the
-    scale that fits the selection (real size for a site, smaller for a country). False: nothing of the Globe is
-    selected, the key is Blender's."""
+FRAME_ANIM_S = 0.3          # View Selected glides there while Globe Navigation is on, as Blender's Smooth View
+
+
+def frame_target(context, region, space):
+    """Blender's View Selected for the Globe, as a move to play: where the view goes and how much the world is
+    scaled on the way (back to real size for a site, smaller for a country). None: nothing of the Globe is
+    selected."""
     pts, under = _selection_points(context)
     g = globe()
     if not pts or not under or g is None:
-        return False
+        return None
     rv3d = region.data
     try:
         view = _View(space, rv3d)
     except ValueError:
-        return False
+        return None
     centre, radius = bounding_sphere(pts)
     s0 = globe_scale(g)
     w = rv3d.window_matrix
@@ -487,19 +490,56 @@ def frame_selected(context, area, region, space) -> bool:
     s, dist = frame_scale(radius / max(s0, MIN_SCALE), tan_half, s0)
     if view.follows_globe():
         s, dist = s0, dist / s * s0                    # the camera is on the Globe: it goes to the selection instead
-    elif abs(s / s0 - 1.0) > 1e-9:
-        _set_globe(context, g, _about(centre, np.eye(3) * (s / s0)) @ _np(g.matrix_world), view)
+    return {"view": view, "space": space, "rv3d": rv3d, "centre": centre, "k": s / s0, "dist": dist,
+            "G0": _np(g.matrix_world), "ortho": 2.0 * FRAME_FILL * radius * s / s0}
+
+
+def frame_apply(context, tgt, e: float) -> None:
+    """The move of ``frame_target`` at the share ``e`` (0 to 1) of its way."""
+    view, rv3d, centre = tgt["view"], tgt["rv3d"], tgt["centre"]
+    g = globe()
+    if g is None:
+        return
+    if abs(tgt["k"] - 1.0) > 1e-9:                     # the selection's centre stays put while the world is scaled
+        _set_globe(context, g, _about(centre, np.eye(3) * tgt["k"] ** e) @ tgt["G0"], view)
     p = Vector(centre)
     if view.cam is not None:
-        m = view.cam.matrix_world.copy()
-        m.translation = p + m.to_quaternion() @ Vector((0.0, 0.0, dist))
+        m = view.m0.copy()
+        m.translation = view.m0.translation.lerp(p + m.to_quaternion() @ Vector((0.0, 0.0, tgt["dist"])), e)
         view.cam.matrix_world = m
         if view.cam.data.type == "ORTHO":
-            view.cam.data.ortho_scale = 2.0 * FRAME_FILL * radius * s / s0
+            view.cam.data.ortho_scale = view.ortho0 + (tgt["ortho"] - view.ortho0) * e
     else:
-        rv3d.view_location = p
-        rv3d.view_distance = dist
-        space.clip_end = max(space.clip_end, 4.0 * dist)
+        rv3d.view_location = view.loc0.lerp(p, e)
+        d0 = max(view.dist0, 1e-9)
+        rv3d.view_distance = d0 * (tgt["dist"] / d0) ** e
+        tgt["space"].clip_end = max(tgt["space"].clip_end, 4.0 * tgt["dist"])
+
+
+def start_frame(context, area, region, space) -> bool:
+    """View Selected: played over FRAME_ANIM_S by the running Globe Navigation, at once without it. False:
+    nothing of the Globe is selected."""
+    tgt = frame_target(context, region, space)
+    if tgt is None:
+        return False
+    if _nav["active"]:
+        tgt.update(t0=time.monotonic(), area=area)
+        _nav["anim"] = tgt
+    else:
+        frame_apply(context, tgt, 1.0)
+    _nav["last_view"] = (region, region.data)
+    _nav["last_t"] = time.monotonic()
+    _nav["dirty"] = True
+    area.tag_redraw()
+    return True
+
+
+def frame_selected(context, area, region, space) -> bool:
+    """View Selected at once, without the glide."""
+    tgt = frame_target(context, region, space)
+    if tgt is None:
+        return False
+    frame_apply(context, tgt, 1.0)
     return True
 
 
@@ -596,6 +636,48 @@ def _view_anchor(context, region, rv3d):
     return pick(context.scene, region, rv3d, region.width // 2, region.height // 2)
 
 
+def _views(context) -> list:
+    """A _View per 3D viewport that can be moved (not a camera view without Lock Camera to View), each camera once."""
+    out, cams = [], set()
+    for win in context.window_manager.windows:
+        for area in win.screen.areas:
+            if area.type != "VIEW_3D":
+                continue
+            space = area.spaces.active
+            try:
+                v = _View(space, space.region_3d)
+            except ValueError:
+                continue
+            if v.cam is not None:
+                if v.cam.name in cams:
+                    continue
+                cams.add(v.cam.name)
+            out.append(v)
+    return out
+
+
+def level(context) -> bool:
+    """Turn the Globe about the scene origin so that +Z is up and +Y north there, and every 3D view with it:
+    nothing changes on screen. False when it was level already."""
+    g = globe()
+    if g is None:
+        return False
+    G = _np(g.matrix_world)
+    R = G[:3, :3] / max(np.linalg.norm(G[:3, 0]), 1e-300)
+    if np.allclose(R, np.eye(3), rtol=0.0, atol=1e-12):
+        return False
+    T = _about(G[:3, 3], R.T)                              # undo the Globe's rotation about the origin
+    views = [v for v in _views(context) if not v.follows_globe()]      # a camera under the Globe turns with it
+    g.matrix_world = _mx(T @ G)
+    for v in views:
+        v.transform(T)
+    _mark_origin(g, context.scene.ogc3dtiles)
+    from . import ui
+    for st in ui._state["streams"].values():
+        st["last_sig"] = None
+    return True
+
+
 def _maybe_reanchor(context):
     lv = _nav.get("last_view")
     if not _nav["dirty"] or _nav["drag"] is not None or lv is None or time.monotonic() - _nav["last_t"] < REANCHOR_IDLE_S:
@@ -608,8 +690,11 @@ def _maybe_reanchor(context):
         if a is None or g is None:
             return
         local = np.linalg.solve(_np(g.matrix_world), np.append(a, 1.0))[:3]     # metres from the scene origin
-        if float(np.linalg.norm(local)) >= REANCHOR_MIN_M:
-            reanchor(context, a)
+        if float(np.linalg.norm(local)) >= REANCHOR_MIN_M and reanchor(context, a):
+            # level again at the new origin, so the vertical never leans more than the last few km travelled.
+            # Not in a camera view that cannot be moved: the picture would turn
+            if rv3d.view_perspective != "CAMERA" or any(v.rv3d == rv3d for v in _views(context)):
+                level(context)
     except ReferenceError:
         _nav["last_view"] = None
 
@@ -657,7 +742,38 @@ class OGC3D_OT_GlobeNav(Operator):
             a.tag_redraw()
         return {"RUNNING_MODAL"}
 
+    _anim_timer = None
+
+    def _stop_anim(self, context, finish: bool) -> None:
+        an, _nav["anim"] = _nav.get("anim"), None
+        if self._anim_timer is not None:
+            context.window_manager.event_timer_remove(self._anim_timer)
+            self._anim_timer = None
+        if an is not None and finish:
+            try:
+                frame_apply(context, an, 1.0)
+                self._changed(an["area"])
+            except ReferenceError:
+                pass
+
+    def _anim(self, context) -> None:
+        an = _nav["anim"]
+        if self._anim_timer is None:
+            self._anim_timer = context.window_manager.event_timer_add(1.0 / 60.0, window=context.window)
+        t = (time.monotonic() - an["t0"]) / FRAME_ANIM_S
+        if t >= 1.0:
+            self._stop_anim(context, finish=True)
+            return
+        try:
+            frame_apply(context, an, t * t * (3.0 - 2.0 * t))
+            an["frames"] = an.get("frames", 0) + 1
+            _nav["anim_frames"] = an["frames"]
+            an["area"].tag_redraw()
+        except ReferenceError:
+            self._stop_anim(context, finish=False)
+
     def _end(self, context):
+        self._stop_anim(context, finish=True)
         context.window_manager.event_timer_remove(self._timer)
         _remove_draw()
         _nav.update(active=False, drag=None, depth={})
@@ -669,6 +785,9 @@ class OGC3D_OT_GlobeNav(Operator):
         if not _nav["active"]:
             return self._end(context)
         if event.type == "TIMER":
+            if _nav.get("anim") is not None:           # View Selected on its way
+                self._anim(context)
+                return {"PASS_THROUGH"}
             if sync_origin(context.scene):             # the origin moved by a search or the fields
                 _nav["drag"] = None
                 for a in context.window.screen.areas:
@@ -683,15 +802,17 @@ class OGC3D_OT_GlobeNav(Operator):
             return {"PASS_THROUGH"}
         if event.type == "NUMPAD_PERIOD" and event.value == "PRESS" and not event.shift:
             at = _view3d_at(context, event)
-            if at is None or not frame_selected(context, *at):
+            if at is None:
                 return {"PASS_THROUGH"}
-            _nav["last_view"] = (at[1], at[1].data)
-            self._changed(at[0])
+            self._stop_anim(context, finish=True)
+            if not start_frame(context, *at):
+                return {"PASS_THROUGH"}
             return {"RUNNING_MODAL"}
         wheel = event.type in {"WHEELUPMOUSE", "WHEELDOWNMOUSE"} and not event.shift
         press = event.type == "MIDDLEMOUSE" and event.value == "PRESS"
         if not (wheel or press):
             return {"PASS_THROUGH"}
+        self._stop_anim(context, finish=True)          # a gesture takes over from where the glide was going
         at = _view3d_at(context, event)
         if at is None:
             return {"PASS_THROUGH"}
@@ -833,7 +954,10 @@ def globe_tilt(g=None) -> float:
         return 0.0
     G = _np(g.matrix_world)[:3, :3]
     R = G / max(np.linalg.norm(G[:, 0]), 1e-300)
-    return float(math.acos(max(-1.0, min(1.0, (np.trace(R) - 1.0) / 2.0))))
+    # from the sine too: the arc cosine alone reads 0.03 degrees off for a Globe that is level (Blender keeps
+    # matrices in single precision), and the panel then said the reset had not worked
+    sin = 0.5 * math.sqrt((R[2, 1] - R[1, 2]) ** 2 + (R[0, 2] - R[2, 0]) ** 2 + (R[1, 0] - R[0, 1]) ** 2)
+    return float(math.atan2(sin, (np.trace(R) - 1.0) / 2.0))
 
 
 class OGC3D_OT_GlobeLevel(Operator):
@@ -855,29 +979,52 @@ class OGC3D_OT_GlobeLevel(Operator):
             return {"CANCELLED"}
         region, rv3d, space = cv
         try:
-            view = _View(space, rv3d)
+            _View(space, rv3d)
         except ValueError:
             self.report({"WARNING"}, "Leave the camera view, or turn Lock Camera to View on")
             return {"CANCELLED"}
         a = _view_anchor(context, region, rv3d)
         if a is None:
             a = np.array(rv3d.view_location, dtype=np.float64)
+        before = math.degrees(globe_tilt(g))
         if not reanchor(context, a):
-            self.report({"WARNING"}, "No georeferenced scene origin to move")
+            self.report({"WARNING"}, "No georeferenced scene origin to move: the scene origin is local, or not set")
             return {"CANCELLED"}
-        G = _np(g.matrix_world)
-        R = G[:3, :3] / max(np.linalg.norm(G[:3, 0]), 1e-300)
-        T = _about(G[:3, 3], R.T)                              # undo the Globe's rotation about the new origin
-        follows = view.follows_globe()
-        g.matrix_world = _mx(T @ G)
-        if not follows:                                        # a camera under the Globe turns with it
-            view.transform(T)
-        _mark_origin(g, context.scene.ogc3dtiles)
-        from . import ui
-        for st in ui._state["streams"].values():
-            st["last_sig"] = None
-        context.area.tag_redraw()
+        level(context)
+        for area in context.window.screen.areas:
+            area.tag_redraw()
+        self.report({"INFO"}, f"Vertical was off by {before:.2f}°, now {math.degrees(globe_tilt(g)):.2f}°: "
+                              "the scene origin is under the view, +Z up")
         return {"FINISHED"}
+
+
+class OGC3D_OT_GlobeFrameSelected(Operator):
+    """Frame the selection, as Blender's View Selected, and bring the world back to the scale that fits it: real size for a site, smaller for a country. Numpad period does the same while Globe Navigation is on. Blender's own View > Frame Selected moves the view but leaves the world at the scale it had"""
+    bl_idname = "ogc3dtiles.globe_frame_selected"
+    bl_label = "Frame Selected (Globe)"
+
+    @classmethod
+    def poll(cls, context):
+        if globe() is None:
+            cls.poll_message_set("Start Globe Navigation once first: it makes the Globe")
+            return False
+        return True
+
+    def execute(self, context):
+        cv = _context_view(context)
+        if cv is None:
+            return {"CANCELLED"}
+        region, _rv3d, space = cv
+        if not start_frame(context, context.area, region, space):
+            self.report({"WARNING"}, "Select a tile, a dataset Empty or an object parented to the Globe")
+            return {"CANCELLED"}
+        return {"FINISHED"}
+
+
+def _view_menu(self, context) -> None:
+    if globe() is not None:
+        self.layout.separator()
+        self.layout.operator("ogc3dtiles.globe_frame_selected", icon="ZOOM_SELECTED")
 
 
 class OGC3D_OT_GlobeReset(Operator):
@@ -938,6 +1085,7 @@ class OGC3D_PT_GlobeNav(Panel):
         on = _nav["active"]
         layout.operator("ogc3dtiles.globe_nav", text="Stop Globe Navigation" if on else "Globe Navigation",
                         icon="PAUSE" if on else "WORLD", depress=on)
+        layout.operator("ogc3dtiles.globe_frame_selected", icon="ZOOM_SELECTED")
         g = globe()
         if g is None:
             layout.label(text="Makes an Empty that carries every tileset", icon="INFO")
@@ -1006,12 +1154,13 @@ def _set_scale_x(_self, value) -> None:
 
 
 _classes = (OGC3D_OT_GlobeNav, OGC3D_OT_GlobeScaleReset, OGC3D_OT_GlobeReanchor, OGC3D_OT_GlobeLevel, OGC3D_OT_GlobeParent, OGC3D_OT_GlobeReset,
-            OGC3D_PT_GlobeNav)
+            OGC3D_OT_GlobeFrameSelected, OGC3D_PT_GlobeNav)
 
 
 def register():
     for c in _classes:
         bpy.utils.register_class(c)
+    bpy.types.VIEW3D_MT_view.append(_view_menu)
     bpy.types.WindowManager.ogc3d_globe_frame = bpy.props.BoolProperty(
         name="Frame while active", default=True,
         description="Draw a thin frame around the 3D view while Globe Navigation is on")
@@ -1027,6 +1176,10 @@ def register():
 
 def unregister():
     _nav["active"] = False
+    try:
+        bpy.types.VIEW3D_MT_view.remove(_view_menu)
+    except Exception:                                # noqa: BLE001
+        pass
     _remove_draw()
     del bpy.types.WindowManager.ogc3d_globe_frame
     del bpy.types.WindowManager.ogc3d_globe_scale_n

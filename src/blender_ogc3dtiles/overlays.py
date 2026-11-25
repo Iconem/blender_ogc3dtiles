@@ -37,6 +37,30 @@ def _overlay_mixes(nt):
             if n.name.startswith(NODE_TAG) and n.name.endswith(" Mix") and n.type == "MIX"]
 
 
+def layers(nt) -> list:
+    """[(image, UV map, (tx, ty), (sx, sy), opacity)] of the overlays a mesh tile material shows, bottom
+    first: what Match Colors needs to read the colors as they are drawn."""
+    out = []
+    for mix in sorted(_overlay_mixes(nt), key=lambda m: m.get(ORDER_PROP, 0)):
+        base = mix.name[:-len(" Mix")]
+        tex, mp, uv, fac = (nt.nodes.get(base + s) for s in (" Tex", " Map", " UV", " Factor"))
+        if tex is None or tex.image is None or mp is None or uv is None or uv.type != "UVMAP":
+            continue
+        loc, sc = mp.inputs["Location"].default_value, mp.inputs["Scale"].default_value
+        out.append((tex.image, uv.uv_map, (loc[0], loc[1]), (sc[0], sc[1]),
+                    float(fac.inputs[0].default_value) if fac is not None else 1.0))
+    return out
+
+
+def base_color(nt):
+    """The plain color under the overlays of an untextured tile (linear RGB)."""
+    rgb = nt.nodes.get(NODE_TAG + " Base")
+    if rgb is not None:
+        return tuple(rgb.outputs[0].default_value[:3])
+    bsdf = next((n for n in nt.nodes if n.type == "BSDF_PRINCIPLED"), None)
+    return tuple(bsdf.inputs["Base Color"].default_value[:3]) if bsdf is not None else (0.8, 0.8, 0.8)
+
+
 def _point_coords(nt, name, attr_name, y):
     """Output carrying a point tile's overlay coordinates: both lookups are added,
     whichever domain exists carries them, as in ``io._wire_point_colors``."""

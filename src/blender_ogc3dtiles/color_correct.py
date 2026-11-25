@@ -10,7 +10,9 @@ colors (*Color tiles by*), which are not corrected.
 
 *Match Colors* fills Gain and Gamma from another tileset: both are sampled where they overlap, from above,
 one mean color per ground cell each (color_match fits the numbers). The samples are the raw colors of the
-tiles shown: the vertices of a mesh looked up in its texture, or the point colors.
+tiles shown: points on a mesh looked up in its texture and in the raster overlays drawn over it (a terrain
+with imagery is read as its imagery), or the point colors. Terrain blending hides nothing from it: the
+whole tiles are read, not what the fade leaves visible.
 """
 from __future__ import annotations
 
@@ -30,6 +32,7 @@ BUDGET_S = 0.006
 SAMPLES_PER_TILE = 3000
 MAX_TILES = 600
 MAX_PIXELS = 4096 * 4096
+FAR_BELOW_M = 100_000.0
 
 _state = {"done": {}, "t_scan": 0.0, "t_recheck": 0.0, "vis": {}, "strip": set()}
 
@@ -276,8 +279,9 @@ def _texture(mat):
     """(image, UV map name or "") a tile material takes its color from."""
     if mat is None or mat.node_tree is None:
         return None, ""
+    from .overlays import NODE_TAG
     for n in mat.node_tree.nodes:
-        img = n.image if n.type == "TEX_IMAGE" else None
+        img = n.image if n.type == "TEX_IMAGE" and not n.name.startswith(NODE_TAG) else None
         if img is None or img.colorspace_settings.name == "Non-Color" or img.channels < 3 or not n.outputs["Color"].links:
             continue
         uv = n.inputs["Vector"].links[0].from_node if n.inputs["Vector"].links else None
@@ -297,8 +301,10 @@ def _pixels(img, cache):
     return cache[img.name]
 
 
-def tile_samples(o, to_frame, rng, cache):
-    """(positions N x 3 in the frame, linear colors N x 3) of some of a tile's vertices; None without colors."""
+def tile_samples(o, to_frame, rng, cache, box=None):
+    """(positions N x 3 in the frame, linear colors N x 3) of some points of a tile; None without colors.
+    ``box`` (lo, hi in the frame): the points are taken on the triangles that reach into it, so a coarse tile
+    far wider than the area compared still gives some there."""
     me = o.data
     m = to_frame @ np.array(o.matrix_world, np.float64)
     n_v = len(me.vertices)
@@ -318,28 +324,58 @@ def tile_samples(o, to_frame, rng, cache):
         pos = co @ m[:3, :3].T + m[:3, 3]
         a, b, c = pos[vi[:, 0]], pos[vi[:, 1]], pos[vi[:, 2]]
         area = np.abs((b[:, 0] - a[:, 0]) * (c[:, 1] - a[:, 1]) - (b[:, 1] - a[:, 1]) * (c[:, 0] - a[:, 0])) + 1e-9
+        if box is not None:
+            t_lo = np.minimum(np.minimum(a, b), c)[:, :2]
+            t_hi = np.maximum(np.maximum(a, b), c)[:, :2]
+            hit = (t_hi >= box[0]).all(1) & (t_lo <= box[1]).all(1) & (np.maximum(np.maximum(a[:, 2], b[:, 2]), c[:, 2]) > -FAR_BELOW_M)
+            if not hit.any():
+                return None
+            area = np.where(hit, area, 0.0)
         tri = rng.choice(n_p, SAMPLES_PER_TILE, p=area / area.sum())
         u, v = rng.random(SAMPLES_PER_TILE), rng.random(SAMPLES_PER_TILE)
         flip = u + v > 1.0
         u[flip], v[flip] = 1.0 - u[flip], 1.0 - v[flip]
         w = np.stack([1.0 - u - v, u, v], 1)
+        from . import overlays as ovl
         xyz, rgb = [], []
-        for slot, mat in enumerate(me.materials):
-            img, uv_name = _texture(mat)
-            sel = mi[tri] == slot
-            layer = me.uv_layers.get(uv_name) if uv_name else me.uv_layers.get("UVMap") or me.uv_layers[0]
-            px = _pixels(img, cache) if img is not None and layer is not None and sel.any() else None
+
+        def lookup(img, layer, sel, place=None):
+            """(colors, alpha) of an image at the sample points of ``sel``, None when it cannot be read."""
+            px = _pixels(img, cache) if img is not None and layer is not None else None
             if px is None:
-                continue
+                return None
             uv = np.empty(6 * n_p, np.float32)
             layer.data.foreach_get("uv", uv)
             uv = (uv.reshape(-1, 3, 2)[tri[sel]] * w[sel][:, :, None]).sum(1)
             h, wd = px.shape[:2]
-            x = np.clip((uv[:, 0] % 1.0 * wd).astype(np.int64), 0, wd - 1)
-            y = np.clip((uv[:, 1] % 1.0 * h).astype(np.int64), 0, h - 1)
+            if place is None:                        # the tile's own texture repeats
+                uv = uv % 1.0
+            else:                                    # an overlay: placed by its Mapping node, clamped at its edges
+                uv = uv * np.array(place[1]) + np.array(place[0])
+            x = np.clip((uv[:, 0] * wd).astype(np.int64), 0, wd - 1)
+            y = np.clip((uv[:, 1] * h).astype(np.int64), 0, h - 1)
             col = px[y, x, :3]
             if not img.is_float and img.colorspace_settings.name == "sRGB":
                 col = cm.srgb_to_linear(col)
+            return col, (px[y, x, 3] if px.shape[2] > 3 else np.ones(len(col), np.float32))
+
+        for slot, mat in enumerate(me.materials):
+            sel = mi[tri] == slot
+            if mat is None or mat.node_tree is None or not sel.any():
+                continue
+            img, uv_name = _texture(mat)
+            got = lookup(img, me.uv_layers.get(uv_name) if uv_name else me.uv_layers.get("UVMap") or me.uv_layers[0], sel)
+            col = got[0] if got is not None else None
+            for o_img, o_uv, loc, scale, opacity in ovl.layers(mat.node_tree):     # as drawn: mixed over, in order
+                got = lookup(o_img, me.uv_layers.get(o_uv), sel, place=(loc, scale))
+                if got is None:
+                    continue
+                if col is None:
+                    col = np.tile(np.array(ovl.base_color(mat.node_tree), np.float32), (int(sel.sum()), 1))
+                a = (got[1] * opacity)[:, None]
+                col = col * (1.0 - a) + got[0] * a
+            if col is None:
+                continue
             xyz.append((pos[vi[tri[sel]]] * w[sel][:, :, None]).sum(1))
             rgb.append(col)
         if xyz:
@@ -361,11 +397,16 @@ def _cell_colors(objs, to_frame, cell, rng, box=None):
             if (p.max(0) < box[0]).any() or (p.min(0) > box[1]).any():
                 continue
         try:
-            s = tile_samples(o, to_frame, rng, cache)
+            s = tile_samples(o, to_frame, rng, cache, box)
         except Exception as e:                       # noqa: BLE001
             print(f"[3DTiles] color match: {o.name}: {e}")
             s = None
         if s is None:
+            continue
+        near = s[0][:, 2] > -FAR_BELOW_M             # a globe's far side is under every place, seen from above
+        if not near.all():
+            s = (s[0][near], s[1][near])
+        if not len(s[0]):
             continue
         ij = np.floor(s[0][:, :2] / cell).astype(np.int64)
         keys.append(br.pack(ij[:, 0], ij[:, 1]))
@@ -435,7 +476,8 @@ def match(props, streams, item) -> int:
         b = graded(b, ref)
     res = cm.fit(a, b)
     if res is None:
-        raise RuntimeError(f"Too little overlap with {ref.name}: {len(a)} ground cells with colors in both")
+        raise RuntimeError(f"Too little overlap with {ref.name}: {len(a)} ground cells with colors in both. "
+                           "Wait for its tiles under this one to load, or zoom in")
     item.color_exposure, item.color_saturation, item.color_contrast = 0.0, 1.0, 0.0   # the fit starts from the raw colors
     item.color_gain, item.color_gamma = res[0].tolist(), res[1].tolist()
     if not item.use_color:

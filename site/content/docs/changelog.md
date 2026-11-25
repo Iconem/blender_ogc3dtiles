@@ -8,6 +8,27 @@ main branch and not in a release zip yet.
 
 ## Unreleased
 
+- **Match Height to Terrain no longer freezes, and no longer reads the far side of the Earth.** A terrain tile
+  is now read only where it is under the dataset. On the Autzen point cloud over Cesium World Terrain it
+  took 66 s and found nothing; it takes 0.5 s and moves the cloud down 316 m (2.2 s over Google, same
+  316 m). Terrain tiles on the other side of the globe lie under every place seen from above and were
+  taken as the ground: they are left out, in Match Colors too.
+- **Terrain blending: a new tile no longer stalls the view.** The coverage of a tile with large triangles
+  took about 1.2 s since the tiles are drawn from their triangles; it takes about 0.25 s.
+- **Color correction with raster overlays.** A tile whose color is an overlay (a terrain with imagery) showed
+  uncorrected for up to 2.3 s after it loaded; it is corrected as the overlay arrives. **Match Colors** reads
+  the overlays of the reference as they are drawn, and only the triangles that reach into the area compared.
+- **Match to** is Blender's own object picker: a list with a search, and an eyedropper that takes a tile of
+  the reference tileset in the 3D view, or its root Empty in the Outliner.
+- **Boxes fold whether ticked or not**, as a Blender panel with a checkbox in its header: the content of an
+  unticked box is shown greyed. Ticking a box opens it; boxes start folded.
+- **Globe Navigation: the vertical resets itself.** After each move the Globe is levelled at the new scene
+  origin, with every 3D view turned with it, so nothing changes on screen and the vertical never leans by more
+  than the last few kilometres. *Reset Vertical* worked but the panel kept reading 0.03° off, a rounding
+  error: it reads 0.00° now, and the button reports the angle before and after.
+- **Globe Navigation: View Selected glides** over 0.3 s, and is also in the View menu and the panel as *Frame
+  Selected (Globe)*. Blender's own *View > Frame Selected* moves the view but leaves the world at its scale.
+- **Read feature metadata** is under *Property* only, once; its warning is no longer red.
 - **Terrain blending: no holes in a dataset.** The coverage of a mesh tile is now always drawn from its
   triangles. A tile with many vertices on a building and a few large triangles on the flat ground beside it
   was drawn from its vertices alone, which left holes there: the dataset faded around them, as at its border.

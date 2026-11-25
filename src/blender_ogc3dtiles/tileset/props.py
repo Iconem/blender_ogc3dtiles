@@ -312,7 +312,8 @@ def _on_overlay_enabled(self, context):
 
 OVERLAY_KINDS = [
     ("URL", "URL template", "XYZ template with {z}/{x}/{y} (web mercator, y from the north: OSM, "
-     "Esri, MapTiler...); write {-y} for TMS-ordered servers"),
+     "Esri, MapTiler...); write {-y} for TMS-ordered servers, {q} for a Bing quadkey, {0-3} "
+     "for rotating subdomains"),
     ("TMS", "TMS", "Tile Map Service root (tilemapresource.xml)"),
     ("WMTS", "WMTS", "OGC Web Map Tile Service (KVP or REST url, layer, style, tile matrix set)"),
     ("WMS", "WMS", "OGC Web Map Service (layers, format)"),

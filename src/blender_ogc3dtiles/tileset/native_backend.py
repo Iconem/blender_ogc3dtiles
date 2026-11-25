@@ -447,8 +447,11 @@ def decode_braces(url: str) -> str:
 def xyz_template(url: str) -> str:
     """XYZ convention ({y} = 0 at the north, as OSM / Esri / MapLibre templates
     use it) to cesium-native's placeholders, whose {y} is TMS order (0 at the
-    south); the user writes {-y} for a TMS-ordered server."""
-    return decode_braces(url).replace("{y}", "{reverseY}").replace("{-y}", "{y}")
+    south); the user writes {-y} for a TMS-ordered server. cesium-native knows
+    neither a Bing quadkey ({q}) nor a subdomain range ({0-3}): they become
+    tokens that asset_fixes.expand_tile_tokens fills in on each request."""
+    from .asset_fixes import tile_tokens  # noqa: PLC0415
+    return tile_tokens(decode_braces(url)).replace("{y}", "{reverseY}").replace("{-y}", "{y}")
 
 
 def _volume_excluder(base, boxes, mode, joined):

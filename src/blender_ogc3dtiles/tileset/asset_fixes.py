@@ -22,6 +22,7 @@ import json
 import os
 import re
 import threading
+import zlib
 from urllib.parse import unquote_to_bytes
 
 from .feature_meta import note_tileset_json
@@ -118,12 +119,56 @@ def _finish_json(aio, future, promise):
         promise.reject(str(exc))
 
 
+# ── URL template tokens cesium-native can't fill ────────────────────────────
+# UrlTemplateRasterOverlay substitutes {x} {y} {z} and a few more, nothing else,
+# and its classes can't be extended from Python. The template carries a token
+# made of placeholders it does know; every request passes through make_accessor,
+# which turns the token into the quadkey or the subdomain.
+
+_QUADKEY = re.compile(r"\{(?:q|quadkey)\}")
+_RANGE = re.compile(r"\{([0-9a-z])-([0-9a-z])\}")
+_QK_TOKEN = re.compile(r"~qk(\d+)\.(\d+)\.(\d+)~")
+_SD_TOKEN = re.compile(r"~sd([0-9a-z])([0-9a-z])~")
+
+
+def tile_tokens(template: str) -> str:
+    """{q} / {quadkey} (Bing) and {0-3}-style subdomain ranges to tokens; {y}
+    in the quadkey token is XYZ order, the caller maps it like any other {y}."""
+    return _RANGE.sub(lambda m: f"~sd{m[1]}{m[2]}~", _QUADKEY.sub("~qk{z}.{x}.{y}~", template))
+
+
+def quadkey(z: int, x: int, y: int) -> str:
+    """Bing tile quadkey of an XYZ tile (y from the north); "" at level 0."""
+    digits = []
+    for i in range(z, 0, -1):
+        mask = 1 << (i - 1)
+        digits.append(str((1 if x & mask else 0) + (2 if y & mask else 0)))
+    return "".join(digits)
+
+
+def expand_tile_tokens(url: str) -> str:
+    """A tile URL with its tokens filled in; ``url`` itself when it has none.
+    The subdomain is picked from the tile, so a tile always gets the same one
+    (and the same cache entry)."""
+    if "~" not in url:
+        return url
+    url = _QK_TOKEN.sub(lambda m: quadkey(int(m[1]), int(m[2]), int(m[3])), url)
+
+    def pick(m):
+        lo, hi = ord(m[1]), ord(m[2])
+        if hi < lo:
+            return m[0]
+        return chr(lo + zlib.crc32(url.encode("utf-8")) % (hi - lo + 1))
+    return _SD_TOKEN.sub(pick, url)
+
+
 def make_accessor(cs, inner):
     """An IAssetAccessor forwarding to ``inner``, with the fixes above."""
     aio = cs.async_
 
     class FixingAccessor(aio.IAssetAccessor):
         def get(self, async_system, url, headers):
+            url = expand_tile_tokens(url)
             decoded = decode_data_uri(url)
             if decoded is not None:
                 response = aio.AssetResponse(200, decoded[0], {}, decoded[1])

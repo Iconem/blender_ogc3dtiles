@@ -990,8 +990,9 @@ class TilesSceneProps(PropertyGroup):
         name="Read feature metadata",
         description="Keep each tile's feature table: columns become vertex attributes "
                     "(meta_<column>, usable in shaders and Geometry Nodes) and the text "
-                    "goes in a per-tile lookup. Applies to tiles loaded after the next "
-                    "Start, with the cesium-native backend and Direct mesh",
+                    "goes in a per-tile lookup. For the tiles loaded from then on: while streaming, "
+                    "Reload Tiles with their Properties appears under it. cesium-native backend and "
+                    "Direct mesh",
         default=False,
     )
     meta_color: BoolProperty(

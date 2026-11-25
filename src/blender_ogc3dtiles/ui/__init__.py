@@ -1571,6 +1571,17 @@ class OGC3D_OT_ClearTiles(Operator):
         return {"FINISHED"}
 
 
+class OGC3D_OT_ReloadTiles(Operator):
+    """Clear the loaded tiles and start streaming again, so that every tile is loaded with the settings of now (Read feature metadata, for one). Tiles already on disk come from the cache"""
+    bl_idname = "ogc3dtiles.reload_tiles"
+    bl_label = "Reload Tiles"
+    bl_options = {"REGISTER"}
+
+    def execute(self, context):
+        bpy.ops.ogc3dtiles.clear_tiles()
+        return bpy.ops.ogc3dtiles.start_stream()
+
+
 class OGC3D_OT_ClearCache(Operator):
     """Delete the on-disk GLB cache"""
     bl_idname = "ogc3dtiles.clear_cache"
@@ -3326,6 +3337,7 @@ _classes = [
     OGC3D_OT_MatchHeights,
     OGC3D_OT_ColorMatch,
     OGC3D_OT_ColorReset,
+    OGC3D_OT_ReloadTiles,
     OGC3D_OT_ClearCache,
     OGC3D_OT_ModalStream,
     OGC3D_UL_Tilesets,

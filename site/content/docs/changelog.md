@@ -19,6 +19,9 @@ main branch and not in a release zip yet.
   you type.
 - **Globe Navigation: numpad period** frames the selection like Blender's View Selected, and brings the world
   back to the scale that fits it. A dataset Empty is framed with its tiles, a marker with its dataset's size.
+- **Reload Tiles with their Properties.** Ticking *Read feature metadata* while streaming used to leave
+  "No property loaded yet" until Clear All Tiles and Start. A red line now says the tiles on screen were loaded
+  without their properties, with one button that loads them again.
 - **`max_km`** also leaves out the datasets whose size the server does not know.
 - **Release workflow**: the platform zips read the wheel release with the job's token and download with
   retries. Two releases failed on GitHub's limit for anonymous clients and on one failed Blender download.

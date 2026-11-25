@@ -1604,9 +1604,32 @@ def draw_panel(layout, props):
 _MAX_LEGEND_ROWS = 32
 
 
+def loaded_without_metadata() -> bool:
+    """A stream is running whose tiles were loaded without their properties: ticking Read feature metadata
+    only counts for tiles loaded after it, so these must be loaded again."""
+    try:
+        from .ui import _state
+        return any(st.get("backend") is not None and getattr(st["backend"], "read_metadata", None) is False
+                   for st in _state["streams"].values())
+    except Exception:                                # noqa: BLE001
+        return False
+
+
+def draw_reload_for_metadata(layout, props) -> bool:
+    """The red line and its button when the properties were asked for after the tiles came in."""
+    if not (props.read_metadata and loaded_without_metadata()):
+        return False
+    col = layout.column(align=True)
+    col.alert = True
+    col.label(text="The tiles on screen were loaded without them", icon="ERROR")
+    col.operator("ogc3dtiles.reload_tiles", icon="FILE_REFRESH", text="Reload Tiles with their Properties")
+    return True
+
+
 def draw_metadata_panel(layout, props):
     """Body of the collapsible "Metadata" sub-panel."""
     layout.prop(props, "read_metadata")
+    draw_reload_for_metadata(layout, props)
     if props.read_metadata:
         layout.prop(props, "meta_all_columns")
     _draw_metadata_columns(layout, props)
@@ -1671,11 +1694,13 @@ def _draw_metadata_columns(layout, props):
                 row.prop(props, "meta_range_max")
         return
     if not props.meta_columns:
-        if props.read_metadata:
-            layout.label(text="No property loaded yet", icon="INFO")
-        else:                    # the same checkbox as in the panel above, where it is needed
+        if not props.read_metadata:              # the same checkbox as at the top, where it is needed
             layout.prop(props, "read_metadata")
-            layout.label(text="Properties load with it, after the next Start", icon="INFO")
+            layout.label(text="Tick it to load the tiles' properties", icon="INFO")
+        elif loaded_without_metadata():
+            layout.label(text="Press Reload Tiles with their Properties, above", icon="INFO")
+        else:
+            layout.label(text="No property loaded yet", icon="INFO")
         return
     layout.prop_search(props, "meta_column", props, "meta_columns", text="Property")
     layout.prop(props, "meta_strength")

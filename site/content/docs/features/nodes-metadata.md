@@ -12,7 +12,9 @@ and intensity. The **Nodes: Metadata** panel reads it and colours the tiles with
 
 ## Use it
 
-1. Tick **Read feature metadata** before pressing Start. It needs the cesium-native backend. The
+1. Tick **Read feature metadata**, before pressing Start or while streaming: in that case a red line under it
+   offers **Reload Tiles with their Properties**, which loads the tiles on screen again. It needs the
+   cesium-native backend. The
    *Color tiles by* row is always shown; its properties come with the metadata.
 2. Once tiles are in, tick **Color tiles by**, leave the source on **Property** and pick one.
 3. Text and class properties get a legend, numbers get a colour ramp.

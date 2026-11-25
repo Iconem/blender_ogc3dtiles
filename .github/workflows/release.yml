@@ -104,7 +104,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.release_tag }}
-        run: gh release upload "$TAG" dist/platform/${{ matrix.python }}/*.zip --clobber
+        # the release is made by the package job, of this run or of the tag push: it can be a few seconds behind
+        run: |
+          for i in $(seq 1 30); do
+            gh release view "$TAG" >/dev/null 2>&1 && break
+            echo "release $TAG not there yet, waiting"; sleep 10
+          done
+          gh release upload "$TAG" dist/platform/${{ matrix.python }}/*.zip --clobber
 
       # One authenticated POST per zip. The token is made on extensions.blender.org (profile > API tokens)
       # and kept as a repository secret; it never appears in the workflow or the logs.

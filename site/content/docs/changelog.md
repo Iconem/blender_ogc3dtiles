@@ -8,6 +8,9 @@ main branch and not in a release zip yet.
 
 ## Unreleased
 
+- **Release workflow**: the platform zips wait for the release to exist before they are attached. On 0.6.9
+  one repository built them before its release was made and failed there; a rerun attached them.
+
 ## 0.6.9 (2026-11-26)
 
 - **Color correction reaches every tile at once.** Ticking the box, or Match Colors on a tileset that had it

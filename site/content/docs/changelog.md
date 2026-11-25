@@ -8,6 +8,12 @@ main branch and not in a release zip yet.
 
 ## Unreleased
 
+- **A hidden tileset stops streaming.** Closing a tileset's eye in the list pauses it, as unticking it does.
+- **URL overlays: `{q}` Bing quadkeys and `{0-3}` subdomain ranges** in a template.
+- **Match Colors over the overlap only, in both directions, and to a corrected reference.** The area the two
+  tilesets share is what is sampled, so Google can be matched to a small mesh. A reference with its own color
+  correction is matched as it looks. Tiles get their color group as they are built. Gamma and Gain are two
+  columns of R, G, B.
 - **Match Height to Terrain, without terrain blending.** A button on every dataset entry that streams: the
   tileset moves up or down onto the terrain, Google or Bing 3D Tiles under it, by the median difference of
   their lowest heights. In a tileset of tilesets each dataset with tiles shown moves by its own amount. See

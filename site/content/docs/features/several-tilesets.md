@@ -26,7 +26,8 @@ Ion, globe and terrain entries need the cesium-native backend.
   streaming are picked up at once.
 - The **checkbox** of a row pauses that tileset: nothing more is loaded or unloaded, and what is
   loaded stays.
-- The **eye** hides it, as in the outliner.
+- The **eye** hides it, as in the outliner, and pauses it as the checkbox does: a hidden tileset loads and
+  refines nothing until it is shown again.
 - Editing the URL of a running entry restarts it with the new URL.
 - Each tileset has a root Empty, `3D Tiles · <name>`, and a collection, `Tiles · <name>`. Move, rotate
   or scale the Empty to place the tileset; streaming follows.

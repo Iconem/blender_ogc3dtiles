@@ -236,6 +236,20 @@ def tick(props, streams, now) -> bool:
     return changed
 
 
+def new_tile(props, st, obj) -> None:
+    """A tile just built: its tileset's group at once, so it never shows uncorrected."""
+    if obj is None:
+        return
+    it = next((x for x in props.tilesets if x.uid == st.get("key") and x.use_color), None)
+    if it is None:
+        return
+    ng = ensure_group(it)
+    for o in ([obj] if obj.type == "MESH" else [c for c in obj.children if c.type == "MESH"]):
+        if o.data is not None:
+            for m in o.data.materials:
+                apply_material(m, ng)
+
+
 def on_change(item, context) -> None:
     """The checkbox or a slider of a tileset's color correction."""
     try:
@@ -361,6 +375,35 @@ def _cell_colors(objs, to_frame, cell, rng, box=None):
     return cm.cell_means(np.concatenate(keys), np.concatenate(rgb))
 
 
+def _extent(objs) -> float:
+    pts = np.array([np.array(o.matrix_world, np.float64) @ (*c, 1.0) for o in objs for c in (o.bound_box[0], o.bound_box[6])])
+    return float((pts.max(0) - pts.min(0))[:3].max())
+
+
+def _boxes(objs, to_frame) -> np.ndarray:
+    """Per tile: x min, y min, x max, y max in the frame."""
+    out = np.empty((len(objs), 4))
+    for i, o in enumerate(objs):
+        p = np.array([(*c, 1.0) for c in o.bound_box]) @ (to_frame @ np.array(o.matrix_world, np.float64))[:2].T
+        out[i] = (*p.min(0), *p.max(0))
+    return out
+
+
+def _nearest(objs, boxes, lo, hi) -> list:
+    """The tiles that reach into the area lo..hi, at most MAX_TILES of them, the smallest (finest) first."""
+    inside = (boxes[:, 2:] >= lo).all(1) & (boxes[:, :2] <= hi).all(1)
+    idx = np.flatnonzero(inside)
+    size = (boxes[idx, 2:] - boxes[idx, :2]).max(1)
+    return [objs[i] for i in idx[np.argsort(size)][:MAX_TILES]]
+
+
+def graded(rgb, item) -> np.ndarray:
+    """Colors as a tileset's own correction shows them (gamma, gain, exposure, saturation; not contrast)."""
+    out = cm.apply(rgb, np.array(item.color_gain) * 2.0 ** item.color_exposure, item.color_gamma)
+    grey = out @ np.array([0.2126, 0.7152, 0.0722])
+    return np.maximum(grey[:, None] + (out - grey[:, None]) * item.color_saturation, 0.0)
+
+
 def match(props, streams, item) -> int:
     """Fill ``item``'s Gain and Gamma so its colors match its reference tileset's where they overlap.
     Returns the number of ground cells compared; RuntimeError says why it could not."""
@@ -371,22 +414,29 @@ def match(props, streams, item) -> int:
     st, st_ref = streams.get(item.uid), streams.get(ref.uid)
     if st is None or st_ref is None or st.get("backend") is None or st_ref.get("backend") is None:
         raise RuntimeError("Both tilesets have to be streaming")
-    mine = list(_stream_objects(st))[:MAX_TILES]
-    frame = local_frame(st, mine)
-    if frame is None:
-        raise RuntimeError(f"{item.name}: no tile shown")
+    mine, theirs = list(_stream_objects(st)), list(_stream_objects(st_ref))
+    if not mine or not theirs:
+        raise RuntimeError(f"{(item if not mine else ref).name}: no tile shown")
+    # the smaller of the two decides where to look: its tiles give the frame and the area compared
+    small, small_st = (mine, st) if _extent(mine) <= _extent(theirs) else (theirs, st_ref)
+    frame = local_frame(small_st, small)
     to_frame = np.linalg.inv(frame)
-    boxes = np.array([np.array([(*c, 1.0) for c in o.bound_box]) @ (to_frame @ np.array(o.matrix_world, np.float64))[:2].T
-                      for o in mine]).reshape(-1, 2)
-    lo, hi = boxes.min(0), boxes.max(0)
+    box_a, box_b = _boxes(mine, to_frame), _boxes(theirs, to_frame)
+    lo = np.maximum(box_a[:, :2].min(0), box_b[:, :2].min(0))      # the overlap of the two tilesets
+    hi = np.minimum(box_a[:, 2:].max(0), box_b[:, 2:].max(0))
+    if (hi <= lo).any():
+        raise RuntimeError(f"No overlap with {ref.name} among the tiles shown")
     cell = 2.0 * br.cell_size(float((hi - lo).max()))
     rng = np.random.default_rng(0)
-    k_a, c_a = _cell_colors(mine, to_frame, cell, rng)
-    k_b, c_b = _cell_colors(list(_stream_objects(st_ref))[:4 * MAX_TILES], to_frame, cell, rng, box=(lo, hi))
+    k_a, c_a = _cell_colors(_nearest(mine, box_a, lo, hi), to_frame, cell, rng, box=(lo, hi))
+    k_b, c_b = _cell_colors(_nearest(theirs, box_b, lo, hi), to_frame, cell, rng, box=(lo, hi))
     a, b = cm.shared(k_a, c_a, k_b, c_b)
+    if ref.use_color:                                # match what the reference looks like, its own correction included
+        b = graded(b, ref)
     res = cm.fit(a, b)
     if res is None:
         raise RuntimeError(f"Too little overlap with {ref.name}: {len(a)} ground cells with colors in both")
+    item.color_exposure, item.color_saturation, item.color_contrast = 0.0, 1.0, 0.0   # the fit starts from the raw colors
     item.color_gain, item.color_gamma = res[0].tolist(), res[1].tolist()
     if not item.use_color:
         item.use_color = True

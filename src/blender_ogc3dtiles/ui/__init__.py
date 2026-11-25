@@ -1783,7 +1783,7 @@ def _sync_streams(scene, props, now) -> bool:
                 _start_item(scene, props, item)
             changed = True
             continue
-        paused = not item.enabled
+        paused = not item.enabled or _stream_hidden(st)     # unticked, or its eye closed: nothing loads or refines
         if paused != bool(st.get("paused")):
             st["paused"] = paused
             if paused and st.get("download_mgr"):
@@ -2072,6 +2072,11 @@ def _build_native_tile(scene, props, st, rt) -> bool:
         if ds is not None:
             from .. import dataset_empties
             dataset_empties.adopt(scene, st, root_obj, coll, r[0], ds, frame)
+        try:
+            from .. import color_correct
+            color_correct.new_tile(props, st, bpy.data.objects.get(r[0]))
+        except Exception as e:                       # noqa: BLE001
+            print(f"[3DTiles] color correction: {e}")
         info = getattr(st["backend"], "tile_info", {}).get(rt.key)
         if info:
             from ..io import set_tile_info
@@ -2553,15 +2558,15 @@ def _fold_header(b, it, use: str, show: str, text: str) -> bool:
 
 def _draw_color(b, it, st, props) -> None:
     from .. import color_correct
-    b.prop(it, "color_exposure")
-    col = b.column(align=True)
-    row = col.row(align=True)
-    row.prop(it, "color_gain", text="")
-    row = col.row(align=True)
-    row.prop(it, "color_gamma", text="")
     row = b.row(align=True)
-    row.label(text="Gain (top) and Gamma: R, G, B")
+    row.prop(it, "color_exposure")
     _group_button(row, color_correct.group_name(it))
+    row = b.row(align=True)                          # a column each: drag down one to set R, G and B together
+    for prop, label in (("color_gamma", "Gamma"), ("color_gain", "Gain")):
+        col = row.column(align=True)
+        col.label(text=label)
+        for i, ch in enumerate("RGB"):
+            col.prop(it, prop, index=i, text=ch)
     row = b.row(align=True)
     row.prop(it, "color_saturation")
     row.prop(it, "color_contrast")

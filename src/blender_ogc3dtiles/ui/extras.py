@@ -214,7 +214,9 @@ class OGC3D_OT_LibraryAdd(Operator):
     query: StringProperty(name="Search", options={"TEXTEDIT_UPDATE", "SKIP_SAVE"})
 
     def invoke(self, context, event):
-        _lib_rows[:] = library.read_all(_library_paths()) + library.builtin_rows()   # the public sets last
+        _lib_rows[:] = library.read_all(_library_paths())
+        have = {(e.get("kind"), e.get("url")) for _p, e in _lib_rows}
+        _lib_rows.extend(r for r in library.builtin_rows() if (r[1]["kind"], r[1]["url"]) not in have)   # public sets last
         rows = context.window_manager.ogc3d_lib_rows
         rows.clear()
         for i in range(len(_lib_rows)):

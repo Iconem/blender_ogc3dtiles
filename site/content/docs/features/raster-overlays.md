@@ -22,7 +22,9 @@ do. It needs the cesium-native backend.
 | Google Map Tiles, Bing Maps | yours, kept in a [library file](/features/libraries-and-local-files) |
 
 Your own sources: a URL template with `{z}/{x}/{y}`, TMS, WMTS, WMS, a Cesium ion imagery asset, Bing
-Maps, Google Map Tiles. A template pasted from a browser, with `%7Bz%7D` for `{z}`, works as it is.
+Maps, Google Map Tiles. A template pasted from a browser, with `%7Bz%7D` for `{z}`, works as it is. A
+template can also hold `{q}` (or `{quadkey}`), the Bing quadkey of the tile, and a range of subdomains such as
+`{0-3}` or `{a-c}`: `https://ecn.t{0-3}.tiles.virtualearth.net/tiles/a{q}.jpeg?g=15000`.
 
 ## Adjust it
 

@@ -11,7 +11,8 @@ do. It needs the cesium-native backend.
 ## Add one
 
 1. Select a tileset and tick **Raster overlays** in its box.
-2. Press the **bookmark button** under + / - and pick a preset, or press **+** and fill in a source.
+2. Press the **bookmark button** under + / - and pick a preset (type a few letters to narrow the list down),
+   or press **+** and fill in a source.
 3. Press Start. If the tileset is already streaming, the overlay appears at once.
 
 | Preset | Key |

@@ -52,15 +52,16 @@ Each dataset also gets:
   tiles. Its eye in the Outliner hides one dataset among overlapping ones (several surveys of one monument).
   A hidden dataset stops streaming: its tiles go and nothing more of it loads until it is shown again. Closing
   the eye of the dataset's Empty does the same.
-- **A white dot** in the 3D viewport, of the **Dot radius (px)** set under *An Empty and a dot per dataset* (5
+- **A white dot** in the 3D viewport, of the **Dot radius (px)** set in *Markers - datasets locations* (5
   pixels by default, 0 for none), the same at any distance and any Globe scale: a site of a few metres shows
   from space. A dot is faint where a tile is in front of it, and gone behind the globe. Only a visible
   dataset has one: hide the dataset, or its tileset, and its dot goes. **Click a dot** to select the
   dataset's Empty (Shift click adds to the selection). Not in renders.
 
-Both settings are in the box **Markers - datasets locations** of the main panel, under *Raster overlays*.
-They are the scene's, not one tileset's, and show whatever the tileset: on one that has no datasets, or is
-not streaming yet, a line says so.
+The box **Markers - datasets locations** of the main panel, under *Raster overlays*, works like the boxes
+around it: its checkbox turns the Empties and the dots on, and the arrow beside it folds the box. It is the
+scene's, not one tileset's, and shows whatever the tileset: on one that has no datasets, or is not streaming
+yet, a line says so.
 
 The Empty sits at the centre of the dataset's bounding volume, unless that is far off the ground: the box
 of a country-wide LiDAR in a projected grid can have its centre hundreds of kilometres up. Above 9 km or
@@ -94,8 +95,8 @@ a sub-tileset of a very large aggregate get no marker yet. The grouping tiles ge
   of its original size.
 - The names of the Empties also serve the scene origin: its *Dataset* mode puts the origin at the
   dataset picked by name. See [Scene origin](/features/scene-origin#dataset).
-- *An Empty and a dot per dataset*, in the *Markers - datasets locations* box of the main panel, turns
-  this off for the tiles loaded from then on.
+- The checkbox of the *Markers - datasets locations* box of the main panel turns this off for the tiles
+  loaded from then on.
 - A tileset that pages its own hierarchy through external files, as Google Photorealistic 3D Tiles
   does, has no datasets and gets no extra Empty.
 
@@ -109,7 +110,8 @@ entry of type **3dtiled aggregate** asks it for one. Its **Set** field takes eit
   continents. `open` is every open dataset the server lists, 607 of them. Both are in the library picker
   (the bookmark button), under *3dtiled aggregate sets*, with no library file needed, along with two cuts
   of `open`: the 50 datasets that are 3D Tiles already (`format=3dtiles` in **Parameters**), and the scans
-  up to 20 km wide (`max_km=20`).
+  up to 20 km wide (`max_km=20`). A dataset whose size the server does not know is left out with the wide
+  ones: its place is not known either.
 - **A manifest file**: a JSON list of datasets, kept wherever the team keeps it, a NAS share for one.
 
   ```json

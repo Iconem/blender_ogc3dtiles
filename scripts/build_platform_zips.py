@@ -18,10 +18,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import pathlib
 import re
 import shutil
 import subprocess
+import time
+import urllib.error
 import urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -43,6 +46,18 @@ def blender_platform(name: str) -> str | None:
     return next((b for tag, b in PLATFORMS if tag in name), None)
 
 
+def _open(req, timeout: float = 30, tries: int = 5):
+    """urlopen, again after a pause on a refusal or a network error: a release must not fail on one."""
+    for i in range(tries):
+        try:
+            return urllib.request.urlopen(req, timeout=timeout)
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
+            if i == tries - 1:
+                raise
+            print(f"{req.full_url}: {e}; again in {15 * (i + 1)} s")
+            time.sleep(15 * (i + 1))
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--blender", required=True, help="Blender executable (runs the extension build)")
@@ -50,9 +65,14 @@ def main() -> None:
     ap.add_argument("--repo", default="jo-chemla/cesium-native-python", help="GitHub repo with the wheel release")
     a = ap.parse_args()
 
-    req = urllib.request.Request(f"https://api.github.com/repos/{a.repo}/releases/latest",
-                                 headers={"Accept": "application/vnd.github+json", "User-Agent": "build-script"})
-    rel = json.load(urllib.request.urlopen(req, timeout=30))
+    # with a token when there is one: without, GitHub allows 60 requests an hour for the whole runner address,
+    # which other jobs share (HTTP 403 "rate limit exceeded" on two releases)
+    headers = {"Accept": "application/vnd.github+json", "User-Agent": "build-script"}
+    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    rel = json.load(_open(urllib.request.Request(f"https://api.github.com/repos/{a.repo}/releases/latest",
+                                                 headers=headers)))
     wheels = {x["name"]: x["browser_download_url"] for x in rel["assets"]
               if x["name"].endswith(".whl") and f"-{a.python}-" in x["name"] and blender_platform(x["name"])}
     if not wheels:
@@ -65,8 +85,7 @@ def main() -> None:
     (stage / "wheels").mkdir()
     for name, url in sorted(wheels.items()):
         print("wheel", name)
-        with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "build-script"}),
-                                    timeout=600) as r:
+        with _open(urllib.request.Request(url, headers={"User-Agent": "build-script"}), timeout=600) as r:
             (stage / "wheels" / name).write_bytes(r.read())
 
     manifest = (stage / "blender_manifest.toml").read_text(encoding="utf-8")

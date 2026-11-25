@@ -60,7 +60,7 @@ The picker also lists a few public entries that need no library file, after your
 [3dtiled aggregate sets](/features/several-tilesets#a-3dtiled-aggregate-set).
 
 A library can also hold raster overlay presets, in an `overlays` list next to `tilesets`. They show
-in the bookmark menu of the overlay list: that is the place for overlays that need a key.
+in the list the bookmark button of the overlays opens, with a search box: that is the place for overlays that need a key.
 
 ```json
 {

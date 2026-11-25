@@ -2376,11 +2376,10 @@ class OGC3D_UL_Tilesets(UIList):
         row.prop(item, "name", text="", emboss=False)
         st = _state["streams"].get(item.uid) if item.uid else None
         if st is not None and st["backend"] is not None:
-            tag = "N" if st["mode"] == "native" else "P"
-            if st.get("paused"):
-                row.label(text=f"{tag} {len(st['tiles'])}", icon="PAUSE")
+            if st.get("paused"):                     # the closed eye or the cleared checkbox already says paused
+                row.label(text=f"{len(st['tiles'])}")
             else:
-                row.label(text=f"{tag} {len(st['render_keys'])}/{len(st['tiles'])}")
+                row.label(text=f"{len(st['render_keys'])}/{len(st['tiles'])}")
         elif st is not None and st.get("error"):
             row.label(text="", icon="ERROR")
         lc = _layer_collection(context.view_layer.layer_collection, st["coll"])             if st and st.get("coll") else None
@@ -2472,50 +2471,16 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
         col.operator("ogc3dtiles.library_add", icon="BOOKMARKS", text="")
         if 0 <= props.active_tileset < len(props.tilesets):
             it = props.tilesets[props.active_tileset]
-            b = layout.box()
-            b.prop(it, "kind", text="Type")
-            if it.kind == "GLOBE":
-                b.label(text="Bare WGS84 ellipsoid: add raster overlays below", icon="WORLD")
-            elif it.kind == "AGGREGATE":
-                row = b.row(align=True)
-                row.prop(it, "url", text="Set")
-                row.operator("ogc3dtiles.tileset_browse", text="", icon="FILEBROWSER")
-                b.prop(it, "agg_params")
-                from .. import aggregate
-                value = it.url.strip()
-                if value and not aggregate.is_set_name(value):
-                    b.label(text="Manifest file: sent to the 3dtiled server on Start", icon="INFO")
-                elif not value:
-                    b.label(text="A set name (opendata), or a manifest file", icon="INFO")
-            elif it.kind == "ION":
-                b.prop(it, "ion_asset_id", text="Asset id")
-                b.prop(it, "ion_token", text="Ion Token")
-            else:
-                row = b.row(align=True)
-                row.prop(it, "url", text="URL")
-                row.operator("ogc3dtiles.tileset_browse", text="", icon="FILEBROWSER")
-                if _is_ion_url(it.url.strip()):          # entries from older versions
-                    b.prop(it, "ion_token", text="Ion Token")
-                if it.kind == "TERRAIN":
-                    b.label(text="layer.json URL. Worldwide: set a Custom origin", icon="WORLD")
-            from .extras import draw_entry_tools
-            draw_entry_tools(b, it)
-            row = b.row(align=True)
-            row.prop(it, "use_own_sse", text="")
-            sub = row.row(align=True)
-            sub.enabled = it.use_own_sse
-            sub.prop(it, "max_sse", text="Tileset Max SSE")
             st = _state["streams"].get(it.uid) if it.uid else None
-            if st is not None:
-                root = bpy.data.objects.get(st["root_obj"] or "")
-                if root is not None:
-                    b.label(text=f"Root: {root.name}", icon="EMPTY_AXIS")
-                if st.get("error"):
-                    b.label(text=st["error"][:60], icon="ERROR")
             from .. import blend
             background = blend.is_background(it, st)
-            if st is not None and st.get("backend") is not None and not background and not it.use_blend:
-                b.operator("ogc3dtiles.match_heights", icon="TRIA_DOWN_BAR")
+            b = layout.box()                         # foldable like the boxes under it, with nothing to switch on
+            row = b.row(align=True)
+            row.label(text="Properties", icon="PROPERTIES")
+            row.prop(it, "show_properties", text="", emboss=False,
+                     icon="TRIA_DOWN" if it.show_properties else "TRIA_LEFT")
+            if it.show_properties:
+                _draw_properties(b, it, st)
             # per tileset, each in its own box so they read as things to switch on
             b = layout.box()            # raster overlays draped on this tileset (cesium-native backend)
             if _fold_header(b, it, "use_overlays", "show_overlays",
@@ -2525,21 +2490,16 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
             from ..tileset.feature_meta import TILESET_METADATA
             n_all = len(TILESET_METADATA.datasets_of(st.get("url") or "")) if st is not None else 0
             b = layout.box()            # the datasets of a tileset of tilesets: both settings are the scene's
-            b.label(text="Markers - datasets locations", icon="EMPTY_AXIS")
-            b.prop(props, "dataset_empties",
-                   text=f"An Empty and a dot per dataset ({n_ds})" if n_ds else "An Empty and a dot per dataset")
-            sub = b.row()
-            sub.enabled = props.dataset_empties
-            sub.prop(props, "dataset_marker_px", text="Dot radius (px)")
-            sub = b.row()
-            sub.enabled = props.dataset_empties
-            sub.prop(props, "dataset_markers",
-                     text=f"Also the {n_all - n_ds} datasets not loaded yet (beta)" if n_all > n_ds
-                     else "Also the datasets not loaded yet (beta)")
-            if st is None or st.get("backend") is None:
-                b.label(text="Start streaming: markers appear with the tiles", icon="INFO")
-            elif not n_ds and not n_all:
-                b.label(text="This tileset has no datasets of its own", icon="INFO")
+            if _fold_header(b, props, "dataset_empties", "show_markers",
+                            f"Markers - datasets locations ({n_ds})" if n_ds else "Markers - datasets locations"):
+                b.prop(props, "dataset_marker_px", text="Dot radius (px)")
+                b.prop(props, "dataset_markers",
+                       text=f"Also the {n_all - n_ds} datasets not loaded yet (beta)" if n_all > n_ds
+                       else "Also the datasets not loaded yet (beta)")
+                if st is None or st.get("backend") is None:
+                    b.label(text="Start streaming: markers appear with the tiles", icon="INFO")
+                elif not n_ds and not n_all:
+                    b.label(text="This tileset has no datasets of its own", icon="INFO")
             b = layout.box()
             if _fold_header(b, it, "use_clipping", "show_clipping",
                             f"Clipping ({len(it.clip_polygons)})" if it.clip_polygons else "Clipping"):
@@ -2554,6 +2514,52 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
         else:
             layout.prop(props, "tileset_url", text="URL")
             layout.prop(props, "cesium_ion_token", text="Ion Token")
+
+
+def _draw_properties(b, it, st) -> None:
+    """What the tileset is: its type and address, its own Max SSE, its root."""
+    b.prop(it, "kind", text="Type")
+    if it.kind == "GLOBE":
+        b.label(text="Bare WGS84 ellipsoid: add raster overlays below", icon="WORLD")
+    elif it.kind == "AGGREGATE":
+        row = b.row(align=True)
+        row.prop(it, "url", text="Set")
+        row.operator("ogc3dtiles.tileset_browse", text="", icon="FILEBROWSER")
+        b.prop(it, "agg_params")
+        from .. import aggregate
+        value = it.url.strip()
+        if value and not aggregate.is_set_name(value):
+            b.label(text="Manifest file: sent to the 3dtiled server on Start", icon="INFO")
+        elif not value:
+            b.label(text="A set name (opendata), or a manifest file", icon="INFO")
+    elif it.kind == "ION":
+        b.prop(it, "ion_asset_id", text="Asset id")
+        b.prop(it, "ion_token", text="Ion Token")
+    else:
+        row = b.row(align=True)
+        row.prop(it, "url", text="URL")
+        row.operator("ogc3dtiles.tileset_browse", text="", icon="FILEBROWSER")
+        if _is_ion_url(it.url.strip()):          # entries from older versions
+            b.prop(it, "ion_token", text="Ion Token")
+        if it.kind == "TERRAIN":
+            b.label(text="layer.json URL. Worldwide: set a Custom origin", icon="WORLD")
+    from .extras import draw_entry_tools
+    draw_entry_tools(b, it)
+    row = b.row(align=True)
+    row.prop(it, "use_own_sse", text="")
+    sub = row.row(align=True)
+    sub.enabled = it.use_own_sse
+    sub.prop(it, "max_sse", text="Tileset Max SSE")
+    if st is not None:
+        root = bpy.data.objects.get(st["root_obj"] or "")
+        if root is not None:
+            b.label(text=f"Root: {root.name}", icon="EMPTY_AXIS")
+        if st.get("error"):
+            b.label(text=st["error"][:60], icon="ERROR")
+    from .. import blend
+    background = blend.is_background(it, st)
+    if st is not None and st.get("backend") is not None and not background and not it.use_blend:
+        b.operator("ogc3dtiles.match_heights", icon="TRIA_DOWN_BAR")
 
 
 def _fold_header(b, it, use: str, show: str, text: str) -> bool:
@@ -2598,7 +2604,7 @@ def _draw_overlays(b, it, st) -> None:
     col = row.column(align=True)
     col.operator("ogc3dtiles.overlay_add", icon="ADD", text="")
     col.operator("ogc3dtiles.overlay_remove", icon="REMOVE", text="")
-    col.menu("OGC3D_MT_overlay_library", icon="BOOKMARKS", text="")
+    col.operator("ogc3dtiles.overlay_library", icon="BOOKMARKS", text="")
     if 0 <= it.active_overlay < len(it.overlays):
         ov = it.overlays[it.active_overlay]
         ob = b.box()

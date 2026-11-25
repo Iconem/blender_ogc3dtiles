@@ -327,6 +327,47 @@ class OGC3D_MT_OverlayLibrary(bpy.types.Menu):
             self.layout.operator(OGC3D_OT_OverlayPreset.bl_idname, text=e["name"]).index = i
 
 
+OVERLAY_PICKER_ROWS = 40
+
+
+def overlay_matches(names, query: str) -> list:
+    """Indices of the names holding every word of the query, whatever the case."""
+    words = query.lower().split()
+    return [i for i, n in enumerate(names) if all(w in n.lower() for w in words)]
+
+
+class OGC3D_OT_OverlayLibrary(Operator):
+    """Add a raster overlay from the library: OpenStreetMap, Esri and IGN imagery, and the "overlays" of the library files (those that need a key). Type to filter"""
+    bl_idname = "ogc3dtiles.overlay_library"
+    bl_label = "Overlay Library"
+
+    query: StringProperty(name="Search", options={"TEXTEDIT_UPDATE", "SKIP_SAVE"})
+
+    def invoke(self, context, event):
+        _overlay_presets[:] = library.overlay_presets(_library_paths())
+        return context.window_manager.invoke_popup(self, width=int(320 * context.preferences.system.ui_scale))
+
+    def draw(self, context):
+        layout = self.layout
+        row = layout.row()
+        row.activate_init = True
+        row.prop(self, "query", text="", icon="VIEWZOOM", placeholder="Search overlays")
+        found = overlay_matches([e["name"] for e in _overlay_presets], self.query)
+        if not found:
+            layout.label(text="No matching overlay" if _overlay_presets else "No overlay in the library")
+            return
+        col = layout.column(align=True)
+        for i in found[:OVERLAY_PICKER_ROWS]:
+            row = col.row(align=True)
+            row.alignment = "LEFT"
+            row.operator(OGC3D_OT_OverlayPreset.bl_idname, text=_overlay_presets[i]["name"], emboss=False).index = i
+        if len(found) > OVERLAY_PICKER_ROWS:
+            layout.label(text=f"{len(found) - OVERLAY_PICKER_ROWS} more: type to narrow down")
+
+    def execute(self, context):
+        return {"FINISHED"}
+
+
 class OGC3D_OT_LibraryEdit(Operator):
     """Open this library file in the program your system opens .json files with"""
     bl_idname = "ogc3dtiles.library_edit"
@@ -574,6 +615,7 @@ _classes = [
     OGC3D_OT_LibraryEdit,
     OGC3D_OT_OverlayPreset,
     OGC3D_MT_OverlayLibrary,
+    OGC3D_OT_OverlayLibrary,
     OGC3D_OT_TilesetCopy,
     OGC3D_OT_TilesetCopyCancel,
 ]

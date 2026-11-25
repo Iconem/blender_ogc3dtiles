@@ -16,6 +16,7 @@ view shows it is on, and the same button stops it.
 | Wheel | Zooms about the point under the cursor. |
 | Middle drag | Orbits around the point under the cursor. |
 | Shift + middle drag | Grabs the globe and turns it. |
+| Numpad . | View Selected: frames the selection, and brings the world back to the scale that fits it (real size for a site). A selected dataset Empty is framed with its tiles. |
 
 Everything else stays Blender's own navigation.
 

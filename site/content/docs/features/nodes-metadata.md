@@ -24,7 +24,7 @@ and intensity. The **Nodes: Metadata** panel reads it and colours the tiles with
 | **Property** | A property the tiles carry, read with their metadata: a LiDAR classification or intensity, a building's year or height, any vertex, feature or texture property. The list also has **feature id**, one colour per feature of each tile (per building in swissBUILDINGS3D, say). Without *Read feature metadata* the list is empty, and the checkbox is offered right there. |
 | **Elevation** | Height above the ellipsoid, through the Color Ramp. The range is that of the loaded tiles and widens as tiles load; *Custom range* sets it by hand. The heights are true metres at any world scale of the Globe: the material undoes the Globe's scale, rotation and offset. Far from the scene origin the Earth curves away from the scene's vertical, about 8 m at 10 km. |
 | **Tile** | One value per tile, picked on the row below: **Random** (a colour per tile: how the tileset is cut), **Level** or **Error** (through the Color Ramp: which level of detail is loaded where). See [Colour by level of detail](#colour-by-level-of-detail). |
-| **Tileset** | One colour per tileset, and with *An Empty and a dot per dataset* one per dataset of an aggregate: what comes from where. |
+| **Tileset** | One colour per tileset, and with *Markers - datasets locations* on, one per dataset of an aggregate: what comes from where. |
 
 Clicking a source ticks *Color tiles by* if it was not.
 

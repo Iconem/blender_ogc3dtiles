@@ -69,7 +69,7 @@ them. In every cell both have, the lowest height of the terrain minus the lowest
 taken, and the dataset moves by the median, along the local vertical. The report says by how much.
 
 - **What moves** is the tileset's root Empty. In a [tileset of tilesets](/features/several-tilesets#a-tileset-of-tilesets)
-  with *An Empty and a dot per dataset*, each dataset that has tiles shown moves by its own amount, through its own
+  with *Markers - datasets locations* on, each dataset that has tiles shown moves by its own amount, through its own
   Empty (its *Location Z*), and the others are left alone: zoom on the datasets you care about first. The
   offsets are remembered on the entry, like any move of those Empties.
 - **Once.** Nothing holds the dataset there afterwards. Undo, or the Empty's location, brings it back.

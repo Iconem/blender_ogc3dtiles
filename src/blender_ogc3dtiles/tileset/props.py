@@ -559,6 +559,8 @@ class TilesetItem(PropertyGroup):
                     "Empty: the server's defaults",
         default="nest=geodetic")
     # folded or not, for the boxes that are switched on
+    show_properties: BoolProperty(name="Properties", default=True,
+                                  description="Unfold the tileset's type, address and own Max SSE")
     show_overlays: BoolProperty(name="Show", description="Unfold the raster overlays", default=True)
     show_clipping: BoolProperty(name="Show", description="Unfold the clipping settings", default=True)
     show_color: BoolProperty(name="Show", description="Unfold the color correction", default=True)
@@ -933,7 +935,7 @@ class TilesSceneProps(PropertyGroup):
         default=0.08, min=0.001, max=50.0, update=_on_point_radius,
     )
     dataset_empties: BoolProperty(
-        name="An Empty and a dot per dataset",
+        name="Markers - datasets locations",
         description="In a tileset that only gathers other tilesets (an aggregate of datasets), give each "
                     "dataset an Empty under the tileset's root and parent its tiles to it. The Empty sits at "
                     "the dataset's centre with Z up: its Location Z is a height offset, kept with the scene. "
@@ -977,6 +979,7 @@ class TilesSceneProps(PropertyGroup):
         description="Terrain blending: the terrain is kept when it is at least this far under the lowest point "
                     "of the dataset above it. Raise it when terrain still shows through the dataset's ground",
         default=2.0, min=0.0, soft_max=50.0, unit="LENGTH", update=_on_blend)
+    show_markers: BoolProperty(name="Show", description="Unfold the markers settings", default=True)
     dataset_marker_px: FloatProperty(
         name="Marker size px",
         description="Every dataset Empty also gets a white dot of this radius in pixels in the 3D viewport, whatever the "

@@ -101,9 +101,11 @@ def split_max_km(params: str):
 
 
 def wide_ids(index: dict, max_km: float) -> list:
-    """Ids of the datasets of an index.json wider than ``max_km`` (twice their radius)."""
-    return [str(d["id"]) for d in index.get("datasets") or ()
-            if d.get("id") and isinstance(d.get("radius"), (int, float)) and 2.0 * d["radius"] > max_km * 1000.0]
+    """Ids of the datasets of an index.json wider than ``max_km`` (twice their radius), and of those whose
+    size the server does not know: they could be anything, and their place is not known either."""
+    def small(r) -> bool:
+        return isinstance(r, (int, float)) and not isinstance(r, bool) and 0.0 < 2.0 * r <= max_km * 1000.0
+    return [str(d["id"]) for d in index.get("datasets") or () if d.get("id") and not small(d.get("radius"))]
 
 
 def _with_limit(server: str, name: str, params: str, post: bool, opener) -> str:

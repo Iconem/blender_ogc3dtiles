@@ -8,6 +8,21 @@ main branch and not in a release zip yet.
 
 ## Unreleased
 
+- **Terrain blending: no holes in a dataset.** The coverage of a mesh tile is now always drawn from its
+  triangles. A tile with many vertices on a building and a few large triangles on the flat ground beside it
+  was drawn from its vertices alone, which left holes there: the dataset faded around them, as at its border.
+- **Tilesets list: only the tile counts** on a row. The N or P of the backend and the pause icon are gone
+  (the eye and the checkbox already say paused).
+- **Properties** of a tileset (type, address, own Max SSE, root) are a box that folds, like the ones under it.
+  **Markers - datasets locations** is a box with a checkbox and an arrow, like *Raster overlays* and *Clipping*.
+- **Overlay library with a search box**: the bookmark button of the overlays opens a list that narrows down as
+  you type.
+- **Globe Navigation: numpad period** frames the selection like Blender's View Selected, and brings the world
+  back to the scale that fits it. A dataset Empty is framed with its tiles, a marker with its dataset's size.
+- **`max_km`** also leaves out the datasets whose size the server does not know.
+- **Release workflow**: the platform zips read the wheel release with the job's token and download with
+  retries. Two releases failed on GitHub's limit for anonymous clients and on one failed Blender download.
+
 ## 0.6.8 (2026-11-25)
 
 - **Markers - datasets locations.** The two dataset settings have a box of their own in the main panel, always

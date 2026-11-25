@@ -421,6 +421,88 @@ def zoom(context, view, p, factor):
         view.dolly(p, rest)
 
 
+FRAME_FILL = 1.15           # View Selected leaves this much room around the selection
+MAX_FRAME_OBJECTS = 20000
+
+
+def bounding_sphere(pts):
+    """(centre, radius) of the box around these points. No bpy."""
+    pts = np.asarray(pts, np.float64).reshape(-1, 3)
+    lo, hi = pts.min(0), pts.max(0)
+    return (lo + hi) / 2.0, float(np.linalg.norm(hi - lo)) / 2.0
+
+
+def frame_scale(radius_m: float, tan_half: float, scale: float = 1.0) -> tuple:
+    """(Globe scale, eye distance in Blender units) that show a sphere of ``radius_m`` real metres whole in a
+    view of half angle atan(``tan_half``). Real size while the eye is within D_FAR of it, as the wheel does;
+    further than that the world is scaled down and the eye stays D_FAR away. No bpy."""
+    d = FRAME_FILL * max(radius_m, 0.5) / max(math.sin(math.atan(max(tan_half, 1e-6))), 1e-6)
+    s = min(1.0, D_FAR / d) if d > D_FAR else 1.0
+    s = max(s, MIN_SCALE)
+    return s, d * s
+
+
+def _selection_points(context):
+    """World corners of what is selected, with the children of a selected Empty (a dataset's tiles), and whether
+    all of it is under the Globe."""
+    from .dataset_empties import RADIUS
+    pts, under, seen, todo = [], True, 0, list(context.selected_objects)
+    while todo and seen < MAX_FRAME_OBJECTS:
+        o = todo.pop()
+        seen += 1
+        mw = _np(o.matrix_world)
+        if o.type == "EMPTY":
+            kids = [c for c in o.children if c.visible_get()]
+            if kids:
+                todo.extend(kids)
+                continue
+            r = float(o.get(RADIUS, 0.0)) * float(np.linalg.norm(mw[:3, 0]))     # a marker: the dataset's own size
+            c = mw[:3, 3]
+            pts.extend((c - r, c + r))
+        elif getattr(o, "bound_box", None) is not None:
+            pts.extend((mw @ (*c, 1.0))[:3] for c in o.bound_box)
+        else:
+            pts.append(mw[:3, 3])
+        under = under and _under_globe(o)
+    return pts, under
+
+
+def frame_selected(context, area, region, space) -> bool:
+    """Numpad period while Globe Navigation is on: Blender's View Selected, with the world brought back to the
+    scale that fits the selection (real size for a site, smaller for a country). False: nothing of the Globe is
+    selected, the key is Blender's."""
+    pts, under = _selection_points(context)
+    g = globe()
+    if not pts or not under or g is None:
+        return False
+    rv3d = region.data
+    try:
+        view = _View(space, rv3d)
+    except ValueError:
+        return False
+    centre, radius = bounding_sphere(pts)
+    s0 = globe_scale(g)
+    w = rv3d.window_matrix
+    tan_half = 1.0 / max(abs(w[0][0]), abs(w[1][1]), 1e-6) if view.persp() else 0.5
+    s, dist = frame_scale(radius / max(s0, MIN_SCALE), tan_half, s0)
+    if view.follows_globe():
+        s, dist = s0, dist / s * s0                    # the camera is on the Globe: it goes to the selection instead
+    elif abs(s / s0 - 1.0) > 1e-9:
+        _set_globe(context, g, _about(centre, np.eye(3) * (s / s0)) @ _np(g.matrix_world), view)
+    p = Vector(centre)
+    if view.cam is not None:
+        m = view.cam.matrix_world.copy()
+        m.translation = p + m.to_quaternion() @ Vector((0.0, 0.0, dist))
+        view.cam.matrix_world = m
+        if view.cam.data.type == "ORTHO":
+            view.cam.data.ortho_scale = 2.0 * FRAME_FILL * radius * s / s0
+    else:
+        rv3d.view_location = p
+        rv3d.view_distance = dist
+        space.clip_end = max(space.clip_end, 4.0 * dist)
+    return True
+
+
 def _local_up(context, p) -> np.ndarray:
     g = globe()
     up = np.asarray(p, dtype=np.float64) - _earth_centre(_np(g.matrix_world), context.scene.ogc3dtiles)
@@ -599,6 +681,13 @@ class OGC3D_OT_GlobeNav(Operator):
             return self._drag(context, event, drag)
         if event.ctrl or event.alt or event.oskey:
             return {"PASS_THROUGH"}
+        if event.type == "NUMPAD_PERIOD" and event.value == "PRESS" and not event.shift:
+            at = _view3d_at(context, event)
+            if at is None or not frame_selected(context, *at):
+                return {"PASS_THROUGH"}
+            _nav["last_view"] = (at[1], at[1].data)
+            self._changed(at[0])
+            return {"RUNNING_MODAL"}
         wheel = event.type in {"WHEELUPMOUSE", "WHEELDOWNMOUSE"} and not event.shift
         press = event.type == "MIDDLEMOUSE" and event.value == "PRESS"
         if not (wheel or press):

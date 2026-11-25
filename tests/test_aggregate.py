@@ -64,7 +64,7 @@ def test_a_bad_manifest_says_why(tmp_path):
 def test_max_km_hides_the_wide_datasets():
     index = {"datasets": [{"id": "small", "radius": 4000.0}, {"id": "wide", "radius": 30000.0},
                           {"id": "unknown"}, {"id": "edge", "radius": 10000.0}]}
-    assert ag.wide_ids(index, 20.0) == ["wide"]
+    assert ag.wide_ids(index, 20.0) == ["wide", "unknown"]       # no known size: no known place either
     assert ag.split_max_km("nest=geodetic&max_km=20") == ("nest=geodetic", 20.0)
     assert ag.split_max_km("&nest=geodetic") == ("nest=geodetic", None)
     seen = []
@@ -75,6 +75,6 @@ def test_max_km_hides_the_wide_datasets():
     assert ag.tileset_url("https://k.example", "open", "nest=geodetic&max_km=20", opener=open_) == ""   # not read yet
     url = ag.tileset_url("https://k.example", "open", "nest=geodetic&max_km=20", post=True, opener=open_)
     assert seen == ["https://k.example/aggregate/index.json?set=open&nest=geodetic"]
-    assert url == "https://k.example/aggregate/tileset.json?set=open&nest=geodetic&hide=wide"
+    assert url == "https://k.example/aggregate/tileset.json?set=open&nest=geodetic&hide=wide,unknown"
     assert ag.tileset_url("https://k.example", "open", "nest=geodetic&max_km=20", opener=open_) == url
     assert len(seen) == 1

@@ -386,8 +386,8 @@ def _tile_cells(o, to_frame, cell):
     me = o.data
     if o.type == "POINTCLOUD" or not len(me.polygons):
         return br.cells_of_points(xy, cell, spacing)
-    if 2.0 * spacing < cell:                          # vertices closer than a cell: they cover it alone
-        return br.cells_of_points(xy, cell)
+    # always the triangles: a tile dense on a building and flat beside it has few vertices on the flat part,
+    # whatever its mean spacing says. Vertices alone left holes there, and the dataset faded around them.
     me.calc_loop_triangles()
     tris = np.empty(len(me.loop_triangles) * 3, np.int32)
     me.loop_triangles.foreach_get("vertices", tris)

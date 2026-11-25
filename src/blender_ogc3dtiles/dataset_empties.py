@@ -86,6 +86,20 @@ def volume_centre(shape):
     return tuple(float(v) for v in shape[1])
 
 
+def ground_centre(centre) -> tuple:
+    """Where a dataset's Empty goes. The centre of its bounding volume, unless that is far off the ground: the box
+    of a country-wide LiDAR in a projected grid can have its centre hundreds of kilometres up, and a very wide
+    one many kilometres down. Then the point of the ellipsoid on the same vertical."""
+    from .tileset.traversal import ecef_to_geodetic, geodetic_to_ecef
+    c = tuple(float(v) for v in centre)
+    if float(np.linalg.norm(c)) < 6.0e6:
+        return c                                       # not georeferenced
+    lat, lon, h = ecef_to_geodetic(*c)
+    if -500.0 <= h <= 9000.0:
+        return c
+    return tuple(float(v) for v in geodetic_to_ecef(lat, lon, 0.0))
+
+
 def base_matrix(frame, centre) -> np.ndarray:
     """B: the dataset's east-north-up frame at its centre, in the root's frame (float64)."""
     from .tileset.native_backend import enu_from_ecef_matrix
@@ -146,6 +160,7 @@ def adopt(scene, st, root, coll, obj_name: str, dataset, frame) -> None:
     if obj is None or root is None or obj.parent is not root:
         return
     url, centre = dataset
+    centre = ground_centre(centre)
     names = st.setdefault("datasets", {})
     e = bpy.data.objects.get(names.get(url, ""))
     if (e is None or MARKER in e) and st.get("dataset_keys"):      # its marker, made before any of its tiles
@@ -246,7 +261,7 @@ def markers(scene, st, root, coll, frame) -> int:
     for d in TILESET_METADATA.datasets_of(st.get("url") or ""):
         if bpy.data.objects.get(keys.get(d["key"], "")) is not None:
             continue
-        url, centre = d["url"], d["centre"]
+        url, centre = d["url"], ground_centre(d["centre"])
         if url in left:
             e = left[url]
             e.matrix_parent_inverse = _mx(base_matrix(frame, centre))

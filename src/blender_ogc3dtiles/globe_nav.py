@@ -734,6 +734,9 @@ class OGC3D_OT_GlobeReanchor(Operator):
         return {"FINISHED"}
 
 
+TILT_WARN_DEG = 0.5      # from here the leaning vertical shows: the panel says so in red
+
+
 def globe_tilt(g=None) -> float:
     """Angle in radians between the Globe's vertical and Blender's Z, plus its turn away from north."""
     g = g or globe()
@@ -751,8 +754,8 @@ class OGC3D_OT_GlobeLevel(Operator):
 
     @classmethod
     def poll(cls, context):
-        if not _nav["active"]:
-            cls.poll_message_set("Turn Globe Navigation on first")
+        if globe() is None:
+            cls.poll_message_set("Nothing to reset: Globe Navigation has not moved the scene")
             return False
         return True
 
@@ -867,12 +870,27 @@ class OGC3D_PT_GlobeNav(Panel):
         layout.operator("ogc3dtiles.globe_reanchor", icon="PIVOT_CURSOR")
         tilt = math.degrees(globe_tilt(g))
         row = layout.row(align=True)
-        row.label(text="Vertical is +Z" if tilt < 0.01 else f"Vertical off by {tilt:.2f}°")
+        row.alert = tilt >= TILT_WARN_DEG            # red: orbiting and Blender's own tools assume +Z is up
+        row.label(text="Vertical is +Z" if tilt < 0.01 else f"Vertical off by {tilt:.2f}°",
+                  icon="ERROR" if tilt >= TILT_WARN_DEG else "NONE")
         sub = row.row(align=True)
         sub.enabled = tilt >= 0.01
-        sub.operator("ogc3dtiles.globe_level", text="Reset")
+        sub.operator("ogc3dtiles.globe_level", text="Reset Vertical" if tilt >= TILT_WARN_DEG else "Reset",
+                     depress=tilt >= TILT_WARN_DEG)
         layout.operator("ogc3dtiles.globe_reset", icon="LOOP_BACK")
         layout.prop(context.window_manager, "ogc3d_globe_frame")
+
+
+def draw_tilt_warning(layout) -> None:
+    """In the first panel, whatever is folded: the vertical leans, in red, with the button that puts it back."""
+    g = globe()
+    tilt = math.degrees(globe_tilt(g)) if g is not None else 0.0
+    if tilt < TILT_WARN_DEG:
+        return
+    row = layout.row(align=True)
+    row.alert = True
+    row.label(text=f"Vertical off by {tilt:.1f}°", icon="ERROR")
+    row.operator("ogc3dtiles.globe_level", text="Reset Vertical", depress=True)
 
 
 def _get_scale_n(_self) -> float:

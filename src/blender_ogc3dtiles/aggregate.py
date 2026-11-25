@@ -11,6 +11,10 @@ datasets of a *set*. An entry of type *3dtiled aggregate* names the set one of t
     Posting again gives the same name, so the file is the up-to-date source: edit it, Start again.
 
 The share links of a manifest are sent to that server and nowhere else; they never sit in the add-on.
+
+One parameter is the add-on's own: ``max_km=20`` keeps the datasets up to 20 km wide. The server has no such
+filter, so on Start the add-on reads the set's ``index.json`` (each dataset's radius) and hides the wider ones
+with the server's ``hide=<ids>``. Datasets whose size the server does not know are kept.
 """
 from __future__ import annotations
 
@@ -81,6 +85,49 @@ def post_manifest(server: str, path: str, timeout: float = 30.0, opener=urllib.r
     return str(name)
 
 
+def split_max_km(params: str):
+    """(the server's own parameters, the width limit in km or None)."""
+    keep, limit = [], None
+    for part in params.strip().lstrip("?&").split("&"):
+        k, _, v = part.partition("=")
+        if k.strip().lower() == "max_km":
+            try:
+                limit = float(v) if float(v) > 0.0 else None
+            except ValueError:
+                limit = None
+        elif part.strip():
+            keep.append(part.strip())
+    return "&".join(keep), limit
+
+
+def wide_ids(index: dict, max_km: float) -> list:
+    """Ids of the datasets of an index.json wider than ``max_km`` (twice their radius)."""
+    return [str(d["id"]) for d in index.get("datasets") or ()
+            if d.get("id") and isinstance(d.get("radius"), (int, float)) and 2.0 * d["radius"] > max_km * 1000.0]
+
+
+def _with_limit(server: str, name: str, params: str, post: bool, opener) -> str:
+    """The set's URL, with the datasets over ``max_km`` hidden. "" until a Start has read the index."""
+    rest, limit = split_max_km(params)
+    if limit is None:
+        return set_url(server, name, rest)
+    key = (_server(server), name, rest, limit)
+    if post:
+        url = set_url(server, name, rest).replace("/aggregate/tileset.json?", "/aggregate/index.json?", 1)
+        try:
+            with opener(urllib.request.Request(url), timeout=60.0) as resp:
+                index = json.loads(resp.read().decode("utf-8"))
+        except (urllib.error.URLError, ValueError, OSError) as e:
+            raise ValueError(f"max_km: could not read the set's index ({e})") from None
+        _hidden[key] = ",".join(wide_ids(index, limit))
+    if key not in _hidden:
+        return ""
+    return set_url(server, name, rest + (f"&hide={_hidden[key]}" if _hidden[key] else ""))
+
+
+_hidden: dict = {}                   # (server, set, parameters, max_km) -> ids to hide, this session
+
+
 def tileset_url(server: str, value: str, params: str = "", post: bool = False, opener=urllib.request.urlopen) -> str:
     """What an aggregate entry streams. A manifest file is posted when ``post`` (on Start); otherwise the set
     it got the last time this session, or "" when it was never posted."""
@@ -88,7 +135,7 @@ def tileset_url(server: str, value: str, params: str = "", post: bool = False, o
     if not v:
         return ""
     if is_set_name(v):
-        return set_url(server, v, params)
+        return _with_limit(server, v, params, post, opener)
     seen = _stat.get(v)
     if not post and seen is not None and time.monotonic() - seen[0] < STAT_EVERY_S:
         key = seen[1]                                # a NAS path is not asked at every streaming tick
@@ -104,4 +151,4 @@ def tileset_url(server: str, value: str, params: str = "", post: bool = False, o
     if post:
         _posted[key] = post_manifest(server, v, opener=opener)
     name = _posted.get(key)
-    return set_url(server, name, params) if name else ""
+    return _with_limit(server, name, params, post, opener) if name else ""

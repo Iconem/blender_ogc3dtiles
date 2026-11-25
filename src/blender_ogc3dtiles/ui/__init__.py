@@ -2418,6 +2418,11 @@ class OGC3D_PT_StreamPanel(_OGC3DSidebar, Panel):
             layout.operator("script.reload", text="Reload Scripts")
             return
         props = scene.ogc3dtiles
+        try:
+            from .. import globe_nav
+            globe_nav.draw_tilt_warning(layout)
+        except Exception:                                # noqa: BLE001
+            pass
 
         ok, status = _cesium_status
         if not ok:              # the backend choice itself is in the add-on preferences
@@ -2519,16 +2524,22 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
             n_ds = len(st.get("datasets") or ()) if st is not None else 0
             from ..tileset.feature_meta import TILESET_METADATA
             n_all = len(TILESET_METADATA.datasets_of(st.get("url") or "")) if st is not None else 0
-            if n_ds or n_all or not props.dataset_empties:   # only where it does something: an aggregate
-                row = layout.row(align=True)
-                row.prop(props, "dataset_empties",
-                         text=f"An Empty per dataset ({n_ds})" if n_ds else "An Empty per dataset")
-                if props.dataset_empties:
-                    row.prop(props, "dataset_marker_px", text="Dot px")
-                if props.dataset_empties and (n_all or props.dataset_markers):
-                    layout.prop(props, "dataset_markers",
-                                text=f"Markers for all {n_all} datasets (beta)" if n_all
-                                else "Markers for every dataset (beta)")
+            b = layout.box()            # the datasets of a tileset of tilesets: both settings are the scene's
+            b.label(text="Markers - datasets locations", icon="EMPTY_AXIS")
+            b.prop(props, "dataset_empties",
+                   text=f"An Empty and a dot per dataset ({n_ds})" if n_ds else "An Empty and a dot per dataset")
+            sub = b.row()
+            sub.enabled = props.dataset_empties
+            sub.prop(props, "dataset_marker_px", text="Dot radius (px)")
+            sub = b.row()
+            sub.enabled = props.dataset_empties
+            sub.prop(props, "dataset_markers",
+                     text=f"Also the {n_all - n_ds} datasets not loaded yet (beta)" if n_all > n_ds
+                     else "Also the datasets not loaded yet (beta)")
+            if st is None or st.get("backend") is None:
+                b.label(text="Start streaming: markers appear with the tiles", icon="INFO")
+            elif not n_ds and not n_all:
+                b.label(text="This tileset has no datasets of its own", icon="INFO")
             b = layout.box()
             if _fold_header(b, it, "use_clipping", "show_clipping",
                             f"Clipping ({len(it.clip_polygons)})" if it.clip_polygons else "Clipping"):
@@ -2570,10 +2581,10 @@ def _draw_color(b, it, st, props) -> None:
     row = b.row(align=True)
     row.prop(it, "color_saturation")
     row.prop(it, "color_contrast")
-    b.prop_search(it, "color_ref", props, "tilesets", text="Match to", icon="IMAGE_REFERENCE")
+    b.prop(it, "color_ref_pick", icon="IMAGE_REFERENCE")
     row = b.row(align=True)
     sub = row.row(align=True)
-    sub.enabled = bool(it.color_ref) and it.color_ref != it.name
+    sub.enabled = it.color_ref_pick != "NONE"
     sub.operator("ogc3dtiles.color_match", icon="COLOR")
     row.operator("ogc3dtiles.color_reset", icon="LOOP_BACK", text="")
     if st is None:

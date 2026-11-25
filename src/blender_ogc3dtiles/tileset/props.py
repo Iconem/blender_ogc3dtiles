@@ -412,6 +412,29 @@ def _on_color(self, context):
     on_change(self, context)
 
 
+_ref_items: list = []                    # Blender keeps no reference to the strings of a dynamic enum
+
+
+def _others(self):
+    props = getattr(self.id_data, "ogc3dtiles", None)
+    return [it for it in props.tilesets if it != self and it.name] if props is not None else []
+
+
+def _color_ref_items(self, context):
+    _ref_items[:] = [("NONE", "None", "No reference tileset")] + [
+        (f"T{i}", it.name, f"Match this tileset's colors to {it.name}") for i, it in enumerate(_others(self))]
+    return _ref_items
+
+
+def _color_ref_get(self):
+    return next((i + 1 for i, it in enumerate(_others(self)) if it.name == self.color_ref), 0)
+
+
+def _color_ref_set(self, value):
+    others = _others(self)
+    self.color_ref = others[value - 1].name if 0 < value <= len(others) else ""
+
+
 def _camera_poll(self, obj):
     return obj.type == "CAMERA"
 
@@ -532,7 +555,8 @@ class TilesetItem(PropertyGroup):
         name="Parameters",
         description="3dtiled aggregate: more of the server's query, as written in a URL. nest=geodetic or "
                     "nest=mercator choose how the datasets are grouped; only=, exclude= and format= choose "
-                    "among them. Empty: the server's defaults",
+                    "among them. max_km=20 is the add-on's own: only the datasets up to 20 km wide. "
+                    "Empty: the server's defaults",
         default="nest=geodetic")
     # folded or not, for the boxes that are switched on
     show_overlays: BoolProperty(name="Show", description="Unfold the raster overlays", default=True)
@@ -565,6 +589,11 @@ class TilesetItem(PropertyGroup):
         name="Match to",
         description="The tileset whose colors Match Colors brings this one onto: Google Photorealistic "
                     "3D Tiles under a photogrammetry mesh, for one")
+    color_ref_pick: EnumProperty(
+        name="Match to",
+        description="The tileset whose colors Match Colors brings this one onto: Google Photorealistic "
+                    "3D Tiles under a photogrammetry mesh, for one. Every other tileset of the list",
+        items=_color_ref_items, get=_color_ref_get, set=_color_ref_set, options={'SKIP_SAVE'})
     clip_geometry: BoolProperty(
         name="Slower: Also cut in solid view/exports",
         description="Also delete the mesh faces that are entirely cut (Geometry Nodes), so "
@@ -904,7 +933,7 @@ class TilesSceneProps(PropertyGroup):
         default=0.08, min=0.001, max=50.0, update=_on_point_radius,
     )
     dataset_empties: BoolProperty(
-        name="An Empty per dataset",
+        name="An Empty and a dot per dataset",
         description="In a tileset that only gathers other tilesets (an aggregate of datasets), give each "
                     "dataset an Empty under the tileset's root and parent its tiles to it. The Empty sits at "
                     "the dataset's centre with Z up: its Location Z is a height offset, kept with the scene. "
@@ -912,7 +941,7 @@ class TilesSceneProps(PropertyGroup):
                     "to tiles loaded from now on",
         default=True)
     dataset_markers: BoolProperty(
-        name="Markers for every dataset (beta)",
+        name="Also the datasets not loaded yet (beta)",
         description="Beta. In a tileset that only gathers other tilesets, an Empty for every dataset its "
                     "tileset.json lists, before any tile of it is loaded: a sphere of the dataset's size at its "
                     "centre, named after the dataset. Scene Origin > Dataset then lists them all, so the origin "

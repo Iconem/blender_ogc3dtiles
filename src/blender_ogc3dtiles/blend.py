@@ -316,6 +316,8 @@ def _ensure_frame(props, st, objs):
     root = bpy.data.objects.get(st.get("root_obj") or "")
     if root is None:
         return None
+    if _state["frame_ecef"] is not None and _far_from_frame(st, objs):
+        _state["frame_ecef"] = None                  # the datasets are somewhere else now
     if _state["frame_ecef"] is None:
         pts = np.array([_np(o.matrix_world) @ (*c, 1.0) for o in objs for c in (o.bound_box[0], o.bound_box[6])])
         if not len(pts):
@@ -352,6 +354,18 @@ def _ensure_frame(props, st, objs):
     if ng.nodes["Frame"].object != frame:
         ng.nodes["Frame"].object = frame
     return root.matrix_world @ frame.matrix_basis    # where the frame is now, without waiting for the depsgraph
+
+
+FRAME_REACH_M = 200_000.0    # a frame further than this from the datasets is made again there
+
+
+def _far_from_frame(st, objs) -> bool:
+    from .tile_bounds import _ecef_to_world
+    o = next(iter(objs), None)
+    if o is None:
+        return False
+    p = np.linalg.inv(_ecef_to_world(st)) @ (_np(o.matrix_world) @ (*o.bound_box[0], 1.0))
+    return float(np.linalg.norm(p[:3] - _state["frame_ecef"][:3, 3])) > FRAME_REACH_M
 
 
 def _xyz(o, to_frame):
@@ -404,6 +418,19 @@ def _upload(dist, low, x0, y0, c, max_m) -> None:
     _value(ng, "Range", max_m)
     _value(ng, "Low Min", z0)
     _value(ng, "Low Range", max(z1 - z0, 1e-3))
+
+
+def _clear_coverage() -> bool:
+    """No dataset is shown any more (hidden, stopped, removed): the terrain is whole again. Without this the
+    last coverage stays, and the terrain keeps a hole where a dataset was. The frame is let go too: the next
+    dataset may be on the other side of the planet."""
+    if _state.get("empty"):
+        return False
+    ng = bpy.data.node_groups.get(GROUP)
+    if ng is not None:
+        _value(ng, "Range", 0.0)                     # every cell reads 0 m inside: outside every footprint
+    _state.update(cells={}, boxes={}, cell=None, sig=None, frame_ecef=None, frame_sig=None, info="", empty=True)
+    return True
 
 
 def mark_dirty() -> None:
@@ -482,8 +509,9 @@ def tick(scene, props, streams, now) -> bool:
     data = [n for uid, names in vis.items() if rl[uid] == "dataset" for n in names]
     first = next((streams[uid] for uid in rl if rl[uid] == "dataset"), None)
     if first is None or not data:
-        return changed
+        return _clear_coverage() or changed
     tiles = [o for o in (objs.get(n) for n in data) if o is not None]
+    _state["empty"] = False
     frame_world = _ensure_frame(props, first, tiles)
     if frame_world is None:
         return changed

@@ -8,6 +8,21 @@ main branch and not in a release zip yet.
 
 ## Unreleased
 
+## 0.6.8 (2026-11-25)
+
+- **Markers - datasets locations.** The two dataset settings have a box of their own in the main panel, always
+  shown: *An Empty and a dot per dataset* and *Also the datasets not loaded yet (beta)*. A dot can be clicked:
+  it selects the dataset's Empty. A dot behind a tile is drawn faint instead of vanishing as the dataset's
+  tiles load, and a hidden dataset or tileset has none.
+- **Dataset Empties on the ground.** A dataset whose bounding volume has its centre far above or under the
+  ground (country-wide LiDAR in a projected grid: up to 2000 km up) gets its Empty on the ellipsoid there.
+- **Terrain blending: no stale hole.** When no dataset is shown any more (hidden, stopped, removed), the terrain
+  is whole again; it used to keep the last coverage. A dataset far from the last one gets a new frame.
+- **Match to is a list of the other tilesets**, without the tileset itself.
+- **3dtiled aggregate: `max_km=20`** in Parameters keeps the datasets up to 20 km wide. Two more public sets
+  in the library picker: the open data that is 3D Tiles already, and the open scans up to 20 km wide.
+- **Vertical off, in red.** When the vertical leans by half a degree or more after Globe Navigation, the first
+  panel says so in red beside *Reset Vertical*, which now works with Globe Navigation off too.
 - **A hidden tileset stops streaming.** Closing a tileset's eye in the list pauses it, as unticking it does.
 - **URL overlays: `{q}` Bing quadkeys and `{0-3}` subdomain ranges** in a template.
 - **Match Colors over the overlap only, in both directions, and to a corrected reference.** The area the two

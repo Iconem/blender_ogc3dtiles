@@ -2,8 +2,10 @@
 
 An Empty is drawn no larger than a kilometre (empty_display_size stops at 1000), so the sphere of a dataset is
 lost from a few hundred kilometres. With *An Empty per dataset* on, this draws one white disc per dataset Empty
-in every 3D viewport, a few pixels wide at any distance and any Globe scale, depth tested against the tiles
-and left out when the Earth is between it and the eye.
+in every 3D viewport, a few pixels wide at any distance and any Globe scale, left out when the Earth is between
+it and the eye, and drawn faint where a tile is in front of it (the centre of a dataset is often inside its own
+tiles: its dot would vanish as they load). Only the Empties that are visible get a dot: hide a dataset, or its
+tileset, and the dot goes. A click on a dot selects its Empty.
 The viewport's far clip plane is much nearer than the other side of a continent, so a dot beyond it is drawn on
 its view ray just inside the plane: same place on screen, and still behind every tile.
 Viewport only.
@@ -28,7 +30,7 @@ def _empties():
     now = time.monotonic()
     if now - _state["t"] >= REFRESH_S:
         _state["t"] = now
-        _state["empties"] = [o.name for o in bpy.data.objects if o.type == "EMPTY" and PROP in o]
+        _state["empties"] = [o.name for o in bpy.data.objects if o.type == "EMPTY" and PROP in o and _shown(o)]
         _state["sig"] = None                      # an Empty the user moved is picked up here
     out = []
     for n in _state["empties"]:
@@ -36,6 +38,13 @@ def _empties():
         if o is not None:
             out.append(o)
     return out
+
+
+def _shown(o) -> bool:
+    try:
+        return bool(o.visible_get())
+    except Exception:                                # noqa: BLE001  (not in this view layer)
+        return False
 
 
 def _signature(es) -> tuple:
@@ -50,7 +59,8 @@ def _signature(es) -> tuple:
 
 def _rebuild(es):
     """World positions, and the Earth they sit on."""
-    _state["batches"] = np.asarray([tuple(e.matrix_world.translation) for e in es], dtype=np.float64)
+    _state["batches"] = np.asarray([tuple(e.matrix_world.translation) for e in es], dtype=np.float64).reshape(-1, 3)
+    _state["names"] = [e.name for e in es]
     _state["earth"] = _earth(es)
 
 
@@ -134,46 +144,86 @@ def _disc_shader():
     return _state["shader"]
 
 
+HIDDEN_ALPHA = 0.3                      # a dot behind a tile
+
+
+def _points(props, rv):
+    """(world positions of the dots this view shows, the names of their Empties), or (None, None)."""
+    if props is None or not props.dataset_empties or props.dataset_marker_px <= 0.0 or rv is None:
+        return None, None
+    es = _empties()
+    if not es:
+        return None, None
+    sig = _signature(es)
+    if sig != _state["sig"] or _state["batches"] is None or len(_state.get("names") or ()) != len(es):
+        _state["sig"] = sig
+        _rebuild(es)
+    pts, names = _state["batches"], _state["names"]
+    earth = _state.get("earth")
+    if earth is not None and rv.is_perspective:      # datasets behind the globe
+        cam = np.array(rv.view_matrix.inverted().translation, dtype=np.float64)
+        keep = in_front_of_sphere(pts, cam, *earth)
+        pts, names = pts[keep], [n for n, k in zip(names, keep) if k]
+    if not len(pts):
+        return None, None
+    far, eye = _far_and_eye(rv)
+    if far:
+        pts = within_clip(pts, eye, far)
+    return pts, names
+
+
+def _size_px(props) -> float:
+    return 2.0 * float(props.dataset_marker_px) * bpy.context.preferences.system.ui_scale + 3.0
+
+
+def nearest_on_screen(pts, perspective, width, height, x, y):
+    """(index of the point drawn nearest to the pixel (x, y), its distance in pixels). No bpy."""
+    h = np.c_[np.asarray(pts, np.float64), np.ones(len(pts))] @ np.asarray(perspective, np.float64).T
+    ok = h[:, 3] > 1e-9
+    w = np.where(ok, h[:, 3], 1.0)
+    d = np.where(ok, np.hypot((h[:, 0] / w * 0.5 + 0.5) * width - x, (h[:, 1] / w * 0.5 + 0.5) * height - y), np.inf)
+    i = int(np.argmin(d))
+    return i, float(d[i])
+
+
+def pick(props, region, rv, x: float, y: float):
+    """The name of the Empty whose dot is under the pixel (x, y) of the region, or None."""
+    pts, names = _points(props, rv)
+    if pts is None:
+        return None
+    i, d = nearest_on_screen(pts, rv.perspective_matrix, region.width, region.height, x, y)
+    return names[i] if d <= _size_px(props) / 2.0 + 3.0 else None
+
+
 def _draw():
     scene = bpy.context.scene
     props = getattr(scene, "ogc3dtiles", None)
-    if props is None or not props.dataset_empties or props.dataset_marker_px <= 0.0:
-        return
     try:
-        es = _empties()
-        if not es:
+        rv = bpy.context.region_data
+        pts, _names = _points(props, rv)
+        if pts is None:
             return
-        sig = _signature(es)
-        if sig != _state["sig"] or _state["batches"] is None:
-            _state["sig"] = sig
-            _rebuild(es)
         import gpu
         from gpu_extras.batch import batch_for_shader
         shader = _disc_shader()
-        rv = bpy.context.region_data
-        far, eye = _far_and_eye(rv)
-        pts = _state["batches"]
-        earth = _state.get("earth")
-        if earth is not None:                        # datasets behind the globe
-            cam = np.array(rv.view_matrix.inverted().translation, dtype=np.float64)
-            if rv.is_perspective:
-                pts = pts[in_front_of_sphere(pts, cam, *earth)]
-            if not len(pts):
-                return
-        if far:
-            pts = within_clip(pts, eye, far)
         batch = batch_for_shader(shader, "POINTS", {"pos": pts.astype(np.float32)})
-        size = 2.0 * float(props.dataset_marker_px) * bpy.context.preferences.system.ui_scale + 3.0
+        size = _size_px(props)
         gpu.state.blend_set("ALPHA")
-        gpu.state.depth_test_set("LESS_EQUAL")
         gpu.state.program_point_size_set(True)
         shader.bind()
         shader.uniform_float("mvp", rv.perspective_matrix)
-        shader.uniform_float("color", COLOR)
-        shader.uniform_float("rim", RIM)
         shader.uniform_float("size", size)
         shader.uniform_float("inner", 1.0 - 3.0 / size)
+        gpu.state.depth_test_set("NONE")             # faint, wherever it is: behind a tile too
+        gpu.state.depth_mask_set(False)
+        shader.uniform_float("color", (*COLOR[:3], COLOR[3] * HIDDEN_ALPHA))
+        shader.uniform_float("rim", (*RIM[:3], RIM[3] * HIDDEN_ALPHA))
         batch.draw(shader)
+        gpu.state.depth_test_set("LESS_EQUAL")       # whole, where nothing is in front
+        shader.uniform_float("color", COLOR)
+        shader.uniform_float("rim", RIM)
+        batch.draw(shader)
+        gpu.state.depth_mask_set(True)
         gpu.state.program_point_size_set(False)
         gpu.state.depth_test_set("NONE")
         gpu.state.blend_set("NONE")
@@ -181,6 +231,44 @@ def _draw():
         if not _state.get("failed"):
             _state["failed"] = True
             print(f"[3DTiles] dataset dots: {e}")
+
+
+def _pick_invoke(self, context, event):
+    name = None
+    try:
+        if context.region is not None and context.region.type == "WINDOW":
+            name = pick(getattr(context.scene, "ogc3dtiles", None), context.region, context.region_data,
+                        event.mouse_region_x, event.mouse_region_y)
+    except Exception as e:                           # noqa: BLE001
+        print(f"[3DTiles] dataset dots: {e}")
+    e = bpy.data.objects.get(name or "")
+    if e is None or context.mode != "OBJECT":
+        return {"PASS_THROUGH"}                      # not on a dot: the click is Blender's
+    if not self.extend:
+        for o in context.selected_objects:
+            o.select_set(False)
+    try:
+        e.select_set(True)
+        context.view_layer.objects.active = e
+    except RuntimeError:
+        return {"PASS_THROUGH"}
+    self.report({"INFO"}, f"Dataset: {e.name}")
+    return {"FINISHED"}
+
+
+_keymaps: list = []
+_cls: list = []
+
+
+def _operator():
+    """The click operator, made at register: this module is imported without bpy.props by the tests."""
+    if not _cls:
+        _cls.append(type("OGC3D_OT_PickDataset", (bpy.types.Operator,), {
+            "__doc__": "Select the Empty of the dataset whose dot is under the cursor",
+            "bl_idname": "ogc3dtiles.pick_dataset", "bl_label": "Select Dataset", "bl_options": {"REGISTER", "UNDO"},
+            "__annotations__": {"extend": bpy.props.BoolProperty(default=False, options={"SKIP_SAVE"})},
+            "invoke": _pick_invoke}))
+    return _cls[0]
 
 
 def invalidate() -> None:
@@ -197,14 +285,32 @@ def on_load(*_args) -> None:
 
 
 def register():
+    bpy.utils.register_class(_operator())
     if _state["handle"] is None and not bpy.app.background:
         _state["handle"] = bpy.types.SpaceView3D.draw_handler_add(_draw, (), "WINDOW", "POST_VIEW")
+    kc = bpy.context.window_manager.keyconfigs.addon if not bpy.app.background else None
+    if kc is not None and not _keymaps:              # a click on a dot, before Blender's own selection
+        km = kc.keymaps.new(name="3D View", space_type="VIEW_3D")
+        _keymaps.append((km, km.keymap_items.new("ogc3dtiles.pick_dataset", "LEFTMOUSE", "PRESS", head=True)))
+        kmi = km.keymap_items.new("ogc3dtiles.pick_dataset", "LEFTMOUSE", "PRESS", shift=True, head=True)
+        kmi.properties.extend = True
+        _keymaps.append((km, kmi))
     bpy.app.handlers.persistent(on_load)
     if on_load not in bpy.app.handlers.load_post:
         bpy.app.handlers.load_post.append(on_load)
 
 
 def unregister():
+    for km, kmi in _keymaps:
+        try:
+            km.keymap_items.remove(kmi)
+        except Exception:                            # noqa: BLE001
+            pass
+    _keymaps.clear()
+    try:
+        bpy.utils.unregister_class(_operator())
+    except Exception:                                # noqa: BLE001
+        pass
     if on_load in bpy.app.handlers.load_post:
         bpy.app.handlers.load_post.remove(on_load)
     if _state["handle"] is not None:

@@ -60,6 +60,12 @@ BUILTIN_TILESETS = (
     {"name": "3dtiled open data, everything (607 datasets)", "kind": "AGGREGATE", "url": "open",
      "agg_params": "nest=geodetic", "group": "3dtiled aggregate sets",
      "notes": "Every open dataset the server lists: city meshes, national LiDAR point clouds, heritage scans, splats"},
+    {"name": "3dtiled open data, 3D Tiles only (50 datasets)", "kind": "AGGREGATE", "url": "open",
+     "agg_params": "nest=geodetic&format=3dtiles", "group": "3dtiled aggregate sets",
+     "notes": "The open datasets that are 3D Tiles already: nothing is converted by the server on the way"},
+    {"name": "3dtiled open data, scans up to 20 km wide", "kind": "AGGREGATE", "url": "open",
+     "agg_params": "nest=geodetic&max_km=20", "group": "3dtiled aggregate sets",
+     "notes": "The open datasets up to 20 km wide: sites, monuments and city centres, without the national LiDAR"},
 )
 BUILTIN_PATH = "Built in"
 

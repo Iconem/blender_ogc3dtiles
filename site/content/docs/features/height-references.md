@@ -16,7 +16,7 @@ page: 40 s to load both tilesets, 2 to 5 s a frame.
 
 A height is counted from a surface, and sources do not use the same one.
 
-![A cut through the ground with the WGS84 ellipsoid, the geoid and a national sea-level datum under it: h_WGS84 is the height above the ellipsoid, H_MSL the height above sea level, dz_geoid the geoid's height, h_WGS84 = H_MSL + dz_geoid. Then which sources count from which surface](/img/height_references.png)
+![A cut through the ground with the WGS84 ellipsoid, the geoid and a national sea-level datum under it, apart from each other under the scene origin too: h_WGS84 is the height above the ellipsoid, H_MSL the height above sea level, dz_geoid the geoid's height, h_WGS84 = H_MSL + dz_geoid. Then which sources count from which surface](/img/height_references.png)
 
 - **The ellipsoid** is the smooth mathematical shape GPS works on. 3D Tiles place everything in
   Earth-centred coordinates, so a tileset's heights are heights above the ellipsoid, `h_WGS84`. The add-on reads
@@ -69,7 +69,7 @@ them. In every cell both have, the lowest height of the terrain minus the lowest
 taken, and the dataset moves by the median, along the local vertical. The report says by how much.
 
 - **What moves** is the tileset's root Empty. In a [tileset of tilesets](/features/several-tilesets#a-tileset-of-tilesets)
-  with *An Empty per dataset*, each dataset that has tiles shown moves by its own amount, through its own
+  with *An Empty and a dot per dataset*, each dataset that has tiles shown moves by its own amount, through its own
   Empty (its *Location Z*), and the others are left alone: zoom on the datasets you care about first. The
   offsets are remembered on the entry, like any move of those Empties.
 - **Once.** Nothing holds the dataset there afterwards. Undo, or the Empty's location, brings it back.
@@ -111,7 +111,7 @@ it never shows uncorrected.
 
 ### Match Colors
 
-Pick the reference in **Match to** (Google Photorealistic 3D Tiles under a photogrammetry mesh, for one),
+Pick the reference in **Match to**, a list of the other tilesets (Google Photorealistic 3D Tiles under a photogrammetry mesh, for one),
 have both streaming with the overlap in view, and press **Match Colors**.
 
 Both tilesets are sampled over the area they share, seen from above, and nowhere else: 3000 points per

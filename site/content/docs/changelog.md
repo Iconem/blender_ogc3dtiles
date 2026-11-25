@@ -8,7 +8,14 @@ main branch and not in a release zip yet.
 
 ## Unreleased
 
-Nothing yet.
+- **A hidden dataset stops streaming.** In an aggregate, closing the eye (or unticking) a dataset's collection, or
+  closing the eye of its Empty, takes the dataset out of the selection: its tiles go, nothing more of it loads,
+  and it comes back when shown again.
+- **Dataset names from the `NAME` semantic.** A dataset's Empty is named after the property that carries the
+  3D Tiles 1.1 semantic `NAME` in the aggregate's schema, whatever the property is called, before `name`,
+  `title`, `scene` and `label`. Only a schema inside the `tileset.json` is read, not a `schemaUri`.
+- **Dataset dots: none behind the globe.** A dot is left out when the Earth is between it and the eye.
+- Adaptive point size also applies to point clouds under X-ray (it already did; the docs said otherwise).
 
 ## 0.6.7 (2026-11-25)
 

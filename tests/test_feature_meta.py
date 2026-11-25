@@ -309,3 +309,19 @@ def test_an_aggregate_lists_its_datasets():
     assert rows[0]["props"] == {"name": "A", "project": "P"} and 6.3e6 < sum(v * v for v in rows[0]["centre"]) ** 0.5 < 6.4e6
     assert rows[1]["centre"] == (110.0, 0.0, 0.0) and rows[1]["radius"] == 5.0
     assert m.by_key["https://x/agg/a/tileset.json"]["name"] == "A"
+
+
+def test_name_semantic_names_a_dataset():
+    doc = {
+        "schema": {"classes": {"dataset": {"properties": {"titre": {"type": "STRING", "semantic": "NAME"},
+                                                         "name": {"type": "STRING"}}}}},
+        "root": {"children": [
+            {"metadata": {"class": "dataset", "properties": {"titre": "Sacré-Cœur 2024", "name": "sc_2024_v3"}},
+             "content": {"uri": "a/tileset.json"}},
+            {"metadata": {"class": "other", "properties": {"titre": "x"}}, "content": {"uri": "b/tileset.json"}},
+        ]},
+    }
+    meta = fm.TilesetMetadata()
+    meta.note("https://x/y/tileset.json", doc)
+    assert meta.names["https://x/y/a/tileset.json"] == "Sacré-Cœur 2024"
+    assert "https://x/y/b/tileset.json" not in meta.names

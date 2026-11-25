@@ -58,13 +58,15 @@ NAME_KEYS = ("name", "title", "scene", "label")
 
 
 def display_name(url: str) -> str:
-    """A name for the Empty: the dataset's name in the aggregate's tile metadata (3D Tiles 1.1: `name`, else
+    """A name for the Empty: the property with the `NAME` semantic in the aggregate's tile metadata, else the
+    dataset's name there (3D Tiles 1.1: `name`, else
     `title`, `scene`, `label`, with the `project` in front when the name does not hold it), else short_name()."""
     try:
         from .tileset.feature_meta import TILESET_METADATA, content_key
+        named = TILESET_METADATA.names.get(url) or TILESET_METADATA.names.get(content_key(url))
         props = (TILESET_METADATA.by_content.get(url) or TILESET_METADATA.by_key.get(content_key(url)) or {})
-        name = next((str(props[k]).strip() for k in NAME_KEYS
-                     if isinstance(props.get(k), (str, int)) and str(props[k]).strip()), "")
+        name = named or next((str(props[k]).strip() for k in NAME_KEYS
+                              if isinstance(props.get(k), (str, int)) and str(props[k]).strip()), "")
         if name:
             project = props.get("project")
             if isinstance(project, str) and project.strip() and project.strip().lower() not in name.lower():
@@ -203,6 +205,23 @@ def _move(o, own) -> None:
     for c in list(o.users_collection):
         c.objects.unlink(o)
     own.objects.link(o)
+
+
+def hidden_urls(st, layer_coll) -> tuple:
+    """URLs of the datasets hidden in Blender: the eye or the tick of the dataset's collection, or the eye of
+    its Empty. The backend leaves them out of the selection, so they neither load nor stay in memory."""
+    off = set()
+    for lc in (layer_coll.children if layer_coll is not None else ()):
+        if lc.exclude or lc.hide_viewport or lc.collection.hide_viewport:
+            off.add(lc.collection.name)
+    out = []
+    for url, name in (st.get("datasets") or {}).items():
+        e = bpy.data.objects.get(name)
+        if e is None:
+            continue
+        if e.get(COLL, "") in off or e.hide_viewport or e.hide_get():
+            out.append(url)
+    return tuple(sorted(out))
 
 
 def drop_empty_collections(coll) -> None:

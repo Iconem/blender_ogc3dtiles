@@ -47,7 +47,7 @@ on the left, adaptive on the right, coloured per tile (top) and per octree level
   that appeared or disappeared are evaluated again.
 - In *Attenuated*, *Min px* still applies: at a small window size the points are already at the minimum and
   little changes. *Per tile* shows it in full.
-- Not for splats, X-ray points, *Uniform* or *Screen pixels*. cesium-native backend, Direct mesh.
+- It applies under X-ray too. Not for splats, *Uniform* or *Screen pixels*. cesium-native backend, Direct mesh.
 
 ## Lighting
 

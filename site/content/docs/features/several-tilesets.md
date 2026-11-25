@@ -35,18 +35,19 @@ Ion, globe and terrain entries need the cesium-native backend.
 A `tileset.json` can be nothing but a tree of grouping tiles whose leaves are other tilesets, one per
 dataset: every survey of a city, every dataset of a server. With the cesium-native backend each of
 those datasets gets its own Empty under the tileset's root, named after the dataset, and its tiles are
-parented to it. The name is the dataset's `name` in the aggregate's 3D Tiles 1.1 tile metadata (else `title`,
-`scene` or `label`, with its `project` in front), and only without one the last telling part of its URL.
+parented to it. The name is the property with the semantic `NAME` in the aggregate's 3D Tiles 1.1 tile metadata (the schema
+must be inside the `tileset.json`), else the dataset's `name` there (else `title`, `scene` or `label`), with its
+`project` in front, and only without one the last telling part of its URL.
 
 Each dataset also gets:
 
 - **A collection of its own**, under the tileset's, named like its Empty, holding the Empty and the dataset's
   tiles. Its eye in the Outliner hides one dataset among overlapping ones (several surveys of one monument).
-  Hiding the Empty alone does not hide its tiles: that is how Blender parents work. A hidden dataset still
-  streams.
+  A hidden dataset stops streaming: its tiles go and nothing more of it loads until it is shown again. Closing
+  the eye of the dataset's Empty does the same.
 - **A white dot** in the 3D viewport, of the **Dot px** radius beside *An Empty per dataset* (5 pixels by
   default, 0 for none), the same at any distance and any Globe scale: a site of a few metres shows from space.
-  The dots hide behind tiles, are not in renders and cannot be clicked: pick a dataset in *Scene Origin >
+  The dots hide behind tiles and behind the globe, are not in renders and cannot be clicked: pick a dataset in *Scene Origin >
   Dataset*, or its Empty in the Outliner.
 
 **Markers for all N datasets (beta)**, under *An Empty per dataset*, makes those Empties at Start for every

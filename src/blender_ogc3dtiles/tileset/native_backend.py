@@ -488,8 +488,9 @@ def _tile_url(tile) -> str:
 
 
 def _dataset_excluder(base):
-    """ITileExcluder that gives each moved dataset a selection of its own (dataset_empties). cesium-native
-    selects once per view group; before each pass the backend says whose pass it is:
+    """ITileExcluder that leaves hidden datasets out, and gives each moved dataset a selection of its own
+    (dataset_empties). cesium-native selects once per view group; before each pass the backend says whose pass
+    it is:
 
       only = None       the main pass, for the real camera: the moved datasets are left out
       only = {URLs}     the pass of a camera moved the other way: nothing but these datasets
@@ -500,6 +501,7 @@ def _dataset_excluder(base):
         def __init__(self):
             super().__init__()
             self.moved = frozenset()            # URLs of every moved dataset
+            self.hidden = frozenset()           # URLs of the datasets hidden in Blender: in no pass
             self.known = {}                     # the backend's dataset cache: URL -> (URL, centre) or False
             self.only = None
 
@@ -508,6 +510,8 @@ def _dataset_excluder(base):
 
         def should_exclude(self, tile):
             url = _tile_url(tile)
+            if url in self.hidden:
+                return True
             only = self.only
             if only is None:
                 return url in self.moved
@@ -889,7 +893,7 @@ class CesiumNativeBackend:
 
     def update_view(self, position_ecef, direction_ecef, up_ecef,
                     viewport_w, viewport_h, hfov, vfov, dt=0.0, ortho=None, faces=None, offsets=None,
-                    extra=None):
+                    extra=None, hidden=()):
         """``ortho`` = (half_width, half_height) of an orthographic frame in
         metres, centred on ``position_ecef``: the binding's orthographic
         ViewState then culls with the four side planes and uses
@@ -939,15 +943,21 @@ class CesiumNativeBackend:
 
         passes = [(self._tileset.default_view_group, views, None)]
         offsets = list(offsets or ())
+        hidden = frozenset(hidden or ())
         try:
-            if offsets and self._ds_excluder is None:
+            if (offsets or hidden) and self._ds_excluder is None:
                 self._ds_excluder = _dataset_excluder(sel.ITileExcluder)
                 self._ds_excluder.known = self._dataset_cache
                 self._apply_excluders()
-            elif not offsets and self._ds_excluder is not None:
+            elif not (offsets or hidden) and self._ds_excluder is not None:
                 self._ds_excluder = None
                 self._ds_groups = {}
                 self._apply_excluders()
+            if self._ds_excluder is not None:
+                self._ds_excluder.hidden = hidden
+                if not offsets:
+                    self._ds_groups = {}
+                    self._ds_excluder.moved = frozenset()
             if offsets:
                 groups = {}
                 for M, urls in offsets:

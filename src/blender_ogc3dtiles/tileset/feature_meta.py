@@ -619,11 +619,12 @@ class TilesetMetadata:
         self.by_content = {}     # content URL -> {"name": value}
         self.by_key = {}         # content_key(content URL) -> {"name": value}
         self.datasets = {}       # tileset.json URL -> [{url, key, props, centre, radius}]: its external tilesets
+        self.names = {}          # content URL, and content_key of it -> the value of its `NAME` semantic
         self.version = 0         # goes up with every tileset.json that lists datasets
 
     def clear(self):
         with self._lock:
-            self.tileset, self.by_content, self.by_key, self.datasets = {}, {}, {}, {}
+            self.tileset, self.by_content, self.by_key, self.datasets, self.names = {}, {}, {}, {}, {}
             self.version += 1
 
     def datasets_of(self, url) -> list:
@@ -635,6 +636,19 @@ class TilesetMetadata:
         groups = doc.get("groups") or []
         found = {}
         listed = []
+        named = {}
+        # 3D Tiles 1.1: a class property can carry the semantic NAME, whatever the property is called. Only a
+        # schema inside the tileset.json is read, not one behind a schemaUri
+        classes = ((doc.get("schema") or {}).get("classes") or {}) if isinstance(doc.get("schema"), dict) else {}
+        name_prop = {c: p for c, d in classes.items() if isinstance(d, dict)
+                     for p, pd in (d.get("properties") or {}).items()
+                     if isinstance(pd, dict) and pd.get("semantic") == "NAME"}
+
+        def semantic_name(entity):
+            if not isinstance(entity, dict):
+                return ""
+            v = (entity.get("properties") or {}).get(name_prop.get(entity.get("class"), ""))
+            return str(v).strip() if isinstance(v, (str, int)) else ""
 
         def dataset(tile, props, transform):
             """A tile that is another tileset: 3D Tiles metadata of class `dataset`, or a .json content that is
@@ -664,7 +678,11 @@ class TilesetMetadata:
             # an aggregate's datasets hang from grouping tiles alone: below a tile that draws something, or
             # below a dataset, a .json content is the same tileset paging itself (Google, a large mesh)
             below = below or dataset(tile, own, transform)
+            tile_name = semantic_name(tile.get("metadata"))
             for content in ([tile["content"]] if tile.get("content") else []) + list(tile.get("contents") or []):
+                nm = semantic_name(content.get("metadata")) or tile_name
+                if nm and content.get("uri"):
+                    named[urljoin(url, content["uri"])] = nm
                 props = dict(own)
                 group = content.get("group")
                 if isinstance(group, int) and 0 <= group < len(groups):
@@ -682,6 +700,8 @@ class TilesetMetadata:
             self.tileset.update(top)
             self.by_content.update(found)
             self.by_key.update({content_key(k): v for k, v in found.items()})
+            self.names.update(named)
+            self.names.update({content_key(k): v for k, v in named.items()})
             if listed:
                 self.datasets[url] = listed
                 if asked_url:

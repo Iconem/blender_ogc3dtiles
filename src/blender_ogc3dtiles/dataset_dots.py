@@ -2,7 +2,8 @@
 
 An Empty is drawn no larger than a kilometre (empty_display_size stops at 1000), so the sphere of a dataset is
 lost from a few hundred kilometres. With *An Empty per dataset* on, this draws one white disc per dataset Empty
-in every 3D viewport, a few pixels wide at any distance and any Globe scale, depth tested against the tiles.
+in every 3D viewport, a few pixels wide at any distance and any Globe scale, depth tested against the tiles
+and left out when the Earth is between it and the eye.
 The viewport's far clip plane is much nearer than the other side of a continent, so a dot beyond it is drawn on
 its view ray just inside the plane: same place on screen, and still behind every tile.
 Viewport only.
@@ -48,8 +49,39 @@ def _signature(es) -> tuple:
 
 
 def _rebuild(es):
-    """World positions."""
+    """World positions, and the Earth they sit on."""
     _state["batches"] = np.asarray([tuple(e.matrix_world.translation) for e in es], dtype=np.float64)
+    _state["earth"] = _earth(es)
+
+
+EARTH_RADIUS_M = 6.34e6                 # under the lowest ground: a site on the limb is kept
+
+
+def _earth(es):
+    """(centre, radius) of the Earth in world space, or None when the datasets are not on it."""
+    try:
+        from .tile_bounds import _ecef_to_world, _streams
+        roots = {e.parent.name for e in es if e.parent is not None}
+        st = next((s for s in _streams() if s.get("root_obj") in roots), None)
+        if st is None or not any(float(np.linalg.norm(e["ogc3dtiles_dataset_centre"][:])) > 6.0e6
+                                 for e in es if "ogc3dtiles_dataset_centre" in e):
+            return None
+        M = _ecef_to_world(st)
+        return M[:3, 3].copy(), EARTH_RADIUS_M * float(np.linalg.norm(M[:3, 0]))
+    except Exception:                                # noqa: BLE001
+        return None
+
+
+def in_front_of_sphere(points, eye, centre, radius):
+    """Mask of the points the sphere does not hide from the eye. No bpy."""
+    p = np.asarray(points, dtype=np.float64)
+    eye, centre = np.asarray(eye, dtype=np.float64), np.asarray(centre, dtype=np.float64)
+    d = p - eye
+    L = np.maximum(np.linalg.norm(d, axis=1), 1e-9)
+    u = d / L[:, None]
+    t = np.clip((centre - eye) @ u.T, 0.0, L)           # nearest point of each segment to the centre
+    nearest = eye + u * t[:, None]
+    return np.linalg.norm(nearest - centre, axis=1) >= radius
 
 
 def within_clip(points, eye, far, keep=0.9):
@@ -121,6 +153,13 @@ def _draw():
         rv = bpy.context.region_data
         far, eye = _far_and_eye(rv)
         pts = _state["batches"]
+        earth = _state.get("earth")
+        if earth is not None:                        # datasets behind the globe
+            cam = np.array(rv.view_matrix.inverted().translation, dtype=np.float64)
+            if rv.is_perspective:
+                pts = pts[in_front_of_sphere(pts, cam, *earth)]
+            if not len(pts):
+                return
         if far:
             pts = within_clip(pts, eye, far)
         batch = batch_for_shader(shader, "POINTS", {"pos": pts.astype(np.float32)})

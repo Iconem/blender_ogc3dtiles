@@ -2075,10 +2075,13 @@ def _tick_native(scene, props, st, now) -> bool:
     view = _view_for(st)
     if view is None:
         return changed
-    offsets, off_sig = (), ()
+    offsets, off_sig, hidden = (), (), ()
     if st.get("datasets"):                 # datasets moved by their Empty: selected for a camera moved back
         from .. import dataset_empties
         offsets, off_sig = dataset_empties.view_offsets(st)
+        hidden = dataset_empties.hidden_urls(st, _layer_collection(bpy.context.view_layer.layer_collection,
+                                                                    st.get("coll") or ""))
+        off_sig = (off_sig, hidden)
     need = (view.signature != st["last_sig"] or changed or off_sig != st.get("offsets_sig", ())
             or now - st["last_sel_t"] > SELECTION_MAX_AGE_S)
     if need:
@@ -2087,7 +2090,7 @@ def _tick_native(scene, props, st, now) -> bool:
                                   view.viewport_width, view.viewport_height,
                                   view.fov_x, view.fov_y, dt=now - st["last_sel_t"],
                                   ortho=view.ortho_extents, faces=view.faces, offsets=offsets,
-                                  extra=view.extra)
+                                  extra=view.extra, hidden=hidden)
         changed |= _apply_visibility(st, set(res.to_render), set(), now)
         _octree_links(st, backend)
         _octree_update(st)

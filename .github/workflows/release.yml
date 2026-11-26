@@ -122,5 +122,5 @@ jobs:
           test -n "$TOKEN" || { echo "BLENDER_EXTENSIONS_TOKEN is not set"; exit 1; }
           for z in dist/platform/${{ matrix.python }}/*.zip; do
             echo "uploading $z"
-            curl -sS --fail-with-body -X POST               "https://extensions.blender.org/api/v1/extensions/ogc_3dtiles_streaming/versions/upload/"               -H "Authorization: Bearer $TOKEN"               -F "version_file=@$z"               --form-string "release_notes=See https://iconem.github.io/blender_ogc3dtiles/docs/changelog/"
+            curl -sS --fail-with-body -X POST               "https://extensions.blender.org/api/v1/extensions/ogc_3dtiles_streaming/versions/upload/"               -H "Authorization: Bearer $TOKEN"               -F "version_file=@$z"               --form-string "release_notes=See https://blender-3dtiles.iconem.com/docs/changelog/"
           done

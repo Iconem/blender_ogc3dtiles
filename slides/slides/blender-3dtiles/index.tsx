@@ -64,7 +64,10 @@ export const design: DesignSystem = {
 // The repository is on two accounts, each with its own Pages site: the deploy passes the owner it builds for.
 // Source links always point at the Iconem repository.
 const OWNER = ((import.meta as { env?: Record<string, string | undefined> }).env?.VITE_PAGES_OWNER || 'iconem').toLowerCase();
-const SITE = `${OWNER}.github.io/blender_ogc3dtiles`;
+// the Iconem site is on its own domain; any other owner's is a GitHub project site
+const SITE =
+  (import.meta as { env?: Record<string, string | undefined> }).env?.VITE_SITE ||
+  (OWNER === 'iconem' ? 'blender-3dtiles.iconem.com' : `${OWNER}.github.io/blender_ogc3dtiles`);
 const REPO = 'github.com/Iconem/blender_ogc3dtiles';
 const FOOT = `OGC 3D Tiles Streaming · ${SITE}`;
 

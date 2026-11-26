@@ -4,7 +4,7 @@ import { DocsBody, DocsDescription, DocsPage, DocsTitle } from 'fumadocs-ui/layo
 import { createRelativeLink } from 'fumadocs-ui/mdx';
 import { source } from '@/lib/source';
 import { getMDXComponents } from '@/components/mdx';
-import { canonicalHost, basePath, ownHost } from '@/lib/shared';
+import { canonicalHost, ownHost } from '@/lib/shared';
 
 // An OPTIONAL catch-all: content/docs/index.md (the repo root README) is the site's landing page, so "/" is a docs page
 // like any other rather than a separate marketing route.
@@ -67,12 +67,12 @@ export async function generateMetadata(props: { params: Promise<{ slug?: string[
   const title = home ? { absolute: homeTitle } : page.data.title;
   const description = home ? homeDescription : page.data.description;
   // The same pages are served from two Pages sites: both name the Iconem one as the original.
-  const url = `${canonicalHost}${basePath}${page.url === '/' ? '/' : `${page.url}/`}`;
+  const url = `${canonicalHost}${page.url === '/' ? '/' : `${page.url}/`}`;
   return {
     title,
     description,
     alternates: { canonical: url },
-    openGraph: { title: home ? homeTitle : page.data.title, description, url, siteName: 'OGC 3D Tiles for Blender', type: 'website', images: [`${canonicalHost}${basePath}/img/slides-blender-3dtiles.jpg`] },
+    openGraph: { title: home ? homeTitle : page.data.title, description, url, siteName: 'OGC 3D Tiles for Blender', type: 'website', images: [`${canonicalHost}/img/slides-blender-3dtiles.jpg`] },
     twitter: { card: 'summary_large_image' },
   };
 }

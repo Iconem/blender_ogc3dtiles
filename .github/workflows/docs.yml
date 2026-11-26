@@ -1,11 +1,12 @@
-# Builds and deploys to GitHub Pages (https://<owner>.github.io/blender_ogc3dtiles/):
+# Builds and deploys to GitHub Pages: https://blender-3dtiles.iconem.com/ for Iconem (a custom domain, at the root),
+# https://<owner>.github.io/blender_ogc3dtiles/ for any other owner (a project site, under the repository's name):
 #   site/    a standalone Next.js + Fumadocs app: user guide and features in site/content/docs, developer notes,
 #            screenshots (docs/img) and clips (docs/video) copied from docs/ at build time by site/scripts/sync-content.mjs;
 #            the screenshots and clips are pulled from two releases first (scripts/docs-media.mjs);
 #   slides/  the open-slide decks, as a static site under /slides/; one PDF per deck goes on the rolling
 #            "Media: slide decks" pre-release (tag slide-decks) of the repository it runs on, never in git or Pages.
 # Pages serves one artifact per repository, so the decks are copied into the docs export before the upload.
-# The decks show the screenshots by URL from the docs site's /blender_ogc3dtiles/img/ (slides/assets/shots.ts), so the
+# The decks show the screenshots by URL from the docs site's <base>/img/ (slides/assets/shots.ts), so the
 # artifact holds each picture once.
 name: docs site
 on:
@@ -35,6 +36,13 @@ jobs:
       VITE_PAGES_OWNER: ${{ github.repository_owner }}
     steps:
       - uses: actions/checkout@v5
+      # SITE_BASE: the path the site is served under ("" at a domain's root). Read by site/next.config.mjs,
+      # site/src/lib/shared.ts and the decks (where their pictures are, what address their footer shows).
+      - name: Where this owner's site is served
+        run: |
+          if [ "${GITHUB_REPOSITORY_OWNER,,}" = "iconem" ]; then B=""; S="blender-3dtiles.iconem.com"
+          else B="/blender_ogc3dtiles"; S="${GITHUB_REPOSITORY_OWNER,,}.github.io/blender_ogc3dtiles"; fi
+          { echo "SITE_BASE=$B"; echo "VITE_SITE=$S"; echo "VITE_SCREENSHOTS_BASE=$B/img/"; echo "SLIDES_IMG_PATH=$B/img/"; } >> "$GITHUB_ENV"
       - uses: pnpm/action-setup@v4
         with: { version: 10.20.0 }        # no package.json at the repository root to infer it from
       - uses: actions/setup-node@v5
@@ -53,14 +61,14 @@ jobs:
       - run: pnpm --dir site build
       - run: pnpm --dir slides install --frozen-lockfile
       # the static decks, then each one printed to .site/pdf/<deck>.pdf by the runner's own Chrome
-      - run: node slides/scripts/publish.mjs --base /blender_ogc3dtiles/slides/ --pdf
+      - run: node slides/scripts/publish.mjs --base "$SITE_BASE/slides/" --pdf
       - name: 'Deck PDFs on the rolling "Media: slide decks" release'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           R=${{ github.repository }}
           gh release view slide-decks -R "$R" >/dev/null 2>&1 || gh release create slide-decks -R "$R" --prerelease --latest=false \
-            --title "Media: slide decks" --notes "The open-slide decks of slides/ as PDF, replaced on every docs deploy. Live decks: https://${{ github.repository_owner }}.github.io/blender_ogc3dtiles/slides/"
+            --title "Media: slide decks" --notes "The open-slide decks of slides/ as PDF, replaced on every docs deploy. Live decks: https://$VITE_SITE/slides/"
           gh release upload slide-decks slides/.site/pdf/*.pdf -R "$R" --clobber
           rm -rf slides/.site/pdf
       - run: cp -r slides/.site site/out/slides

@@ -1,6 +1,6 @@
 # OGC 3D Tiles Streaming — Blender Plugin
 
-**Documentation and slides**: [iconem.github.io/blender_ogc3dtiles](https://iconem.github.io/blender_ogc3dtiles/) ·
+**Documentation and slides**: [blender-3dtiles.iconem.com](https://blender-3dtiles.iconem.com/) ·
 **[Releases](../../releases)**
 
 ## Features

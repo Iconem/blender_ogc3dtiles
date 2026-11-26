@@ -10,16 +10,16 @@ They reuse this site's screenshots and are deployed with it. The PDFs are on the
 
 | Deck | What it covers | Live | PDF |
 |---|---|---|---|
-| **3D Tiles, streamed into Blender** · 29 pages | why, how it works, tiles as Blender objects, what streams, the sidebar, level of detail and tile bounds, the scene origin, the shared shader (albedo, clay, relight, X-ray), clipping, point clouds and the height reveal demo, splats, the beauty pass, cameras seen from above, converged animation, files and export, raster overlays, metadata, voxels, datasets tested, install | [present](https://iconem.github.io/blender_ogc3dtiles/slides/s/blender-3dtiles/) | [blender-3dtiles.pdf](https://github.com/Iconem/blender_ogc3dtiles/releases/download/slide-decks/blender-3dtiles.pdf) |
-| **Under the hood** · 12 pages | the three layers, one tick of the modal operator, where the time goes, the two backends, the tile preparer, shared node groups, clipping in three layers, view states for each camera, the cesium-native-python wheels, tests and releases | [present](https://iconem.github.io/blender_ogc3dtiles/slides/s/under-the-hood/) | [under-the-hood.pdf](https://github.com/Iconem/blender_ogc3dtiles/releases/download/slide-decks/under-the-hood.pdf) |
+| **3D Tiles, streamed into Blender** · 29 pages | why, how it works, tiles as Blender objects, what streams, the sidebar, level of detail and tile bounds, the scene origin, the shared shader (albedo, clay, relight, X-ray), clipping, point clouds and the height reveal demo, splats, the beauty pass, cameras seen from above, converged animation, files and export, raster overlays, metadata, voxels, datasets tested, install | [present](https://blender-3dtiles.iconem.com/slides/s/blender-3dtiles/) | [blender-3dtiles.pdf](https://github.com/Iconem/blender_ogc3dtiles/releases/download/slide-decks/blender-3dtiles.pdf) |
+| **Under the hood** · 12 pages | the three layers, one tick of the modal operator, where the time goes, the two backends, the tile preparer, shared node groups, clipping in three layers, view states for each camera, the cesium-native-python wheels, tests and releases | [present](https://blender-3dtiles.iconem.com/slides/s/under-the-hood/) | [under-the-hood.pdf](https://github.com/Iconem/blender_ogc3dtiles/releases/download/slide-decks/under-the-hood.pdf) |
 
 ![3D Tiles, streamed into Blender: the cover](/img/slides-blender-3dtiles.jpg)
 
-[3D Tiles, streamed into Blender](https://iconem.github.io/blender_ogc3dtiles/slides/s/blender-3dtiles/)
+[3D Tiles, streamed into Blender](https://blender-3dtiles.iconem.com/slides/s/blender-3dtiles/)
 
 ![Under the hood: the cover](/img/slides-under-the-hood.jpg)
 
-[Under the hood](https://iconem.github.io/blender_ogc3dtiles/slides/s/under-the-hood/)
+[Under the hood](https://blender-3dtiles.iconem.com/slides/s/under-the-hood/)
 
 ## Presenting
 

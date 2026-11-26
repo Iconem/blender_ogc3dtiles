@@ -4,7 +4,7 @@ import { existsSync, statSync, readFileSync } from "node:fs"
 import { join, dirname, extname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
-export const IMG_PATH = "/blender_ogc3dtiles/img/"
+export const IMG_PATH = process.env.SLIDES_IMG_PATH ?? "/blender_ogc3dtiles/img/"     // the docs workflow sets it with the site's base
 export const IMG_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "docs", "img")
 const TYPES = { ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".svg": "image/svg+xml" }
 

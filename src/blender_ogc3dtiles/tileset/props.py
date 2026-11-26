@@ -1168,6 +1168,19 @@ class TilesSceneProps(PropertyGroup):
                     "edits the geometry of all tiles; starts as a pass-through",
         default=False, update=_on_tile_geometry,
     )
+    tile_shaders: EnumProperty(
+        name="Tile materials",
+        description="When the nodes of Color correction and Terrain blending are put in the tile materials. "
+                    "Blender goes through a material again each time nodes are added to it: seconds of frozen "
+                    "viewport for a thousand tiles. Applies to the tiles that load from now on",
+        items=[
+            ("ON_USE", "Lighter tiles", "Only when a box is ticked. Tiles draw at their fastest; ticking or "
+                                        "unticking a box on many loaded tiles freezes the viewport for a few seconds"),
+            ("ALWAYS", "Instant switches", "In every tile when it loads, doing nothing until a box is ticked. "
+                                           "Ticking a box is immediate; tiles cost a little more to draw"),
+        ],
+        default="ON_USE",
+    )
     view_source: EnumProperty(
         name="Stream for",
         description="Which view decides tile selection and LOD",

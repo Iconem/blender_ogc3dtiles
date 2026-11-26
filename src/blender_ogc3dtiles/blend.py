@@ -41,6 +41,9 @@ MIX = "OGC3D Blend Mix"
 TRANSPARENT = "OGC3D Blend Transparent"
 KEEP = "OGC3D Blend Keep"
 OUTPUTS = {"terrain": "Terrain Keep", "dataset": "Dataset Keep"}
+OUT = "Keep"                 # what a tile material reads: all there, or one of the two above, by the tile's role
+ROLE = "ogc3d_blend_role"    # on a tile object, read by the group: 0 takes no part, 1 terrain, 2 dataset
+ROLES = {None: 0, "terrain": 1, "dataset": 2}
 GLOBAL_RADIUS_M = 1.0e6
 DATASET_CENTRE_M = 6.3e6     # a dataset's centre is at least this far from the Earth's: under 70 km deep
 SCAN_PERIOD_S = 0.25
@@ -129,7 +132,8 @@ PARAM = "blend "             # scene properties: ogc3d_blend_<name>
 # fade, the tiles whole
 DEFAULTS = {"Range": 0.0, "Low Range": 1.0, "Low Min": 0.0, "Below Margin": 2.0, "Keep Below": 1.0,
             "Terrain Inset": 10.0, "Terrain Fade": 10.0, "Dataset Fade": 20.0,
-            "Place Scale": (1.0, 1.0, 1.0), "Place Location": (0.0, 0.0, 0.0)}
+            "Place Scale": (1.0, 1.0, 1.0), "Place Location": (0.0, 0.0, 0.0),
+            "Frame X": (1.0, 0.0, 0.0), "Frame Y": (0.0, 1.0, 0.0), "Frame Z": (0.0, 0.0, 1.0), "Frame T": (0.0, 0.0, 0.0)}
 
 
 def _write(values, only_missing=False) -> bool:
@@ -138,12 +142,13 @@ def _write(values, only_missing=False) -> bool:
 
 def ensure_group():
     ng = bpy.data.node_groups.get(GROUP)
-    if ng is not None and sp.is_param(ng.nodes.get("Low Range")) and sp.is_param(ng.nodes.get("Place Scale")):
+    if (ng is not None and sp.is_param(ng.nodes.get("Low Range")) and sp.is_param(ng.nodes.get("Frame T"))
+            and ng.nodes.get("Role") is not None):
         return ng
     ng = ng or bpy.data.node_groups.new(GROUP, "ShaderNodeTree")
     ng.nodes.clear()                                 # an older group (numbers in Value nodes) is made again; its
     have = {it.name for it in ng.interface.items_tree if getattr(it, "in_out", "") == "OUTPUT"}
-    for name in OUTPUTS.values():                    # outputs stay, so the tile materials keep their links
+    for name in (OUT, *OUTPUTS.values()):            # outputs stay, so the tile materials keep their links
         if name not in have:
             ng.interface.new_socket(name, in_out="OUTPUT", socket_type="NodeSocketFloat")
 
@@ -162,8 +167,22 @@ def ensure_group():
         return n.outputs[0]
 
     out = N("NodeGroupOutput")
-    co = N("ShaderNodeTexCoord")
-    co.name = "Frame"
+    # the surface point in the coverage's frame: the world position through a matrix kept as scene properties.
+    # (A Texture Coordinate node set on the frame's Empty did the same, but each move of that Empty
+    # re-evaluated every tile material: 3 s for 1,400 of them.)
+    geo = N("ShaderNodeNewGeometry")
+    comb = N("ShaderNodeCombineXYZ")
+    for i, axis in enumerate("XYZ"):
+        dot = N("ShaderNodeVectorMath")
+        dot.operation = "DOT_PRODUCT"
+        L(geo.outputs["Position"], dot.inputs[0])
+        L(sp.socket(ng, "Frame " + axis, PARAM + "Frame " + axis, vector=True), dot.inputs[1])
+        L(dot.outputs["Value"], comb.inputs[i])
+    moved = N("ShaderNodeVectorMath")
+    moved.operation = "ADD"
+    L(comb.outputs[0], moved.inputs[0])
+    L(sp.socket(ng, "Frame T", PARAM + "Frame T", vector=True), moved.inputs[1])
+    in_frame = moved.outputs[0]
     mp = N("ShaderNodeMapping")
     mp.name = "Place"
     mp.vector_type = "POINT"
@@ -171,7 +190,7 @@ def ensure_group():
     tex.name = "Coverage"
     tex.interpolation = "Linear"
     tex.extension = "CLIP"
-    L(co.outputs["Object"], mp.inputs["Vector"])
+    L(in_frame, mp.inputs["Vector"])
     L(sp.socket(ng, "Place Scale", PARAM + "Place Scale", vector=True), mp.inputs["Scale"])
     L(sp.socket(ng, "Place Location", PARAM + "Place Location", vector=True), mp.inputs["Location"])
     L(mp.outputs[0], tex.inputs["Vector"])
@@ -183,7 +202,7 @@ def ensure_group():
     low = math_("ADD", math_("MULTIPLY", sep.outputs[1], _value(ng, "Low Range", 1.0)),
                 _value(ng, "Low Min", 0.0))
     xyz = N("ShaderNodeSeparateXYZ")
-    L(co.outputs["Object"], xyz.inputs[0])
+    L(in_frame, xyz.inputs[0])
     under = N("ShaderNodeMapRange")                  # 1 where the surface is Margin under the datasets
     L(math_("SUBTRACT", low, xyz.outputs["Z"]), under.inputs["Value"])
     margin = _value(ng, "Below Margin", 2.0)
@@ -200,7 +219,8 @@ def ensure_group():
     L(inset, mr.inputs["From Min"])
     L(t_to, mr.inputs["From Max"])
     mr.inputs["To Min"].default_value, mr.inputs["To Max"].default_value = 1.0, 0.0
-    L(math_("MAXIMUM", mr.outputs[0], below), out.inputs[OUTPUTS["terrain"]])
+    k_terrain = math_("MAXIMUM", mr.outputs[0], below)
+    L(k_terrain, out.inputs[OUTPUTS["terrain"]])
     # datasets: nothing at their border, all there Fade metres inside; Fade 0: all there
     md = N("ShaderNodeMapRange")
     md.interpolation_type = "SMOOTHSTEP"
@@ -208,11 +228,49 @@ def ensure_group():
     md.inputs["From Min"].default_value = 0.0
     L(math_("MAXIMUM", d_fade, value=0.01), md.inputs["From Max"])
     off = math_("LESS_THAN", d_fade, value=0.005)
-    L(math_("MAXIMUM", md.outputs[0], off), out.inputs[OUTPUTS["dataset"]])
+    k_dataset = math_("MAXIMUM", md.outputs[0], off)
+    L(k_dataset, out.inputs[OUTPUTS["dataset"]])
+    # the tile's own role, a property of its object: switching a tileset in or out of the blend writes the
+    # property, and no material changes
+    role = N("ShaderNodeAttribute")
+    role.name = role.label = "Role"
+    role.attribute_type = "OBJECT"
+    role.attribute_name = ROLE
+    r = role.outputs["Fac"]
+    is_d = math_("GREATER_THAN", r, value=1.5)
+    is_t = math_("SUBTRACT", math_("GREATER_THAN", r, value=0.5), is_d)
+    gone = math_("ADD", math_("MULTIPLY", is_t, math_("SUBTRACT", is_t, k_terrain)),
+                 math_("MULTIPLY", is_d, math_("SUBTRACT", is_d, k_dataset)))
+    one = N("ShaderNodeMath")
+    one.operation = "SUBTRACT"
+    one.inputs[0].default_value = 1.0
+    L(gone, one.inputs[1])
+    L(one.outputs[0], out.inputs[OUT])
     from .node_layout import arrange
     arrange(ng)
     _write(DEFAULTS, only_missing=True)
+    # the image is in the group from the start: assigning it later is a write to a node of the group, which
+    # re-evaluates every tile material that already holds it
+    tex.image = _coverage_image()
     return ng
+
+
+def _frame_object():
+    frame = bpy.data.objects.get(FRAME)
+    if frame is None:
+        frame = bpy.data.objects.new(FRAME, None)
+        frame.empty_display_type = "PLAIN_AXES"
+        frame.empty_display_size = 1.0
+        frame.hide_viewport = frame.hide_render = True
+        frame.hide_select = True
+    return frame
+
+
+def _coverage_image(w=2, h=2):
+    img = bpy.data.images.get(IMAGE)
+    if img is None:
+        img = bpy.data.images.new(IMAGE, w, h, alpha=False, float_buffer=True, is_data=True)
+    return img
 
 
 def set_params(props) -> None:
@@ -238,19 +296,19 @@ def _remove_nodes(nt) -> bool:
     return found
 
 
-def apply_material(mat, role) -> bool:
-    """Put the blend mix in a tile material (``role``: "terrain", "dataset"; None takes it out)."""
+def apply_material(mat, on) -> bool:
+    """Put the blend mix in a tile material (``on`` false takes it out). What it does is the tile's role."""
     if mat is None or mat.node_tree is None:
         return False
     nt = mat.node_tree
     mix = nt.nodes.get(MIX)
-    if role is None:
+    if not on:
         return _remove_nodes(nt)
     keep = nt.nodes.get(KEEP)
     if mix is not None and keep is not None and mix.outputs[0].links and mix.inputs[2].links:
-        want = keep.outputs.get(OUTPUTS[role])
+        want = keep.outputs.get(OUT)
         if want is not None and not any(lk.from_socket == want for lk in mix.inputs[0].links):
-            nt.links.new(want, mix.inputs[0])
+            nt.links.new(want, mix.inputs[0])        # a material from before the roles: one link, once
         return False
     _remove_nodes(nt)
     from .materials import surface_target
@@ -269,7 +327,7 @@ def apply_material(mat, role) -> bool:
     mix = nt.nodes.new("ShaderNodeMixShader")
     mix.name = mix.label = MIX
     mix.location = (x - 400, y - 560)
-    nt.links.new(keep.outputs[OUTPUTS[role]], mix.inputs[0])
+    nt.links.new(keep.outputs[OUT], mix.inputs[0])
     nt.links.new(tr.outputs[0], mix.inputs[1])
     nt.links.new(src, mix.inputs[2])
     nt.links.new(mix.outputs[0], target)
@@ -280,30 +338,56 @@ def _is_splat(o) -> bool:
     return bool(o.get("splats")) or o.modifiers.get("Splats") is not None
 
 
+def prewired() -> bool:
+    """Tile materials: Instant switches. Every tile carries the mix from the start."""
+    try:
+        return bpy.context.scene.ogc3dtiles.tile_shaders == "ALWAYS"
+    except Exception:                                # noqa: BLE001
+        return False
+
+
+def _set_role(o, role) -> None:
+    code = ROLES[role]
+    if int(o.get(ROLE, 0)) != code:
+        o[ROLE] = code
+        o.update_tag(refresh={"OBJECT"})
+
+
 def _apply_object(o, role) -> None:
     if o is None or o.type != "MESH" or o.data is None:
         return
     if role == "dataset" and _is_splat(o):           # splats add up their own way: they only count in the coverage
         role = None
-    for m in o.data.materials:
-        apply_material(m, role)
+    _set_role(o, role)
+    if role is not None or not prewired():
+        for m in o.data.materials:
+            apply_material(m, role is not None)
+
+
+def new_tile(obj) -> None:
+    """A tile just built, with Instant switches: the mix from the start, taking no part until it has a role."""
+    if obj is None or not enabled() or not prewired():
+        return
+    for o in ([obj] if obj.type == "MESH" else [c for c in obj.children if c.type == "MESH"]):
+        if o.data is not None and not _is_splat(o):
+            for m in o.data.materials:
+                apply_material(m, True)
 
 
 def teardown() -> None:
     """Blending switched off: every tile material loses its mix."""
     from .io import tile_mesh_objects
     for o in list(tile_mesh_objects()):
-        for m in o.data.materials:
-            apply_material(m, None)
+        _apply_object(o, None)
     _state.update(cells={}, boxes={}, cell=None, sig=None, frame_ecef=None, frame_sig=None, done={}, vis={}, info="")
 
 
 # ── coverage ─────────────────────────────────────────────────────────────────
-def _tile_objects(st):
+def _tile_objects(st, shown_only=True):
     """Mesh objects of the tiles a stream shows."""
     objs = bpy.data.objects
     for rec in st["tiles"].values():
-        if not rec.visible:
+        if shown_only and not rec.visible:
             continue
         o = objs.get(rec.holder)
         if o is None:
@@ -340,13 +424,7 @@ def _ensure_frame(props, st, objs):
         m[:3, 0], m[:3, 1], m[:3, 2], m[:3, 3] = east, np.cross(up, east), up, centre[:3]
         _state["frame_ecef"] = m
         _state["cells"].clear()
-    frame = bpy.data.objects.get(FRAME)
-    if frame is None:
-        frame = bpy.data.objects.new(FRAME, None)
-        frame.empty_display_type = "PLAIN_AXES"
-        frame.empty_display_size = 1.0
-        frame.hide_viewport = frame.hide_render = True
-        frame.hide_select = True
+    frame = _frame_object()
     for coll in root.users_collection[:1]:
         if coll.objects.get(frame.name) is None:
             for c in frame.users_collection:
@@ -360,10 +438,12 @@ def _ensure_frame(props, st, objs):
         frame.matrix_parent_inverse = Matrix.Identity(4)
         frame.matrix_basis = Matrix(local.tolist())
         _state["frame_sig"] = sig
-    ng = ensure_group()
-    if ng.nodes["Frame"].object != frame:
-        ng.nodes["Frame"].object = frame
-    return root.matrix_world @ frame.matrix_basis    # where the frame is now, without waiting for the depsgraph
+    ensure_group()
+    world = root.matrix_world @ frame.matrix_basis   # where the frame is now, without waiting for the depsgraph
+    inv = np.linalg.inv(_np(world))
+    _write({"Frame X": inv[0, :3].tolist(), "Frame Y": inv[1, :3].tolist(), "Frame Z": inv[2, :3].tolist(),
+            "Frame T": inv[:3, 3].tolist()})
+    return world
 
 
 FRAME_REACH_M = 200_000.0    # a frame further than this from the datasets is made again there
@@ -417,10 +497,8 @@ def _tile_cells(o, to_frame, cell, box=None, z_min=-math.inf):
 
 def _upload(dist, low, x0, y0, c, max_m) -> None:
     h, w = dist.shape
-    img = bpy.data.images.get(IMAGE)
-    if img is None:
-        img = bpy.data.images.new(IMAGE, w, h, alpha=False, float_buffer=True, is_data=True)
-    elif tuple(img.size) != (w, h):
+    img = _coverage_image(w, h)
+    if tuple(img.size) != (w, h):
         img.scale(w, h)
     px = np.empty((h, w, 4), np.float32)
     z0, z1 = float(low.min()), float(low.max())
@@ -500,7 +578,7 @@ def tick(scene, props, streams, now) -> bool:
     if _state.pop("strip", False):                   # a tileset that no longer takes part loses its mix
         for uid, st in streams.items():
             if uid not in rl and st.get("backend") is not None:
-                for o in _tile_objects(st):
+                for o in _tile_objects(st, shown_only=False):    # the hidden ones too: they may show again
                     _apply_object(o, None)
     if now - _state["t_scan"] >= SCAN_PERIOD_S or _state["sig"] is None:
         _state["t_scan"] = now

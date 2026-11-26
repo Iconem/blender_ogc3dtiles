@@ -2086,8 +2086,9 @@ def _build_native_tile(scene, props, st, rt) -> bool:
             from .. import dataset_empties
             dataset_empties.adopt(scene, st, root_obj, coll, r[0], ds, frame)
         try:
-            from .. import color_correct
+            from .. import blend, color_correct
             color_correct.new_tile(props, st, bpy.data.objects.get(r[0]))
+            blend.new_tile(bpy.data.objects.get(r[0]))
         except Exception as e:                       # noqa: BLE001
             print(f"[3DTiles] color correction: {e}")
         info = getattr(st["backend"], "tile_info", {}).get(rt.key)
@@ -2853,6 +2854,7 @@ class OGC3D_PT_LodPanel(_OGC3DSidebar, Panel):
             col.prop(props, "imports_per_tick", text="Imports / tick")
             col.prop(props, "nav_build_ms", text="Build ms while navigating")
             col.prop(props, "max_elements_m", text="Max points / vertices (M, beta)")
+            perf.prop(props, "tile_shaders")
             if props.max_elements_m > 0 and props.is_streaming:
                 perf.label(text=f"Shown: {_state.get('cap_total', 0) / 1e6:.2f} M   "
                                 f"SSE x{_state.get('cap_factor', 1.0):.2f}", icon="INFO")

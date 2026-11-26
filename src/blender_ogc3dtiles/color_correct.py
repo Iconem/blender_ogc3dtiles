@@ -100,7 +100,12 @@ def ensure_group(item):
 
 
 def set_params(item) -> None:
-    """The tileset's numbers, as scene properties its group reads (live, no node is touched)."""
+    """The tileset's numbers, as scene properties its group reads (live, no node is touched). Box off:
+    the numbers that change nothing."""
+    if not item.use_color:
+        sp.write({_param(item, k): v for k, v in (("Gamma", (0, 0, 0)), ("Gain", (0, 0, 0)), ("Exposure Gain", 0.0),
+                                                  ("Saturation", 0.0), ("Contrast", 0.0))})
+        return
     sp.write({_param(item, "Gamma"): [v - 1.0 for v in item.color_gamma],
               _param(item, "Gain"): [v - 1.0 for v in item.color_gain],
               _param(item, "Exposure Gain"): 2.0 ** item.color_exposure - 1.0,
@@ -240,8 +245,8 @@ def new_tile(props, st, obj) -> None:
     """A tile just built: its tileset's group at once, so it never shows uncorrected."""
     if obj is None:
         return
-    it = next((x for x in props.tilesets if x.uid == st.get("key") and x.use_color), None)
-    if it is None:
+    it = next((x for x in props.tilesets if x.uid == st.get("key")), None)
+    if it is None or not (it.use_color or props.tile_shaders == "ALWAYS"):
         return
     ng = ensure_group(it)
     for o in ([obj] if obj.type == "MESH" else [c for c in obj.children if c.type == "MESH"]):
@@ -282,6 +287,8 @@ def on_change(item, context) -> None:
             ensure_group(item)
             set_params(item)
             _state["done"].pop(item.uid, None)
+        elif context.scene.ogc3dtiles.tile_shaders == "ALWAYS":
+            set_params(item)                         # Instant switches: the group stays in the tiles, neutral
         else:
             _state["strip"].add(item.uid)
     except Exception as e:                           # noqa: BLE001

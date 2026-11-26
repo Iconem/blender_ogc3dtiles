@@ -8,6 +8,15 @@ main branch and not in a release zip yet.
 
 ## Unreleased
 
+- **Tile materials: Lighter tiles or Instant switches** (LOD / Streaming > Viewport Performance).
+  Blender goes through a material again each time nodes are added to it, so ticking Color correction
+  or Terrain blending on a thousand loaded tiles froze the viewport for 4 to 7 s. With Instant
+  switches every tile that loads carries both sets of nodes from the start, doing nothing until a box
+  is ticked: on Giza over Google (1,300 materials) every tick, untick and slider then redraws in under
+  0.4 s. The tiles cost a little more to draw. Lighter tiles, the default, is the behaviour of before.
+- **A tile's part in Terrain blending is a property of its object** (`ogc3d_blend_role`), and the
+  coverage is placed by a matrix kept in scene properties, not by an Empty the shader points at:
+  moving that Empty made Blender go through every tile material again (3 s for 1,400).
 - **Sliders of Terrain blending and Color correction no longer freeze the viewport.** Their numbers
   were held in nodes of a shared group, and Blender looks at every material using a group again when
   one of its nodes changes: with 1,000 tile materials, one slider step froze the viewport for 3 to 4 s

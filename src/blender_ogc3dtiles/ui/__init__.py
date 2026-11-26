@@ -2481,22 +2481,22 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
         layout = self.layout
         props = context.scene.ogc3dtiles
         row = layout.row()
-        row.template_list("OGC3D_UL_Tilesets", "", props, "tilesets", props, "active_tileset", rows=3)
+        row.template_list("OGC3D_UL_Tilesets", "", props, "tilesets", props, "active_tileset", rows=5)
         col = row.column(align=True)
         col.operator("ogc3dtiles.tileset_add", icon="ADD", text="")
         col.operator("ogc3dtiles.tileset_remove", icon="REMOVE", text="")
         col.separator()
         col.operator("ogc3dtiles.library_add", icon="BOOKMARKS", text="")
+        col.separator()
+        col.operator("ogc3dtiles.setup_copy", icon="COPYDOWN", text="")
+        col.operator("ogc3dtiles.setup_paste", icon="PASTEDOWN", text="")
         if 0 <= props.active_tileset < len(props.tilesets):
             it = props.tilesets[props.active_tileset]
             st = _state["streams"].get(it.uid) if it.uid else None
             from .. import blend
             background = blend.is_background(it, st)
             b = layout.box()                         # foldable like the boxes under it, with nothing to switch on
-            row = b.row(align=True)
-            row.label(text="Properties", icon="PROPERTIES")
-            row.prop(it, "show_properties", text="", emboss=False,
-                     icon="TRIA_DOWN" if it.show_properties else "TRIA_LEFT")
+            _fold_label(b.row(align=True), it, "show_properties", "Properties", "PROPERTIES")
             if it.show_properties:
                 _draw_properties(b, it, st)
             # per tileset, each in its own box so they read as things to switch on
@@ -2584,17 +2584,23 @@ def _draw_properties(b, it, st) -> None:
         b.operator("ogc3dtiles.match_heights", icon="TRIA_DOWN_BAR")
 
 
+def _fold_label(row, it, show: str, text: str, icon: str = "NONE") -> None:
+    """The name of a box and its arrow: a click on either folds or unfolds it, as on a Blender panel header."""
+    left = row.row(align=True)
+    left.alignment = "LEFT"
+    left.prop(it, show, text=text, icon=icon, emboss=False, toggle=True)
+    right = row.row(align=True)
+    right.alignment = "RIGHT"
+    right.prop(it, show, text="", icon="TRIA_DOWN" if getattr(it, show) else "TRIA_LEFT", emboss=False)
+
+
 def _fold_header(b, it, use: str, show: str, text: str, icon: str = "NONE"):
     """The first row of a box: its checkbox, its icon and name, and an arrow that folds it, ticked or not, as a
     Blender panel with a checkbox in its header. Returns the layout to draw the content in, greyed while the
     box is unticked; None when folded."""
     row = b.row(align=True)
-    if icon == "NONE":
-        row.prop(it, use, text=text)
-    else:                                            # a checkbox with an icon is drawn as a button: apart, then
-        row.prop(it, use, text="")
-        row.label(text=text, icon=icon)
-    row.prop(it, show, text="", icon="TRIA_DOWN" if getattr(it, show) else "TRIA_LEFT", emboss=False)
+    row.prop(it, use, text="")
+    _fold_label(row, it, show, text, icon)
     if not getattr(it, show):
         return None
     col = b.column()

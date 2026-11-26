@@ -37,6 +37,18 @@ Ion, globe and terrain entries need the cesium-native backend.
 - **Match Height to Terrain** and **Color correction** are on
   [Heights and colors between tilesets](/features/height-references).
 
+### Copy the whole list to another scene
+
+Two buttons beside the list, under the bookmark:
+
+- **Copy Setup** puts the whole list on the clipboard as JSON text: every tileset with its raster overlays,
+  clips, color correction and blend settings, and the scene origin.
+- **Paste Setup** adds the tilesets of such a text to the list, in this scene or on another machine. The
+  origin and the shared settings come along when the list is empty. A clip object the scene does not have is
+  made again from the copied mesh (up to 5,000 vertices).
+
+The text holds the URLs as they are, keys and tokens included: send it as you would send the library file.
+
 ## A tileset of tilesets
 
 ![The open datasets of a 3dtiled server over a globe with imagery, seen from 7,500 km: a white dot per dataset, 470 of them, most over Europe](/img/markers_globe.jpg)

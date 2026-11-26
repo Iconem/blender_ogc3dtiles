@@ -46,6 +46,7 @@ const camPerspTop = shot('camera_persp_top.jpg');
 const camOrthoTop = shot('camera_ortho_top.jpg');
 const camPanoTop = shot('camera_pano_top.jpg');
 const entryBoxes = shot('tilesets_panel_boxes.png');
+const terrainLocal = shot('terrain_local_service.jpg');
 const matchBefore = shot('site_match_before.jpg');
 const matchAfter = shot('site_match_after.jpg');
 const blendGiza = shot('site_blend.jpg');
@@ -794,6 +795,24 @@ const P24Overlays: Page = () => (
   </Frame>
 );
 
+const P24aTerrain: Page = () => (
+  <Frame eyebrow="Terrain" title="Any terrain as a tileset, from a server on your own machine too">
+    <TwoCol
+      leftWidth={640}
+      left={
+        <Bullets size={25}>
+          <Li k="Quantized-mesh">an entry type of the list: the layer.json of a terrain server. Cesium World Terrain comes through Cesium ion.</Li>
+          <Li k="Local service">here a terrain service on 127.0.0.1 serves the Mapterhorn elevation data as quantized-mesh.</Li>
+          <Li k="Shaded by overlays">two URL template overlays from the same service: a sky-view factor shading over a hypsometric tint.</Li>
+          <Li k="Where">Scene Origin, Search place: the Matterhorn, found by name.</Li>
+          <Li k="Then">a scan on top, set in it with Match Height to Terrain and Terrain blending.</Li>
+        </Bullets>
+      }
+      right={<Shot src={terrainLocal} width={1000} height={594} position="0% 0%" caption="The Matterhorn streamed from a local terrain service, with two overlays at 62% and 100% opacity" />}
+    />
+  </Frame>
+);
+
 const P24bEntry: Page = () => (
   <Frame eyebrow="One entry of the list" title="What a tileset can be, and what you can do to it">
     <TwoCol
@@ -824,23 +843,23 @@ const P24bEntry: Page = () => (
           </Bullets>
         </>
       }
-      right={<Shot src={entryBoxes} width={452} height={598} caption="The Tilesets panel: each box has a checkbox, an icon, and folds" />}
+      right={<Shot src={entryBoxes} width={400} height={607} caption="The Tilesets panel: each box has a checkbox, an icon, and folds" />}
     />
   </Frame>
 );
 
 const P24cSetIn: Page = () => (
-  <Frame eyebrow="A dataset in its terrain" title="Three clicks from as loaded to set in the ground">
+  <Frame eyebrow="A dataset in its terrain" title="From as loaded to set in its terrain">
     <div style={{ display: 'flex', gap: 24 }}>
-      <Shot src={matchBefore} width={544} height={360} caption="As loaded: the scan of St Peter's lies 24 m under Google's ground and shows in patches. Google is warmed here on purpose" />
-      <Shot src={matchAfter} width={544} height={360} caption="Match Height to Terrain, then Match Colors onto Google: the scan comes up and takes its tone" />
+      <Shot src={matchBefore} width={544} height={360} caption="As loaded: a grey scan of St Peter's and Google's own model of it, through each other. Google is warmed here on purpose" />
+      <Shot src={matchAfter} width={544} height={360} caption="Match Colors onto Google: the scan takes its tone" />
       <Shot src={blendGiza} width={544} height={360} caption="Terrain blending: Google is transparent under the mesh, and the border fades over 12 m" />
     </div>
     <div style={{ marginTop: 20 }}>
       <Bullets size={23}>
-        <Li k="Match Height to Terrain">compares the lowest heights of both over the ground they share, and moves the tileset's Empty by the median: +24 m here.</Li>
-        <Li k="Match Colors">reads both from above where they overlap, 5,248 ground cells here, and fits a gain and a gamma per channel.</Li>
+        <Li k="Match Colors">reads both from above where they overlap, a few thousand ground cells here, and fits a gain and a gamma per channel.</Li>
         <Li k="Terrain blending">a coverage raster of the dataset's tiles, read by the terrain's material. Any globe, terrain layer, Google or Bing 3D Tiles is the background.</Li>
+        <Li k="Match Height to Terrain">for a scan that floats or sinks: it moves the tileset's Empty by the median height difference over the shared ground. Not needed here.</Li>
       </Bullets>
     </div>
   </Frame>
@@ -984,8 +1003,9 @@ export const notes: (string | undefined)[] = [
   `Blender cannot pause a render to wait for tiles. The converged animation steps through the frames itself and renders each one once its tiles are in.`,
   `Files: local and NAS tilesets, libraries, copy into project, exports.`,
   `Raster overlays the way Cesium for Unreal does them, with presets that need no key.`,
+  `Terrain is a tileset like the others. The window on the left is the local service that serves it.`,
   `Everything about one entry: the five types, then the six things its boxes do.`,
-  `St Peter's in Rome: as loaded, after the two Match buttons, and with terrain blending. Numbers are from this scene.`,
+  `St Peter's in Rome: as loaded, after Match Colors, and with terrain blending.`,
   `A whole server as one entry. The dots are Empties you can select, hide or fly to.`,
   `Metadata as colours: classes with a palette, numbers with a ramp.`,
   `Voxels as blocks, volumes, or as colours on other tilesets. Phases, in beta, build on the same voxel grid.`,
@@ -1024,6 +1044,7 @@ export default [
   P22Converged,
   P23Files,
   P24Overlays,
+  P24aTerrain,
   P24bEntry,
   P24cSetIn,
   P24dAggregate,

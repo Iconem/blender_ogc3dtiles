@@ -605,7 +605,50 @@ def draw_entry_tools(layout, it) -> None:
         row.operator("ogc3dtiles.tileset_copy_cancel", text="", icon="X")
 
 
+class OGC3D_OT_SetupCopy(Operator):
+    bl_idname = "ogc3dtiles.setup_copy"
+    bl_label = "Copy Setup"
+    bl_description = ("Copy the whole list to the clipboard as JSON text: every tileset with its raster overlays, "
+                      "clips, color correction and blend settings, and the scene origin. Paste it in another "
+                      "scene or send it to someone. The text holds the URLs as they are, keys and tokens included")
+    bl_options = {"REGISTER"}
+
+    def execute(self, context):
+        from .. import setup_io
+        props = context.scene.ogc3dtiles
+        context.window_manager.clipboard = setup_io.to_text(props)
+        self.report({"INFO"}, f"{len(props.tilesets)} tilesets copied as JSON")
+        return {"FINISHED"}
+
+
+class OGC3D_OT_SetupPaste(Operator):
+    bl_idname = "ogc3dtiles.setup_paste"
+    bl_label = "Paste Setup"
+    bl_description = ("Add the tilesets of a setup copied with Copy Setup, from the clipboard. The scene origin and "
+                      "the shared settings come along when the list is empty. A clip object the scene does not "
+                      "have is made again from the copied mesh")
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        from .. import setup_io
+        props = context.scene.ogc3dtiles
+        try:
+            n, skipped = setup_io.from_text(context.window_manager.clipboard or "", props, context.scene,
+                                            with_scene=not len(props.tilesets))
+        except ValueError as e:
+            self.report({"ERROR"}, f"Paste Setup: {e}")
+            return {"CANCELLED"}
+        if skipped:
+            print("[3DTiles] Paste Setup, not read:", ", ".join(sorted(set(skipped))))
+        self.report({"INFO"}, f"{n} tilesets added" + (f", {len(set(skipped))} settings not read (see the console)"
+                                                       if skipped else ""))
+        _redraw(context)
+        return {"FINISHED"}
+
+
 _classes = [
+    OGC3D_OT_SetupCopy,
+    OGC3D_OT_SetupPaste,
     OGC3D_OT_TilesetBrowse,
     OGC3D_OT_CacheTrim,
     OGC3D_LibraryRow,

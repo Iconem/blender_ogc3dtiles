@@ -16,6 +16,12 @@ main branch and not in a release zip yet.
   Markers, Terrain blending. Markers shows only for a tileset of tilesets.
 - **Scene Origin: no more Keep current.** Custom does the same: its fields hold the current origin, so
   switching from Auto keeps it. A scene saved on Keep current comes back without a mode: pick one.
+- **Copy Setup and Paste Setup.** Two buttons beside the tilesets list: the whole list as JSON text on the
+  clipboard, with the overlays, clips, color correction, blend settings and scene origin, to paste in
+  another scene or send to someone. The text holds keys and tokens as they are.
+- **A click on the name of a box folds it,** as on a Blender panel header: Properties, Clipping, Raster
+  overlays, Color correction, Markers, Terrain blending. The arrow still does too.
+- **Docs site on its own domain:** blender-3dtiles.iconem.com.
 - **Docs:** a download button on the home and Installation pages, a sitemap, and a canonical address and
   social tags on every page.
 

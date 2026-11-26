@@ -57,6 +57,16 @@ When there is no 3D Tiles content where you look, add a tileset entry of another
 Both cover the whole world, so give the scene an origin first: *Custom*, or *Search place*, in
 [Scene origin](/features/scene-origin).
 
+### A terrain server on your own machine
+
+Any server that answers with a `layer.json` works, one on your own machine included. Here the Terrain
+service of the 3D Tiled local middleware serves the Mapterhorn elevation data as quantized-mesh on
+`http://127.0.0.1:3400`. The entry is a *Quantized-mesh terrain*, and two *URL template* overlays from the
+same service are draped on it: a sky-view factor shading at 62% opacity over a hypsometric tint. The scene
+origin was put on the Matterhorn with *Search place*.
+
+![Blender with the Matterhorn streamed as terrain from a local quantized-mesh service, shaded by two raster overlays; the window of the local service is beside it, its Terrain tab showing the source and its address](/img/terrain_local_service.jpg)
+
 ## How it works
 
 cesium-native projects each tile onto the overlay's tiling scheme, adds a set of texture coordinates

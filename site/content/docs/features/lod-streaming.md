@@ -113,6 +113,22 @@ coarser until the view fits, and the panel shows by how much (*SSE x1.50*). Deta
 is room. 0, the default, means no ceiling. The coarsest tiles of a tileset are always shown, so a
 ceiling below their size cannot be met.
 
+## Tile materials: Lighter tiles or Instant switches
+
+In *Viewport Performance*. Blender goes through a material again each time nodes are added to it or taken
+out, and *Color correction* and *Terrain blending* work through nodes in the tile materials. With a
+thousand tiles loaded, ticking one of those boxes freezes the viewport for 4 to 7 s (Blender 5.3, an
+RTX A1000 laptop).
+
+- **Lighter tiles**, the default: the nodes go in when a box is ticked. Tiles draw at their fastest, and
+  ticking or unticking a box on many loaded tiles costs that freeze, once.
+- **Instant switches**: every tile gets the nodes when it loads, doing nothing until a box is ticked. On
+  Giza over Google (1,300 tile materials) every tick, untick and slider then redraws in under 0.4 s. The
+  tiles cost a little more to draw. It applies to the tiles that load after the choice is made.
+
+The sliders of both boxes are immediate either way: their numbers are custom properties of the scene
+(`ogc3d_...`), which the shader groups read, so moving one touches no material.
+
 ## Tile bounds
 
 Draws a wire outline around every visible tile, in the 3D view only: nothing is added to the scene

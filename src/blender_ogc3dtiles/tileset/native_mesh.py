@@ -225,6 +225,27 @@ def _color_array(cs, model, prim):
         return None
 
 
+def rgba_tiff(width: int, height: int, pixels) -> bytes:
+    """8-bit RGBA pixels (rows from the top, alpha not premultiplied) as a TIFF file without compression: a
+    header in front of the bytes, nothing to encode."""
+    import struct
+    data = memoryview(pixels).cast("B")
+    if len(data) != width * height * 4:
+        raise ValueError("rgba_tiff: %d bytes for %d x %d" % (len(data), width, height))
+    tags = [(256, 4, 1, width), (257, 4, 1, height), (258, 3, 4, None), (259, 3, 1, 1), (262, 3, 1, 2),
+            (273, 4, 1, None), (277, 3, 1, 4), (278, 4, 1, height), (279, 4, 1, len(data)), (284, 3, 1, 1),
+            (338, 3, 1, 2)]
+    bits_at = 8 + 2 + 12 * len(tags) + 4             # after the header and the directory
+    data_at = bits_at + 8
+    out = [b"II*\x00", struct.pack("<I", 8), struct.pack("<H", len(tags))]
+    for tag, kind, n, v in tags:
+        v = bits_at if tag == 258 else data_at if tag == 273 else v
+        out.append(struct.pack("<HHI", tag, kind, n)
+                   + (struct.pack("<HH", v, 0) if kind == 3 and n == 1 else struct.pack("<I", v)))
+    out += [struct.pack("<I", 0), struct.pack("<HHHH", 8, 8, 8, 8), data]
+    return b"".join(out)
+
+
 def _image_payload(cs, model, image_index: int):
     img = model.images[image_index]
     mime = (img.mime_type or "").lower()
@@ -246,6 +267,12 @@ def _image_payload(cs, model, image_index: int):
         try:
             if asset.channels != 4:
                 asset.change_number_of_channels(4, 255)
+            if int(asset.bytes_per_channel) == 1:
+                # as they are, in a TIFF without compression: 2 ms for a 2048 px texture. save_png took 0.3 to
+                # 1.5 s each and holds Python's lock all along, so the viewport waited on every texture a load
+                # thread encoded: tilesets with KTX2 textures stalled Blender for as long as they streamed
+                data = rgba_tiff(int(asset.width), int(asset.height), np.ascontiguousarray(asset.pixel_data))
+                return {"name": name, "kind": "file", "data": data, "ext": "tif"}
             png = bytes(cs.gltf.content.ImageManipulation.save_png(asset))
             return {"name": name, "kind": "file", "data": png, "ext": "png"}
         except Exception:

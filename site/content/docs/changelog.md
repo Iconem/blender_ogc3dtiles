@@ -8,6 +8,17 @@ main branch and not in a release zip yet.
 
 ## Unreleased
 
+- **Blender no longer stalls while tilesets with KTX2 textures stream.** Textures that cesium-native hands
+  over decoded were written as PNG before going to Blender, 0.3 to 1.5 s each in a load thread that held
+  Python's lock all along, so the viewport waited on every one of them. Over a 20 minute walk through the
+  Iconem datasets on Google 3D Tiles the viewport fell from 220 redraws per 30 s to 5 to 30, with single
+  steps of the streaming tick of 2 to 8 s. They now go as TIFF without compression (2 ms for a 2048 px
+  texture): on the same walk the longest step is 0.4 to 0.8 s and it no longer gets worse with time.
+  Tilesets with JPEG or PNG textures (Google) never went through this.
+- **Match Height to Terrain compares open ground.** It compared the lowest height of the dataset and of the
+  terrain in each ground cell, which is wrong when one of them has faces underneath: the scan of St Peter's,
+  in place over Google, was moved up 21 m. Each cell now keeps its highest and lowest height, and the
+  offset is read where both agree in both tilesets (one surface). St Peter's reads -0.1 m, Giza +21 m.
 - **Tile materials: Lighter tiles or Instant switches** (LOD / Streaming > Viewport Performance).
   Blender goes through a material again each time nodes are added to it, so ticking Color correction
   or Terrain blending on a thousand loaded tiles froze the viewport for 4 to 7 s. With Instant

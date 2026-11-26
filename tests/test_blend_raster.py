@@ -92,3 +92,20 @@ def test_cells_of_triangles_in_leaves_out_the_far_side_of_the_earth():
     cells, z = br.cells_of_triangles_in(np.array(near + far), [(0, 1, 2), (3, 4, 5)], 1.0, (0.0, 0.0), (50.0, 50.0),
                                         z_min=-1e5)
     assert len(cells) == 51 * 51 and np.allclose(z, 0.0)
+
+
+def test_most_common_offset_ignores_buildings():
+    """Match Height: a scan with buildings over a bare terrain. Half the cells are roofs 12 to 30 m above
+    the terrain; the ground cells agree on +3 m."""
+    import sys
+    import types
+    if "bpy" not in sys.modules:
+        sys.modules["bpy"] = types.ModuleType("bpy")
+    from blender_ogc3dtiles.height_match import most_common
+    rng = np.random.default_rng(1)
+    ground = 3.0 + rng.normal(0, 0.15, 4000)
+    roofs = 3.0 - rng.uniform(12, 30, 5000)
+    d = np.concatenate([ground, roofs])
+    assert abs(float(np.median(d)) - 3.0) > 5.0
+    assert abs(most_common(d) - 3.0) < 0.2
+    assert abs(most_common(ground) - 3.0) < 0.1

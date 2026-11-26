@@ -65,8 +65,10 @@ A button under the entry's fields, for any tileset that is streaming and is not 
 3. Select the dataset in the list and press **Match Height to Terrain**.
 
 The tiles shown of the dataset are binned into ground cells seen from above, as are the terrain tiles under
-them. In every cell both have, the lowest height of the terrain minus the lowest height of the dataset is
-taken, and the dataset moves by the median, along the local vertical. The report says by how much.
+them, and each cell keeps two heights of each: the highest and the lowest. Where the two agree, in both
+tilesets, the cell is open ground, a single surface: a square, a street, a field. The difference between
+terrain and dataset is taken in those cells, and the dataset moves by the median, along the local vertical.
+The report says by how much.
 
 - **What moves** is the tileset's root Empty. In a [tileset of tilesets](/features/several-tilesets#a-tileset-of-tilesets)
   with *Markers - datasets locations* on, each dataset that has tiles shown moves by its own amount, through its own
@@ -75,8 +77,12 @@ taken, and the dataset moves by the median, along the local vertical. The report
 - **Once.** Nothing holds the dataset there afterwards. Undo, or the Empty's location, brings it back.
 - On a background entry the same button is **Match Dataset Heights to Terrain**: every other tileset moves
   onto that one.
-- The lowest heights are compared, so a dataset with a building on flat ground matches on the ground, not
-  on the roof. A dataset with stray points under the ground is pulled up by them where they are.
+- Only open ground is compared, so a building, a tree or a bridge that one of the two shows and the other
+  does not, or shows differently from below, does not count. With too little open ground (under 5% of the
+  shared cells: a scan with faces under its whole surface, for instance) the highest heights are compared
+  everywhere, and the offset is the one most cells agree on. Before 0.6.11 the lowest heights were compared:
+  the scan of St Peter's, already in place over Google, was moved up 21 m, because its mesh has an underside
+  20 m down and Google's has none. It now reads -0.1 m there, and Giza +21 m as before.
 - Over Google or Bing the terrain is itself a photogrammetry mesh, with its buildings and trees: the match
   is as good as the two agree on what is there.
 - Each dataset moved differently is selected with its own view, so many different offsets in one aggregate

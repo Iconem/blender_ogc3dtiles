@@ -3,8 +3,8 @@
 Height references differ between sources (ellipsoid, sea level, a local datum) and some datasets are just
 placed wrong, so a dataset often floats over the terrain or sinks into it. For each dataset, the tiles
 shown are binned into ground cells seen from above (blend_raster), as are the terrain tiles under it; the
-difference between the two lowest heights is taken in every cell both have, and the dataset moves by the
-median along the local vertical.
+difference is taken in the cells that are open ground in both (highest and lowest height agree: one
+surface), and the dataset moves by its median along the local vertical.
 
 What moves is an Empty: the tileset's root, or, in a tileset of tilesets with *An Empty per dataset*, the
 Empty of each dataset that has tiles shown, each by its own amount. Nothing holds it there afterwards.
@@ -61,8 +61,47 @@ def _groups(st):
     return out
 
 
-def measure(objs, terrain, st) -> float | None:
-    """Metres to add to these tiles' height to sit on the terrain; None without enough shared ground."""
+_FLIP = np.diag([1.0, 1.0, -1.0, 1.0])    # seen from below: the lowest of -z is the highest z
+OPEN_SHARE = 0.05           # open ground decides when it is at least this share of the shared cells
+
+
+def _low_top(cells_of, to_frame):
+    """(cells, lowest z, highest z) of some tiles: seen from above and from below."""
+    low = br.merge(cells_of(to_frame, False))
+    top = br.merge(cells_of(_FLIP @ to_frame, True))
+    keys, i_l, i_t = np.intersect1d(low[0], top[0], assume_unique=True, return_indices=True)
+    return keys, low[1][i_l].astype(np.float64), -top[1][i_t].astype(np.float64)
+
+
+def most_common(d, step: float = 0.5) -> float:
+    """The offset most cells agree on: the busiest ``step`` metres of the differences (with its two
+    neighbours), then the median of the cells within a metre of it. A median over everything is pulled by
+    what only one of the two shows: buildings and trees of a scan over a bare terrain."""
+    d = np.asarray(d, np.float64)
+    if len(d) < 3:
+        return float(np.median(d))
+    lo = float(np.percentile(d, 1))
+    hi = float(np.percentile(d, 99))
+    if hi - lo < 2 * step:
+        return float(np.median(d))
+    hist, edges = np.histogram(d, bins=int(np.ceil((hi - lo) / step)), range=(lo, hi))
+    smooth = np.convolve(hist, (1, 1, 1), mode="same")
+    k = int(np.argmax(smooth))
+    centre = 0.5 * (edges[k] + edges[k + 1])
+    near = d[np.abs(d - centre) <= 1.0]
+    return float(np.median(near)) if len(near) else float(np.median(d))
+
+
+def measure_detail(objs, terrain, st) -> dict | None:
+    """How far these tiles are from the terrain, with what it was read from; None without enough shared ground.
+
+    Both are read twice per ground cell: their highest and their lowest height. Where the two agree in both
+    tilesets the cell is open ground, a single surface: a square, a street, a field. There the difference is
+    the offset, and its median is returned. Under a roof, a tree or a bridge the two tilesets do not show the
+    same thing from below (a scan with its interior or the underside of its meshes against a model that is a
+    shell; the lowest heights alone put St Peter's 24 m too high over Google), so those cells are left out.
+    Without enough open ground the highest heights decide: what both show from above. There the
+    offset is the one most cells agree on (most_common), not the median."""
     from .blend import _tile_cells
     frame = local_frame(st, objs)
     if frame is None:
@@ -72,19 +111,36 @@ def measure(objs, terrain, st) -> float | None:
                             for o in objs])
     lo, hi = boxes.min(0), boxes.max(0)
     cell = br.cell_size(float((hi - lo).max()))
-    mine = br.merge([_tile_cells(o, to_frame, cell) for o in objs])
-    z_floor = (float(mine[1].min()) if len(mine[1]) else 0.0) - FAR_BELOW_M
+    k_d, low_d, top_d = _low_top(lambda m, _flip: [_tile_cells(o, m, cell) for o in objs], to_frame)
+    z_floor = (float(low_d.min()) if len(low_d) else 0.0) - FAR_BELOW_M
     near = []
     for o in terrain:                                # the terrain tiles over the dataset
         p = np.array([(*c, 1.0) for c in o.bound_box]) @ (to_frame @ _np(o.matrix_world))[:2].T
         if (p.max(0) >= lo).all() and (p.min(0) <= hi).all():
-            # only what is under the dataset, and not the far side of a globe
-            near.append(_tile_cells(o, to_frame, cell, box=(lo, hi), z_min=z_floor))
-    ground = br.merge(near)
-    _k, i_d, i_t = np.intersect1d(mine[0], ground[0], assume_unique=True, return_indices=True)
+            near.append(o)
+    # only what is under the dataset, and not the far side of a globe (seen from below it never comes first)
+    k_t, low_t, top_t = _low_top(lambda m, flip: [_tile_cells(o, m, cell, box=(lo, hi), z_min=-np.inf if flip else z_floor)
+                                                  for o in near], to_frame)
+    _k, i_d, i_t = np.intersect1d(k_d, k_t, assume_unique=True, return_indices=True)
     if len(i_d) < MIN_CELLS:
         return None
-    return float(np.median(ground[1][i_t] - mine[1][i_d]))
+    d_low = low_t[i_t] - low_d[i_d]
+    d_top = top_t[i_t] - top_d[i_d]
+    thin = 1.5 + cell                                # a single surface: this thick at most, slope included
+    open_ = ((top_d[i_d] - low_d[i_d]) <= thin) & ((top_t[i_t] - low_t[i_t]) <= thin)
+    n_open = int(open_.sum())
+    by_open = n_open >= max(MIN_CELLS, OPEN_SHARE * len(i_d))
+    used = d_top[open_] if by_open else d_top
+    dz = float(np.median(used)) if by_open else most_common(used)
+    return {"dz": dz, "cells": int(len(i_d)), "open": n_open, "cell": cell, "by": "open ground" if by_open else "tops",
+            "low": float(np.median(d_low)), "top": float(np.median(d_top)),
+            "spread": float(np.subtract(*np.percentile(used, [75, 25])))}
+
+
+def measure(objs, terrain, st) -> float | None:
+    """Metres to add to these tiles' height to sit on the terrain; None without enough shared ground."""
+    d = measure_detail(objs, terrain, st)
+    return None if d is None else d["dz"]
 
 
 def terrain_streams(props, streams, only=None) -> list:

@@ -72,7 +72,7 @@ fade into the terrain.
 | **Terrain fade** | Metres over which the terrain fades out past the inset. 0 is a sharp cut. |
 | **Keep terrain below** | On by default. The terrain stays wherever it lies under the dataset, and only the terrain that would poke through it goes. It is the ground seen between the points of a sparse cloud, and under a dataset that floats. The number beside it is the margin: how far under the dataset's lowest point the terrain has to be. Raise it if terrain still shows through the dataset's ground. |
 | **Height offset** | The background's own *Location Z*: raises or lowers it. Rarely needed. |
-| **Match Dataset Heights to Terrain** | A button. Moves every dataset up or down onto this terrain, once: the dataset's lowest heights are compared with the terrain's where they overlap, and its Empty moves by the median difference. Run it before judging the fades. The same button is on every dataset entry as *Match Height to Terrain*, with or without blending: see [Match Height to Terrain](/features/height-references#match-height-to-terrain). |
+| **Match Dataset Heights to Terrain** | A button. Moves every dataset up or down onto this terrain, once: the dataset's heights are compared with the terrain's on the open ground they share, and its Empty moves by the median difference. Run it before judging the fades. The same button is on every dataset entry as *Match Height to Terrain*, with or without blending: see [Match Height to Terrain](/features/height-references#match-height-to-terrain). |
 
 The distances are one setting for the scene, and they are live.
 

@@ -233,10 +233,12 @@ class OGC3D_OT_LibraryAdd(Operator):
         # the preferences remember these from one search to the next
         prefs = _get_prefs(context)
         row = layout.row()
-        for name in ("library_show_mesh", "library_show_points", "library_show_splats", "library_show_voxels"):
+        for name in ("library_show_mesh", "library_show_points", "library_show_splats", "library_show_voxels",
+                     "library_show_aggregate"):
             row.prop(prefs, name)
         kinds = [k for k, on in (("MESH", prefs.library_show_mesh), ("POINTS", prefs.library_show_points),
-                                 ("SPLATS", prefs.library_show_splats), ("VOXELS", prefs.library_show_voxels)) if on]
+                                 ("SPLATS", prefs.library_show_splats), ("VOXELS", prefs.library_show_voxels),
+                                 ("AGGREGATE", prefs.library_show_aggregate)) if on]
         global _lib_filter
         _lib_filter = (self.query, kinds)
         found = len(_matching_entries(self.query, kinds))

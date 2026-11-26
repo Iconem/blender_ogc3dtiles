@@ -45,10 +45,10 @@ const camPano = shot('camera_pano.jpg');
 const camPerspTop = shot('camera_persp_top.jpg');
 const camOrthoTop = shot('camera_ortho_top.jpg');
 const camPanoTop = shot('camera_pano_top.jpg');
-const entryBoxes = shot('panel_boxes_match_to.png');
-const matchBefore = shot('giza_match_before.jpg');
-const matchAfter = shot('giza_match_after.jpg');
-const blendGiza = shot('terrain_blend_giza_view.jpg');
+const entryBoxes = shot('tilesets_panel_boxes.png');
+const matchBefore = shot('site_match_before.jpg');
+const matchAfter = shot('site_match_after.jpg');
+const blendGiza = shot('site_blend.jpg');
 const markersGlobe = shot('markers_globe.jpg');
 
 export const design: DesignSystem = {
@@ -821,22 +821,22 @@ const P24bEntry: Page = () => (
           </Bullets>
         </>
       }
-      right={<Shot src={entryBoxes} width={452} height={660} position="50% 58%" caption="Each box has a checkbox and folds" />}
+      right={<Shot src={entryBoxes} width={452} height={478} caption="The Tilesets panel: each box has a checkbox, an icon, and folds" />}
     />
   </Frame>
 );
 
 const P24cSetIn: Page = () => (
-  <Frame eyebrow="A dataset in its terrain" title="Three clicks from floating and grey to set in the ground">
+  <Frame eyebrow="A dataset in its terrain" title="Three clicks from as loaded to set in the ground">
     <div style={{ display: 'flex', gap: 24 }}>
-      <Shot src={matchBefore} width={544} height={360} caption="As loaded: a photogrammetry mesh of Giza, 25 m under Google's ground and darker" />
+      <Shot src={matchBefore} width={544} height={360} caption="As loaded: a photogrammetry mesh of St Peter's, 23 m off Google's ground and warmer" />
       <Shot src={matchAfter} width={544} height={360} caption="Match Height to Terrain, then Match Colors onto Google" />
-      <Shot src={blendGiza} width={544} height={360} position="0% 0%" caption="Terrain blending: Google is transparent under the mesh, and the border fades over 20 m" />
+      <Shot src={blendGiza} width={544} height={360} caption="Terrain blending: Google is transparent under the mesh, and the border fades over 12 m" />
     </div>
     <div style={{ marginTop: 20 }}>
       <Bullets size={23}>
-        <Li k="Match Height to Terrain">compares the lowest heights of both over the ground they share, and moves the tileset's Empty by the median: +25 m here.</Li>
-        <Li k="Match Colors">reads both from above where they overlap, 7,242 ground cells here, and fits a gain and a gamma per channel.</Li>
+        <Li k="Match Height to Terrain">compares the lowest heights of both over the ground they share, and moves the tileset's Empty by the median: +23 m here.</Li>
+        <Li k="Match Colors">reads both from above where they overlap, 3,827 ground cells here, and fits a gain and a gamma per channel.</Li>
         <Li k="Terrain blending">a coverage raster of the dataset's tiles, read by the terrain's material. Any globe, terrain layer, Google or Bing 3D Tiles is the background.</Li>
       </Bullets>
     </div>
@@ -982,7 +982,7 @@ export const notes: (string | undefined)[] = [
   `Files: local and NAS tilesets, libraries, copy into project, exports.`,
   `Raster overlays the way Cesium for Unreal does them, with presets that need no key.`,
   `Everything about one entry: the five types, then the six things its boxes do.`,
-  `Giza: as loaded, after the two Match buttons, and with terrain blending. Numbers are from this scene.`,
+  `St Peter's in Rome: as loaded, after the two Match buttons, and with terrain blending. Numbers are from this scene.`,
   `A whole server as one entry. The dots are Empties you can select, hide or fly to.`,
   `Metadata as colours: classes with a palette, numbers with a ramp.`,
   `Voxels as blocks, volumes, or as colours on other tilesets. Phases, in beta, build on the same voxel grid.`,

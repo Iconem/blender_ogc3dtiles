@@ -165,6 +165,8 @@ class OGC3DTilesPreferences(AddonPreferences):
     library_show_points: BoolProperty(name="Point cloud", default=False, update=_save_prefs)
     library_show_splats: BoolProperty(name="Splats", default=False, update=_save_prefs)
     library_show_voxels: BoolProperty(name="Voxels", default=False, update=_save_prefs)
+    library_show_aggregate: BoolProperty(name="Aggregate", default=False, update=_save_prefs,
+                                         description="The tilesets of tilesets: 3dtiled aggregate sets")
     # ── Beta features ──────────────────────────────────────────────────────────
     beta_phases: BoolProperty(
         name="Phases timeline",

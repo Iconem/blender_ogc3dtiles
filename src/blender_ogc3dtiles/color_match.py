@@ -66,7 +66,10 @@ def fit(src: np.ndarray, ref: np.ndarray):
         # the slope of the reference over the source, not the ratio of their spreads: where the two differ
         # cell by cell (another date, another light) the ratio still asked for more contrast and burned the
         # light surfaces; the slope asks for less the less they agree
-        g = float(np.clip(((s - s.mean()) * (r - r.mean())).mean() / (sd * sd), *GAMMA_RANGE)) if sd > 1e-4 else 1.0
+        # between that slope and the ratio of the spreads (their geometric mean): the slope alone reads low
+        # whenever the cells are noisy, and flattened the colors
+        slope = max(((s - s.mean()) * (r - r.mean())).mean() / (sd * sd), 0.0) if sd > 1e-4 else 1.0
+        g = float(np.clip(math.sqrt(slope * r.std() / sd), *GAMMA_RANGE)) if sd > 1e-4 else 1.0
         gamma[c] = g
         # the bright end is kept under the reference's: a gamma above 1 fitted on the mid tones otherwise
         # sends the lightest surfaces (limestone, sand in the sun) to white

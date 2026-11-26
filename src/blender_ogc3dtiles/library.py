@@ -85,8 +85,8 @@ def content_type(entry: dict) -> str:
 
 def matches(entry: dict, query: str, kinds=()) -> bool:
     """Does the entry hold every word of ``query``, and is it of one of ``kinds``
-    (none: any type)?"""
-    if kinds and content_type(entry) not in kinds:
+    (none: any type)? ``AGGREGATE`` among the kinds stands for the tilesets of tilesets, whatever they hold."""
+    if kinds and content_type(entry) not in kinds and not ("AGGREGATE" in kinds and entry.get("kind") == "AGGREGATE"):
         return False
     text = f"{entry.get('group', '')} {entry.get('name', '')} {entry.get('notes', '')}".lower()
     return all(w in text for w in query.lower().split())

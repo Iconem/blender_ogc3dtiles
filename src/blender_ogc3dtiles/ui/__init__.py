@@ -2472,6 +2472,7 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
     bl_label = "Tilesets"
     bl_idname = "OGC3D_PT_main"
     bl_order = 1
+    bl_ui_units_x = 17                  # as a popover (a shortcut, wm.call_panel): wide enough for its labels
 
     @classmethod
     def poll(cls, context):
@@ -2502,7 +2503,7 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
             # per tileset, each in its own box so they read as things to switch on
             b = layout.box()            # raster overlays draped on this tileset (cesium-native backend)
             body = _fold_header(b, it, "use_overlays", "show_overlays",
-                                f"Raster overlays ({len(it.overlays)})" if it.overlays else "Raster overlays")
+                                f"Raster overlays ({len(it.overlays)})" if it.overlays else "Raster overlays", "TEXTURE")
             if body is not None:
                 _draw_overlays(body, it, st)
             n_ds = len(st.get("datasets") or ()) if st is not None else 0
@@ -2510,7 +2511,8 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
             n_all = len(TILESET_METADATA.datasets_of(st.get("url") or "")) if st is not None else 0
             b = layout.box()            # the datasets of a tileset of tilesets: both settings are the scene's
             b = _fold_header(b, props, "dataset_empties", "show_markers",
-                             f"Markers - datasets locations ({n_ds})" if n_ds else "Markers - datasets locations")
+                             f"Markers - datasets locations ({n_ds})" if n_ds else "Markers - datasets locations",
+                             "PINNED")
             if b is not None:
                 b.prop(props, "dataset_marker_px", text="Dot radius (px)")
                 b.prop(props, "dataset_markers",
@@ -2522,14 +2524,15 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
                     b.label(text="This tileset has no datasets of its own", icon="INFO")
             b = layout.box()
             body = _fold_header(b, it, "use_clipping", "show_clipping",
-                                f"Clipping ({len(it.clip_polygons)})" if it.clip_polygons else "Clipping")
+                                f"Clipping ({len(it.clip_polygons)})" if it.clip_polygons else "Clipping",
+                                "SHADING_BBOX")
             if body is not None:
                 _draw_clipping(body, it, st, props)
-            body = _fold_header(layout.box(), it, "use_color", "show_color", "Color correction")
+            body = _fold_header(layout.box(), it, "use_color", "show_color", "Color correction", "FCURVE")
             if body is not None:
                 _draw_color(body, it, st, props)
             if blend.enabled() and (it.use_blend or background):
-                body = _fold_header(layout.box(), it, "use_blend", "show_blend", "Terrain blending (beta)")
+                body = _fold_header(layout.box(), it, "use_blend", "show_blend", "Terrain blending (beta)", "MOD_OCEAN")
                 if body is not None:
                     _draw_blend(body, it, st, props)
         else:
@@ -2583,12 +2586,16 @@ def _draw_properties(b, it, st) -> None:
         b.operator("ogc3dtiles.match_heights", icon="TRIA_DOWN_BAR")
 
 
-def _fold_header(b, it, use: str, show: str, text: str):
-    """The first row of a box: its checkbox and an arrow that folds it, ticked or not, as a Blender panel with
-    a checkbox in its header. Returns the layout to draw the content in, greyed while the box is unticked;
-    None when folded."""
+def _fold_header(b, it, use: str, show: str, text: str, icon: str = "NONE"):
+    """The first row of a box: its checkbox, its icon and name, and an arrow that folds it, ticked or not, as a
+    Blender panel with a checkbox in its header. Returns the layout to draw the content in, greyed while the
+    box is unticked; None when folded."""
     row = b.row(align=True)
-    row.prop(it, use, text=text)
+    if icon == "NONE":
+        row.prop(it, use, text=text)
+    else:                                            # a checkbox with an icon is drawn as a button: apart, then
+        row.prop(it, use, text="")
+        row.label(text=text, icon=icon)
     row.prop(it, show, text="", icon="TRIA_DOWN" if getattr(it, show) else "TRIA_LEFT", emboss=False)
     if not getattr(it, show):
         return None
@@ -2918,6 +2925,7 @@ class OGC3D_PT_MetadataPanel(_OGC3DSidebar, Panel):
     bl_label = "Nodes: Metadata"
     bl_idname = "OGC3D_PT_metadata"
     bl_order = 5
+    bl_ui_units_x = 17
     bl_options = {"DEFAULT_CLOSED"}
 
     def draw_header(self, context):

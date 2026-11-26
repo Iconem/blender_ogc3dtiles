@@ -46,7 +46,7 @@ A library is a JSON file listing tilesets ready to stream, with their URLs and k
 one, share a team one on the NAS: the preferences take several files, separated by `;`.
 
 - The **bookmark button** under the tileset list adds an entry from a library, through a search box.
-  It can show only meshes, point clouds, splats or voxels.
+  It can show only meshes, point clouds, splats or voxels, or only the tilesets of tilesets (*Aggregate*).
 - With no library file chosen yet, the bookmark button and *Save to library* open a small message
   with a button to the add-on preferences, where the file is picked or created.
 - **Save to library** writes the selected entry under its name: URL, type, ion id and token, SSE, its

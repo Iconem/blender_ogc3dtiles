@@ -8,6 +8,18 @@ main branch and not in a release zip yet.
 
 ## Unreleased
 
+## 0.6.10 (2026-11-26)
+
+- **Icons on the boxes of a tileset.** Raster overlays, Markers, Clipping, Color correction and Terrain
+  blending each carry an icon beside their checkbox, as Properties already did.
+- **Library search: an Aggregate filter.** Beside Mesh, Points, Splats and Voxels, it keeps only the
+  tilesets of tilesets, whatever they hold.
+- **Match Colors keeps more contrast.** The gamma is now between the regression slope and the ratio of the
+  two spreads. The slope alone reads low when the cells are noisy, and it flattened the colors: on Giza
+  over Google the gamma sat at its lower limit, 0.8.
+- **Wider panel popups.** Tilesets and Nodes: Metadata opened from a shortcut are wide enough for their
+  labels and buttons.
+- **Docs home page**: the two deck covers open their slide deck instead of a zoomed picture.
 - **Release workflow**: the platform zips wait for the release to exist before they are attached. On 0.6.9
   one repository built them before its release was made and failed there; a rerun attached them.
 

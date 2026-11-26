@@ -333,3 +333,10 @@ def test_enforce_splits_budget_and_drops_stale_dbs(tmp_path):
     left = cachectl.http_cache_bytes(os.path.join(root, "http-cache.sqlite")) + sum(
         p.stat().st_size for p in tmp_path.glob("*.glb"))
     assert left <= 1000
+
+
+def test_the_aggregate_filter_keeps_tilesets_of_tilesets():
+    agg = {"name": "open data", "kind": "AGGREGATE", "url": "open"}
+    mesh = {"name": "a mesh", "kind": "URL", "url": "x", "content": "MESH"}
+    assert library.matches(agg, "", ("AGGREGATE",)) and not library.matches(mesh, "", ("AGGREGATE",))
+    assert library.matches(mesh, "", ("MESH", "AGGREGATE")) and library.matches(agg, "", ("MESH", "AGGREGATE"))

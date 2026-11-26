@@ -13,12 +13,23 @@ export function getMDXComponents(components?: MDXComponents) {
     // every screenshot opens full size on click. Images are authored as /img/... and left as such by the remark-image
     // plugin (useImport: false in source.config.ts): the basePath goes in here, since next/image leaves a plain string
     // src alone.
-    img: ({ src, ...props }) => (
+    img: ({ src, ...props }) => {
+      // the cover of a slide deck (docs/img/slides-<deck>.jpg) opens that deck, on this site, instead of zooming
+      const deck = typeof src === 'string' ? /\/slides-([a-z0-9-]+)\.jpg$/.exec(src)?.[1] : undefined;
+      if (deck) {
+        return (
+          <a href={`${basePath}/slides/s/${deck}/`} title="Open the slide deck">
+            <img {...(props as React.ComponentProps<'img'>)} src={withBase(src)} style={{ borderRadius: 8 }} />
+          </a>
+        );
+      }
+      return (
       <ImageZoom
         {...(props as React.ComponentProps<typeof ImageZoom>)}
         src={typeof src === 'string' && src.startsWith('/') && !src.startsWith(`${basePath}/`) ? `${basePath}${src}` : (src as string)}
       />
-    ),
+      );
+    },
     // the clips of the Videos page (/video/..., copied into public/ like the screenshots): same basePath fix as img
     video: ({ src, poster, ...props }: React.ComponentProps<'video'>) => (
       <video {...props} src={withBase(src)} poster={withBase(poster)} />

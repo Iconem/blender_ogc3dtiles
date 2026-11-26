@@ -80,7 +80,7 @@ The report says by how much.
 - Only open ground is compared, so a building, a tree or a bridge that one of the two shows and the other
   does not, or shows differently from below, does not count. With too little open ground (under 5% of the
   shared cells: a scan with faces under its whole surface, for instance) the highest heights are compared
-  everywhere, and the offset is the one most cells agree on. Before 0.6.11 the lowest heights were compared:
+  everywhere, and the offset is the one most cells agree on. Up to 0.6.10 the lowest heights were compared:
   the scan of St Peter's, already in place over Google, was moved up 21 m, because its mesh has an underside
   20 m down and Google's has none. It now reads -0.1 m there, and Giza +21 m as before.
 - Over Google or Bing the terrain is itself a photogrammetry mesh, with its buildings and trees: the match

@@ -454,29 +454,27 @@ def tileset_of(obj):
     return None, None
 
 
-def _color_ref_poll(self, obj):
-    """Only the root Empties of the other streaming tilesets: one row per tileset, not one per tile."""
-    uid, root = tileset_of(obj)
-    return uid is not None and uid != self.uid and root == obj
+_ref_items: list = []                    # Blender keeps no reference to the strings of a dynamic enum
 
 
-def _on_color_ref_obj(self, context):
-    """A tile or a root picked: the reference is its tileset, shown as the tileset's root Empty."""
-    obj = self.color_ref_obj
-    if obj is None:
-        if self.color_ref:
-            self.color_ref = ""
-        return
-    uid, root = tileset_of(obj)
+def _others(self):
     props = getattr(self.id_data, "ogc3dtiles", None)
-    it = next((x for x in props.tilesets if x.uid == uid), None) if props is not None and uid else None
-    if it is None or uid == self.uid:
-        self.color_ref_obj = None
-        return
-    if self.color_ref != it.name:
-        self.color_ref = it.name
-    if root != obj:
-        self.color_ref_obj = root
+    return [it for it in props.tilesets if it != self and it.name] if props is not None else []
+
+
+def _color_ref_items(self, context):
+    _ref_items[:] = [("NONE", "None", "No reference tileset")] + [
+        (f"T{i}", it.name, f"Match this tileset's colors to {it.name}") for i, it in enumerate(_others(self))]
+    return _ref_items
+
+
+def _color_ref_get(self):
+    return next((i + 1 for i, it in enumerate(_others(self)) if it.name == self.color_ref), 0)
+
+
+def _color_ref_set(self, value):
+    others = _others(self)
+    self.color_ref = others[value - 1].name if 0 < value <= len(others) else ""
 
 
 def _camera_poll(self, obj):
@@ -581,6 +579,28 @@ class TilesetItem(PropertyGroup):
     uid: StringProperty(default="", options={'HIDDEN'})
     # dataset_empties: {external tileset URL: the 16 numbers of its Empty's own matrix}, as JSON
     dataset_offsets: StringProperty(default="", options={'HIDDEN'})
+    dataset_empties: BoolProperty(
+        name="Markers - datasets locations",
+        description="In a tileset that only gathers other tilesets (an aggregate of datasets), give each "
+                    "dataset an Empty under the tileset's root and parent its tiles to it. The Empty sits at "
+                    "the dataset's centre with Z up: its Location Z is a height offset, kept with the scene. "
+                    "Tiles are still selected where the dataset says it is. cesium-native backend; applies "
+                    "to tiles loaded from now on",
+        default=True)
+    dataset_markers: BoolProperty(
+        name="Also the datasets not loaded yet (beta)",
+        description="Beta. In a tileset that only gathers other tilesets, an Empty for every dataset its "
+                    "tileset.json lists, before any tile of it is loaded: a sphere of the dataset's size at its "
+                    "centre, named after the dataset. Scene Origin > Dataset then lists them all, so the origin "
+                    "can go to a dataset that is not loaded yet",
+        default=False, update=_on_dataset_marker_size)
+    show_markers: BoolProperty(name="Show", description="Unfold the markers settings", default=False)
+    dataset_marker_px: FloatProperty(
+        name="Marker size px",
+        description="Every dataset Empty also gets a white dot of this radius in pixels in the 3D viewport, whatever the "
+                    "distance and the Globe scale, so that a small site shows from space. An Empty cannot be "
+                    "drawn larger than a kilometre. Viewport only, not in renders. 0: no dot",
+        default=5.0, min=0.0, max=64.0, soft_max=20.0, update=_on_dataset_marker_size)
     overlays: CollectionProperty(type=OverlayItem)
     active_overlay: IntProperty(default=0)
     use_clipping: BoolProperty(
@@ -637,11 +657,11 @@ class TilesetItem(PropertyGroup):
         name="Match to",
         description="The tileset whose colors Match Colors brings this one onto: Google Photorealistic "
                     "3D Tiles under a photogrammetry mesh, for one")
-    color_ref_obj: bpy.props.PointerProperty(
-        name="Match to", type=bpy.types.Object, poll=_color_ref_poll, update=_on_color_ref_obj,
+    color_ref_pick: EnumProperty(
+        name="Match to",
         description="The tileset whose colors Match Colors brings this one onto: Google Photorealistic "
-                    "3D Tiles under a photogrammetry mesh, for one. The list holds the root Empty of every other "
-                    "tileset that is streaming")
+                    "3D Tiles under a photogrammetry mesh, for one. Every other tileset of the list",
+        items=_color_ref_items, get=_color_ref_get, set=_color_ref_set, options={'SKIP_SAVE'})
     clip_geometry: BoolProperty(
         name="Slower: Also cut in solid view/exports",
         description="Also delete the mesh faces that are entirely cut (Geometry Nodes), so "
@@ -981,21 +1001,6 @@ class TilesSceneProps(PropertyGroup):
         name="Point radius (m)", description="Uniform point radius",
         default=0.08, min=0.001, max=50.0, update=_on_point_radius,
     )
-    dataset_empties: BoolProperty(
-        name="Markers - datasets locations",
-        description="In a tileset that only gathers other tilesets (an aggregate of datasets), give each "
-                    "dataset an Empty under the tileset's root and parent its tiles to it. The Empty sits at "
-                    "the dataset's centre with Z up: its Location Z is a height offset, kept with the scene. "
-                    "Tiles are still selected where the dataset says it is. cesium-native backend; applies "
-                    "to tiles loaded from now on",
-        default=True)
-    dataset_markers: BoolProperty(
-        name="Also the datasets not loaded yet (beta)",
-        description="Beta. In a tileset that only gathers other tilesets, an Empty for every dataset its "
-                    "tileset.json lists, before any tile of it is loaded: a sphere of the dataset's size at its "
-                    "centre, named after the dataset. Scene Origin > Dataset then lists them all, so the origin "
-                    "can go to a dataset that is not loaded yet",
-        default=False, update=_on_dataset_marker_size)
     blend_dataset_fade: FloatProperty(
         name="Dataset fade",
         description="Terrain blending: metres over which a dataset fades in from its border, so that its edge "
@@ -1026,13 +1031,6 @@ class TilesSceneProps(PropertyGroup):
         description="Terrain blending: the terrain is kept when it is at least this far under the lowest point "
                     "of the dataset above it. Raise it when terrain still shows through the dataset's ground",
         default=2.0, min=0.0, soft_max=50.0, unit="LENGTH", update=_on_blend)
-    show_markers: BoolProperty(name="Show", description="Unfold the markers settings", default=False)
-    dataset_marker_px: FloatProperty(
-        name="Marker size px",
-        description="Every dataset Empty also gets a white dot of this radius in pixels in the 3D viewport, whatever the "
-                    "distance and the Globe scale, so that a small site shows from space. An Empty cannot be "
-                    "drawn larger than a kilometre. Viewport only, not in renders. 0: no dot",
-        default=5.0, min=0.0, max=64.0, soft_max=20.0, update=_on_dataset_marker_size)
     read_metadata: BoolProperty(
         name="Read feature metadata",
         description="Keep each tile's feature table: columns become vertex attributes "
@@ -1174,12 +1172,12 @@ class TilesSceneProps(PropertyGroup):
                     "Blender goes through a material again each time nodes are added to it: seconds of frozen "
                     "viewport for a thousand tiles. Applies to the tiles that load from now on",
         items=[
-            ("ON_USE", "Lighter tiles", "Only when a box is ticked. Tiles draw at their fastest; ticking or "
-                                        "unticking a box on many loaded tiles freezes the viewport for a few seconds"),
             ("ALWAYS", "Instant switches", "In every tile when it loads, doing nothing until a box is ticked. "
                                            "Ticking a box is immediate; tiles cost a little more to draw"),
+            ("ON_USE", "Lighter tiles", "Only when a box is ticked. Tiles draw at their fastest; ticking or "
+                                        "unticking a box on many loaded tiles freezes the viewport for a few seconds"),
         ],
-        default="ON_USE",
+        default="ALWAYS",
     )
     view_source: EnumProperty(
         name="Stream for",

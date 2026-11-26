@@ -118,8 +118,8 @@ it never shows uncorrected.
 ### Match Colors
 
 Pick the reference in **Match to** (Google Photorealistic 3D Tiles under a photogrammetry mesh, for one),
-have both streaming with the overlap in view, and press **Match Colors**. *Match to* lists the root Empty of
-each other tileset that is streaming, one row per tileset.
+have both streaming with the overlap in view, and press **Match Colors**. *Match to* is a plain list of the
+other tilesets, by name.
 
 ![The boxes of a tileset: Properties, Clipping and Raster overlays folded or unticked, Color correction open with gamma and gain per channel and Match to set to the root Empty of Google](/img/panel_boxes_match_to.png)
 

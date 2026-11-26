@@ -621,6 +621,25 @@ class OGC3D_OT_SetupCopy(Operator):
         return {"FINISHED"}
 
 
+class OGC3D_OT_DatasetUrlCopy(Operator):
+    bl_idname = "ogc3dtiles.dataset_url_copy"
+    bl_label = "Copy Dataset URL"
+    bl_description = ("Copy the address of the active dataset's own tileset.json to the clipboard, as its tileset "
+                      "of tilesets gives it. It is also the custom property ogc3dtiles_dataset of the dataset's "
+                      "Empty (Object Properties > Custom Properties)")
+    bl_options = {"REGISTER"}
+
+    def execute(self, context):
+        o = context.active_object
+        url = o.get("ogc3dtiles_dataset") if o is not None else None
+        if not url:
+            self.report({"WARNING"}, "The active object is not a dataset Empty")
+            return {"CANCELLED"}
+        context.window_manager.clipboard = str(url)
+        self.report({"INFO"}, f"Copied: {str(url)[:80]}")
+        return {"FINISHED"}
+
+
 class OGC3D_OT_SetupPaste(Operator):
     bl_idname = "ogc3dtiles.setup_paste"
     bl_label = "Paste Setup"
@@ -649,6 +668,7 @@ class OGC3D_OT_SetupPaste(Operator):
 _classes = [
     OGC3D_OT_SetupCopy,
     OGC3D_OT_SetupPaste,
+    OGC3D_OT_DatasetUrlCopy,
     OGC3D_OT_TilesetBrowse,
     OGC3D_OT_CacheTrim,
     OGC3D_LibraryRow,

@@ -25,12 +25,31 @@ RIM = (0.0, 0.0, 0.0, 0.85)
 _state = {"handle": None, "t": 0.0, "empties": [], "sig": None, "batches": None}
 
 
-def _empties():
-    """The dataset Empties, looked for once a second: tiles are many more objects than datasets."""
+def _radii(props) -> dict:
+    """{root Empty of a tileset whose markers are on: its dot radius in pixels}. The settings are per tileset."""
+    out = {}
+    try:
+        from .ui import _state as streams
+        items = {it.uid: it for it in props.tilesets}
+        for uid, st in streams["streams"].items():
+            it = items.get(uid)
+            if it is not None and st.get("root_obj") and it.dataset_empties and it.dataset_marker_px > 0.0:
+                out[st["root_obj"]] = float(it.dataset_marker_px)
+    except Exception:                                # noqa: BLE001
+        pass
+    return out
+
+
+def _empties(props):
+    """The dataset Empties that get a dot, looked for once a second: tiles are many more objects than datasets."""
     now = time.monotonic()
     if now - _state["t"] >= REFRESH_S:
         _state["t"] = now
-        _state["empties"] = [o.name for o in bpy.data.objects if o.type == "EMPTY" and PROP in o and _shown(o)]
+        px = _radii(props)
+        found = [(o.name, px[o.parent.name]) for o in bpy.data.objects
+                 if o.type == "EMPTY" and PROP in o and o.parent is not None and o.parent.name in px and _shown(o)]
+        _state["empties"] = [n for n, _ in found]
+        _state["px"] = dict(found)
         _state["sig"] = None                      # an Empty the user moved is picked up here
     out = []
     for n in _state["empties"]:
@@ -61,6 +80,7 @@ def _rebuild(es):
     """World positions, and the Earth they sit on."""
     _state["batches"] = np.asarray([tuple(e.matrix_world.translation) for e in es], dtype=np.float64).reshape(-1, 3)
     _state["names"] = [e.name for e in es]
+    _state["radii"] = np.asarray([_state["px"].get(e.name, 0.0) for e in es], dtype=np.float64)
     _state["earth"] = _earth(es)
 
 
@@ -148,32 +168,33 @@ HIDDEN_ALPHA = 0.3                      # a dot behind a tile
 
 
 def _points(props, rv):
-    """(world positions of the dots this view shows, the names of their Empties), or (None, None)."""
-    if props is None or not props.dataset_empties or props.dataset_marker_px <= 0.0 or rv is None:
-        return None, None
-    es = _empties()
+    """(world positions of the dots this view shows, the names of their Empties, their radii in pixels), or
+    three None."""
+    if props is None or rv is None:
+        return None, None, None
+    es = _empties(props)
     if not es:
-        return None, None
+        return None, None, None
     sig = _signature(es)
     if sig != _state["sig"] or _state["batches"] is None or len(_state.get("names") or ()) != len(es):
         _state["sig"] = sig
         _rebuild(es)
-    pts, names = _state["batches"], _state["names"]
+    pts, names, radii = _state["batches"], _state["names"], _state["radii"]
     earth = _state.get("earth")
     if earth is not None and rv.is_perspective:      # datasets behind the globe
         cam = np.array(rv.view_matrix.inverted().translation, dtype=np.float64)
         keep = in_front_of_sphere(pts, cam, *earth)
-        pts, names = pts[keep], [n for n, k in zip(names, keep) if k]
+        pts, names, radii = pts[keep], [n for n, k in zip(names, keep) if k], radii[keep]
     if not len(pts):
-        return None, None
+        return None, None, None
     far, eye = _far_and_eye(rv)
     if far:
         pts = within_clip(pts, eye, far)
-    return pts, names
+    return pts, names, radii
 
 
-def _size_px(props) -> float:
-    return 2.0 * float(props.dataset_marker_px) * bpy.context.preferences.system.ui_scale + 3.0
+def _size_px(radius) -> float:
+    return 2.0 * float(radius) * bpy.context.preferences.system.ui_scale + 3.0
 
 
 def nearest_on_screen(pts, perspective, width, height, x, y):
@@ -188,11 +209,11 @@ def nearest_on_screen(pts, perspective, width, height, x, y):
 
 def pick(props, region, rv, x: float, y: float):
     """The name of the Empty whose dot is under the pixel (x, y) of the region, or None."""
-    pts, names = _points(props, rv)
+    pts, names, radii = _points(props, rv)
     if pts is None:
         return None
     i, d = nearest_on_screen(pts, rv.perspective_matrix, region.width, region.height, x, y)
-    return names[i] if d <= _size_px(props) / 2.0 + 3.0 else None
+    return names[i] if d <= _size_px(radii[i]) / 2.0 + 3.0 else None
 
 
 def _draw():
@@ -200,29 +221,30 @@ def _draw():
     props = getattr(scene, "ogc3dtiles", None)
     try:
         rv = bpy.context.region_data
-        pts, _names = _points(props, rv)
+        pts, _names, radii = _points(props, rv)
         if pts is None:
             return
         import gpu
         from gpu_extras.batch import batch_for_shader
         shader = _disc_shader()
-        batch = batch_for_shader(shader, "POINTS", {"pos": pts.astype(np.float32)})
-        size = _size_px(props)
         gpu.state.blend_set("ALPHA")
         gpu.state.program_point_size_set(True)
         shader.bind()
         shader.uniform_float("mvp", rv.perspective_matrix)
-        shader.uniform_float("size", size)
-        shader.uniform_float("inner", 1.0 - 3.0 / size)
-        gpu.state.depth_test_set("NONE")             # faint, wherever it is: behind a tile too
         gpu.state.depth_mask_set(False)
-        shader.uniform_float("color", (*COLOR[:3], COLOR[3] * HIDDEN_ALPHA))
-        shader.uniform_float("rim", (*RIM[:3], RIM[3] * HIDDEN_ALPHA))
-        batch.draw(shader)
-        gpu.state.depth_test_set("LESS_EQUAL")       # whole, where nothing is in front
-        shader.uniform_float("color", COLOR)
-        shader.uniform_float("rim", RIM)
-        batch.draw(shader)
+        for r in np.unique(radii):                   # a tileset has its own dot radius
+            batch = batch_for_shader(shader, "POINTS", {"pos": pts[radii == r].astype(np.float32)})
+            size = _size_px(r)
+            shader.uniform_float("size", size)
+            shader.uniform_float("inner", 1.0 - 3.0 / size)
+            gpu.state.depth_test_set("NONE")         # faint, wherever it is: behind a tile too
+            shader.uniform_float("color", (*COLOR[:3], COLOR[3] * HIDDEN_ALPHA))
+            shader.uniform_float("rim", (*RIM[:3], RIM[3] * HIDDEN_ALPHA))
+            batch.draw(shader)
+            gpu.state.depth_test_set("LESS_EQUAL")   # whole, where nothing is in front
+            shader.uniform_float("color", COLOR)
+            shader.uniform_float("rim", RIM)
+            batch.draw(shader)
         gpu.state.depth_mask_set(True)
         gpu.state.program_point_size_set(False)
         gpu.state.depth_test_set("NONE")

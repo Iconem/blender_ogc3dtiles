@@ -9,20 +9,20 @@ what the converged animation render does.
 
 ## Highlights
 
-<video src="/video/highlights.mp4" poster="/video/highlights.jpg" controls loop preload="none" muted playsinline style="width:100%;height:auto;aspect-ratio:auto 16/9;border-radius:8px"></video>
+<video src="/video/highlights.mp4" poster="/video/highlights.jpg" controls loop preload="metadata" muted playsinline style="width:100%;height:auto;aspect-ratio:auto 16/9;border-radius:8px"></video>
 
 Seven of the rendered clips below in one 42 second reel: Giza, Venice, Tokyo, Notre-Dame, the Bayon, the three
 camera projections and the Colosseum clip box.
 
 ## In the Blender window
 
-<video src="/video/camera_split_rome.mp4" poster="/video/camera_split_rome.jpg" controls muted playsinline preload="none" style="width:100%;height:auto;aspect-ratio:auto 16/9;border-radius:8px"></video>
+<video src="/video/camera_split_rome.mp4" poster="/video/camera_split_rome.jpg" controls muted playsinline preload="metadata" style="width:100%;height:auto;aspect-ratio:auto 16/9;border-radius:8px"></video>
 
 **The camera decides what streams.** Google Photorealistic 3D Tiles over Rome. On the left is the camera view; on
 the right, a top view shows which tiles load around the camera. As the camera moves, tiles follow its frustum and
 fade out behind it.
 
-<video src="/video/navigate_rome.mp4" poster="/video/navigate_rome.jpg" controls muted playsinline preload="none" style="width:100%;height:auto;aspect-ratio:auto 16/9;border-radius:8px"></video>
+<video src="/video/navigate_rome.mp4" poster="/video/navigate_rome.jpg" controls muted playsinline preload="metadata" style="width:100%;height:auto;aspect-ratio:auto 16/9;border-radius:8px"></video>
 
 **Navigating as usual.** Wheel zoom, Shift+B zoom to a region, and middle-drag orbit. The tiles refine where the
 view goes, and the sidebar shows the counts live.

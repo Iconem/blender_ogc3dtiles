@@ -134,11 +134,21 @@ RADIUS = "ogc3dtiles_dataset_radius"   # on a marker: the dataset's own radius i
 MAX_RADIUS = 1000.0                    # Blender draws an Empty no larger: empty_display_size stops there
 
 
+def _markers_on(scene, e) -> bool:
+    """"Also the datasets not loaded yet" of the tileset this dataset Empty belongs to."""
+    try:
+        from .tileset.props import tileset_of
+        uid, _root = tileset_of(e)
+        return any(it.uid == uid and it.dataset_markers for it in scene.ogc3dtiles.tilesets)
+    except Exception:                                  # noqa: BLE001
+        return False
+
+
 def _look(scene, e) -> None:
     """How a dataset's Empty is drawn. With markers on: a sphere of the dataset's size, up to a kilometre, which is
     all an Empty can be; from further away dataset_dots draws a dot of a fixed size on screen. Without: an arrow
     that points up (Location Z is the height offset)."""
-    if scene.ogc3dtiles.dataset_markers:
+    if _markers_on(scene, e):
         e.empty_display_type = "SPHERE"
         e.empty_display_size = min(max(float(e.get(RADIUS, 20.0)), 20.0), MAX_RADIUS)
     else:
@@ -195,7 +205,8 @@ def adopt(scene, st, root, coll, obj_name: str, dataset, frame) -> None:
     obj.matrix_parent_inverse = e.matrix_parent_inverse.inverted()
     own = _collection(coll, e)
     if own is not None:
-        for o in (e, obj, *obj.children_recursive):
+        from .io import tile_family
+        for o in (e, *tile_family(obj)):
             _move(o, own)
 
 

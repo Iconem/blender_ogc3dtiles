@@ -1100,10 +1100,16 @@ def _forget_tiles_data(scene) -> None:
 ORIGIN_WAIT_S = 10.0
 
 
+def _markers_item(props, st):
+    """The tileset of a stream: the markers settings are its own."""
+    return next((x for x in props.tilesets if x.uid == st.get("key")), None)
+
+
 def _dataset_markers(scene, props, st) -> None:
     """Beta: the Empties of an aggregate's datasets, made (or removed) when the checkbox or the list changes."""
     from ..tileset.feature_meta import TILESET_METADATA
-    want = bool(props.dataset_markers and props.dataset_empties)
+    it = _markers_item(props, st)
+    want = bool(it is not None and it.dataset_markers and it.dataset_empties)
     sig = (want, TILESET_METADATA.version, _state["origin_set"])
     if st.get("markers_sig") == sig or not _state["origin_set"]:
         return
@@ -1708,7 +1714,8 @@ CAP_STUCK_STEPS = 4
 def _elements(holder_name) -> int:
     holder = bpy.data.objects.get(holder_name)
     total = 0
-    for obj in ((holder, *holder.children_recursive) if holder is not None else ()):
+    from ..io import tile_family
+    for obj in (tile_family(holder) if holder is not None else ()):
         data = obj.data
         if obj.type == "MESH":
             total += len(data.vertices)
@@ -2081,7 +2088,7 @@ def _build_native_tile(scene, props, st, rt) -> bool:
                 if masks is not None:                         # built again under shown children
                     st.setdefault("vis_changed", set()).update(masks.children.get(rt.key, ()))
         st["dirty"] = True
-        ds = getattr(st["backend"], "tile_dataset", {}).get(rt.key) if props.dataset_empties else None
+        ds = getattr(st["backend"], "tile_dataset", {}).get(rt.key) if getattr(_markers_item(props, st), "dataset_empties", False) else None
         if ds is not None:
             from .. import dataset_empties
             dataset_empties.adopt(scene, st, root_obj, coll, r[0], ds, frame)
@@ -2130,7 +2137,10 @@ def _tick_native(scene, props, st, now) -> bool:
     backend, tiles = st["backend"], st["tiles"]
     changed = False
     if hasattr(backend, "set_main_thread_budget") and _state["origin_set"]:
-        backend.set_main_thread_budget(_build_budget_ms(props, _navigating(st, now)))
+        # one budget for the tick, shared by the tilesets that have tiles waiting to be built: each used to
+        # get the whole of it, and two tilesets loading at once took Blender for twice as long
+        busy = sum(1 for x in _state["streams"].values() if x.get("main_wait", 0) > 0)
+        backend.set_main_thread_budget(max(4.0, _build_budget_ms(props, _navigating(st, now)) / max(1, busy)))
     backend.tick()      # dispatches cesium-native main-thread work → builds tiles via callback
 
     if not st.get("frame_set"):
@@ -2200,11 +2210,14 @@ def _tick_native(scene, props, st, now) -> bool:
         return changed
     offsets, off_sig, hidden = (), (), ()
     if st.get("datasets"):                 # datasets moved by their Empty: selected for a camera moved back
-        from .. import dataset_empties
-        offsets, off_sig = dataset_empties.view_offsets(st)
-        hidden = dataset_empties.hidden_urls(st, _layer_collection(bpy.context.view_layer.layer_collection,
-                                                                    st.get("coll") or ""))
-        off_sig = (off_sig, hidden)
+        t_now = time.monotonic()           # read twice a second: it looks every dataset's Empty up by name
+        if t_now - st.get("offsets_t", 0.0) >= 0.5 or "offsets_read" not in st:
+            from .. import dataset_empties
+            offsets, off_sig = dataset_empties.view_offsets(st)
+            hidden = dataset_empties.hidden_urls(st, _layer_collection(bpy.context.view_layer.layer_collection,
+                                                                        st.get("coll") or ""))
+            st["offsets_t"], st["offsets_read"] = t_now, (offsets, (off_sig, hidden), hidden)
+        offsets, off_sig, hidden = st["offsets_read"]
     need = (view.signature != st["last_sig"] or changed or off_sig != st.get("offsets_sig", ())
             or now - st["last_sel_t"] > SELECTION_MAX_AGE_S)
     if need:
@@ -2222,6 +2235,7 @@ def _tick_native(scene, props, st, now) -> bool:
         st["last_sel_t"] = now
     s = st["stats"]
     st["pending"] = int(s.get("worker_queue", 0)) + int(s.get("main_queue", 0))
+    st["main_wait"] = int(s.get("main_queue", 0))
     return changed
 
 
@@ -2519,13 +2533,19 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
             from ..tileset.feature_meta import TILESET_METADATA
             n_all = len(TILESET_METADATA.datasets_of(st.get("url") or "")) if st is not None else 0
             if it.kind == "AGGREGATE" or n_ds or n_all:      # only a tileset of tilesets has datasets to mark
-                b = layout.box()        # both settings are the scene's
-                b = _fold_header(b, props, "dataset_empties", "show_markers",
+                b = layout.box()        # the tileset's own settings
+                b = _fold_header(b, it, "dataset_empties", "show_markers",
                                  f"Markers - datasets locations ({n_ds})" if n_ds else "Markers - datasets locations",
                                  "PINNED")
                 if b is not None:
-                    b.prop(props, "dataset_marker_px", text="Dot radius (px)")
-                    b.prop(props, "dataset_markers",
+                    b.prop(it, "dataset_marker_px", text="Dot radius (px)")
+                    act = getattr(bpy.context, "active_object", None)
+                    if act is not None and act.get("ogc3dtiles_dataset") and act.parent is not None \
+                            and st is not None and act.parent.name == st.get("root_obj"):
+                        row = b.row(align=True)      # the dataset whose Empty is active: its tileset's address
+                        row.label(text=act.name[:40], icon="EMPTY_AXIS")
+                        row.operator("ogc3dtiles.dataset_url_copy", text="Copy URL", icon="COPYDOWN")
+                    b.prop(it, "dataset_markers",
                            text=f"Also the {n_all - n_ds} datasets not loaded yet (beta)" if n_all > n_ds
                            else "Also the datasets not loaded yet (beta)")
                     if st is None or st.get("backend") is None:
@@ -2623,9 +2643,7 @@ def _draw_color(b, it, st, props) -> None:
     row = b.row(align=True)
     row.prop(it, "color_saturation")
     row.prop(it, "color_contrast")
-    b.prop(it, "color_ref_obj")                      # Blender's own picker: a list with a search, and an eyedropper
-    if it.color_ref and it.color_ref_obj is None:
-        b.label(text=f"Reference: {it.color_ref[:40]}", icon="IMAGE_REFERENCE")
+    b.prop(it, "color_ref_pick")                     # a plain list of the other tilesets
     row = b.row(align=True)
     sub = row.row(align=True)
     sub.enabled = bool(it.color_ref)

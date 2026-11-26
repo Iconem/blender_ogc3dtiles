@@ -759,7 +759,7 @@ def set_tile_info(holder_name: str, values: dict, scene) -> None:
     from ..materials import ERROR_PROP, LEVEL_PROP, new_tile_values
     from ..tileset.feature_meta import TILE_ERROR, TILE_LEVEL
     level, error = values.get(TILE_LEVEL, 0.0), values.get(TILE_ERROR, 0.0)
-    for obj in [holder, *holder.children_recursive]:
+    for obj in tile_family(holder):
         if obj.type in {"MESH", "POINTCLOUD"} and obj.data is not None:
             obj[LEVEL_PROP], obj[ERROR_PROP] = level, error      # Color tiles by > Tile reads these
     new_tile_values(scene, level, error)
@@ -896,6 +896,16 @@ def build_voxel_volume(payload: dict, key: str, scene: bpy.types.Scene,
     return obj.name, [vol.name]
 
 
+def _fill(me, attribute: str, field: str, values, slow) -> None:
+    """Write an array into a mesh attribute by its name. ``vertices.foreach_set("co")`` and its kin go through a
+    setter per element; the attribute takes the buffer as it is (a 33,000 triangle tile: 9 ms instead of 19.5,
+    the same mesh). ``slow``: the old call, for a Blender that names the attribute otherwise."""
+    try:
+        me.attributes[attribute].data.foreach_set(field, values)
+    except Exception:                           # noqa: BLE001
+        slow()
+
+
 def build_tile_from_payload(payload: dict, key: str, scene: bpy.types.Scene,
                             root: bpy.types.Object, matrix_rows, hidden: bool = True,
                             coll: Optional[bpy.types.Collection] = None,
@@ -912,26 +922,31 @@ def build_tile_from_payload(payload: dict, key: str, scene: bpy.types.Scene,
     n_v, n_f = len(V), len(F)
     me = bpy.data.meshes.new(_short_name(key))
     me.vertices.add(n_v)
-    me.vertices.foreach_set("co", V.ravel())
+    _fill(me, "position", "vector", V.ravel(), lambda: me.vertices.foreach_set("co", V.ravel()))
     data_names = [me.name]
     if n_f:
         me.loops.add(n_f * 3)
-        me.loops.foreach_set("vertex_index", F.ravel())
+        _fill(me, ".corner_vert", "value", F.ravel(), lambda: me.loops.foreach_set("vertex_index", F.ravel()))
         me.polygons.add(n_f)
         me.polygons.foreach_set("loop_start", np.arange(0, n_f * 3, 3, dtype=np.int32))
         fm = payload.get("face_mat")
         if fm is not None and len(fm) == n_f:
             me.polygons.foreach_set("material_index", np.ascontiguousarray(fm, dtype=np.int32))
-        me.polygons.foreach_set("use_smooth", np.ones(n_f, dtype=bool))
+        try:
+            me.shade_smooth()                   # no sharp faces: nothing to write
+        except Exception:                       # noqa: BLE001
+            me.polygons.foreach_set("use_smooth", np.ones(n_f, dtype=bool))
         uvs = payload.get("uvs")
         if uvs is not None and len(uvs) == n_f * 3:
-            uv_layer = me.uv_layers.new(name="UVMap")
-            uv_layer.data.foreach_set("uv", np.ascontiguousarray(uvs, dtype=np.float32).ravel())
+            uv_layer = me.uv_layers.new(name="UVMap", do_init=False)
+            flat = np.ascontiguousarray(uvs, dtype=np.float32).ravel()
+            _fill(me, uv_layer.name, "vector", flat, lambda: uv_layer.data.foreach_set("uv", flat))
         for tid, ouv in sorted((payload.get("overlay_uvs") or {}).items()):
             if len(ouv) != n_f * 3:
                 continue
             layer = me.uv_layers.new(name=f"{OVERLAY_UV_PREFIX}{tid}", do_init=False)
-            layer.data.foreach_set("uv", np.ascontiguousarray(ouv, dtype=np.float32).ravel())
+            flat = np.ascontiguousarray(ouv, dtype=np.float32).ravel()
+            _fill(me, layer.name, "vector", flat, lambda layer=layer, flat=flat: layer.data.foreach_set("uv", flat))
     me.update(calc_edges=True)
     me.validate(verbose=False)
     nrm = payload.get("normals")
@@ -1008,6 +1023,7 @@ def build_tile_from_payload(payload: dict, key: str, scene: bpy.types.Scene,
         _add_texels(me, payload, scene)
     obj = bpy.data.objects.new(_short_name(key), me)
     obj["tile_url"] = key
+    obj[SINGLE_PROP] = True
     if payload.get("features"):
         obj[FEATURES_PROP] = json.dumps(payload["features"]["table"], separators=(",", ":"))
     tile_meta = _tileset_metadata_import().by_content.get(key.split("?", 1)[0])
@@ -1496,7 +1512,7 @@ def set_octree_box(holder_name: str, centre, axes) -> None:
     if holder is None:
         return
     flat = [float(v) for v in centre] + [float(v) for ax in axes for v in ax]
-    for o in [holder, *holder.children_recursive]:
+    for o in tile_family(holder):
         mod = o.modifiers.get("Points") if o.type == "MESH" else None
         if mod is None or mod.type != "NODES" or mod.node_group is None or o.get("splats"):
             continue
@@ -1511,7 +1527,7 @@ def set_octree_masks(masks: dict) -> int:
         holder = bpy.data.objects.get(holder_name)
         if holder is None:
             continue
-        for o in [holder, *holder.children_recursive]:
+        for o in tile_family(holder):
             if OCTREE_BOX_PROP not in o or int(o.get(OCTREE_MASK_PROP, 0)) == int(mask):
                 continue
             o[OCTREE_MASK_PROP] = int(mask)
@@ -1847,6 +1863,17 @@ def apply_point_scale(scale: float) -> None:
             node.outputs[0].default_value = float(scale)
 
 
+SINGLE_PROP = "ogc3d_single"            # on a tile made of one object: it has no children to look for
+
+
+def tile_family(holder) -> list:
+    """A tile's holder and its descendants. Blender's ``children_recursive`` goes through every object of the
+    file at each call (6% of the streaming tick with 750 objects); a tile built from a payload is one object."""
+    if holder.get(SINGLE_PROP):
+        return [holder]
+    return [holder, *holder.children_recursive]
+
+
 def set_tile_visible(holder_name: str, visible: bool) -> None:
     holder = bpy.data.objects.get(holder_name)
     if holder is None:
@@ -1855,7 +1882,7 @@ def set_tile_visible(holder_name: str, visible: bool) -> None:
     if holder.hide_viewport != hidden:
         holder.hide_viewport = hidden
         holder.hide_render = hidden
-        for child in holder.children_recursive:
+        for child in tile_family(holder)[1:]:
             child.hide_viewport = hidden
             child.hide_render = hidden
 

@@ -73,9 +73,13 @@ Each dataset also gets:
   dataset's Empty (Shift click adds to the selection). Not in renders.
 
 The box **Markers - datasets locations** of the main panel, shown for a tileset of tilesets under *Color correction*, works like the boxes
-around it: its checkbox turns the Empties and the dots on, and the arrow beside it folds the box. It is the
-scene's, not one tileset's, and shows whatever the tileset: on one that has no datasets, or is not streaming
-yet, a line says so.
+around it: its checkbox turns the Empties and the dots on, and the arrow beside it folds the box. Its
+settings are the tileset's own, like those of *Clipping* and *Raster overlays*: two tilesets of tilesets
+can have dots of different sizes, or one of them none. On a tileset that is not streaming yet, a line says so.
+
+With a dataset's Empty active, the box shows its name and **Copy URL**: the address of that dataset's own
+tileset.json, as the tileset of tilesets gives it. The same address is the custom property
+`ogc3dtiles_dataset` of the Empty (*Object Properties > Custom Properties*).
 
 The Empty sits at the centre of the dataset's bounding volume, unless that is far off the ground: the box
 of a country-wide LiDAR in a projected grid can have its centre hundreds of kilometres up. Above 9 km or

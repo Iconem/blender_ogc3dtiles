@@ -24,7 +24,21 @@ main branch and not in a release zip yet.
   or Terrain blending on a thousand loaded tiles froze the viewport for 4 to 7 s. With Instant
   switches every tile that loads carries both sets of nodes from the start, doing nothing until a box
   is ticked: on Giza over Google (1,300 materials) every tick, untick and slider then redraws in under
-  0.4 s. The tiles cost a little more to draw. Lighter tiles, the default, is the behaviour of before.
+  0.4 s. The tiles cost a little more to draw. Instant switches is the default; Lighter tiles is the
+  behaviour of before.
+- **Tiles build faster, and several tilesets share one build budget.** Measured on a walk through the
+  Iconem datasets over Google 3D Tiles: building tiles took 11 of every 30 s of Blender's main thread, 17
+  of the 21 ms of a tile going to its mesh. The mesh arrays are now written as attributes, not through a
+  setter per element: 9 ms instead of 19.5 for a 33,000 triangle tile, the same mesh. The build time per
+  tick (*Imports per tick*) was given whole to each tileset, so two tilesets loading at once held
+  Blender twice as long; they now share it. Two lookups that went through every object of the file at
+  each tick are gone.
+- **Markers are per tileset.** The checkbox, the dot radius and *Also the datasets not loaded yet* of
+  *Markers - datasets locations* were the scene's; each tileset of tilesets now has its own, like
+  Clipping and Raster overlays. A scene saved before starts from the defaults.
+- **Copy URL of a dataset.** With a dataset's Empty active, the Markers box shows its name and a button
+  that copies the address of its tileset.json. It is also the Empty's custom property `ogc3dtiles_dataset`.
+- **Match to is a plain list of the other tilesets** again, by name, in place of Blender's object picker.
 - **A tile's part in Terrain blending is a property of its object** (`ogc3d_blend_role`), and the
   coverage is placed by a matrix kept in scene properties, not by an Empty the shader points at:
   moving that Empty made Blender go through every tile material again (3 s for 1,400).

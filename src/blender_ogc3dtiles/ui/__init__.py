@@ -944,14 +944,13 @@ class OGC3D_OT_StartStream(Operator):
             from .extras import trim_cache_once
             trim_cache_once(_state["cache"].root)
         _state["camera_adapter"] = CesiumCameraAdapter(scene)
-        # CUSTOM: the user's lat/lon/h is the origin; KEEP: a previously set
-        # origin stays; AUTO: decided per tileset in _decide_origin()
+        # CUSTOM: the user's lat/lon/h is the origin; AUTO: decided per tileset in _decide_origin()
         if props.origin_mode == "CUSTOM":
             props.origin_valid = True
         # SEARCH: a picked place is a custom origin; before any pick it
         # behaves like Auto (centre on the tileset)
         _state["origin_set"] = props.origin_mode == "CUSTOM" or (
-            props.origin_mode in ("KEEP", "SEARCH", "DATASET") and props.origin_valid)
+            props.origin_mode in ("SEARCH", "DATASET") and props.origin_valid)
 
         started = 0
         for index, item in items:
@@ -2501,36 +2500,35 @@ class OGC3D_PT_MainPanel(_OGC3DSidebar, Panel):
             if it.show_properties:
                 _draw_properties(b, it, st)
             # per tileset, each in its own box so they read as things to switch on
-            b = layout.box()            # raster overlays draped on this tileset (cesium-native backend)
-            body = _fold_header(b, it, "use_overlays", "show_overlays",
-                                f"Raster overlays ({len(it.overlays)})" if it.overlays else "Raster overlays", "TEXTURE")
-            if body is not None:
-                _draw_overlays(body, it, st)
-            n_ds = len(st.get("datasets") or ()) if st is not None else 0
-            from ..tileset.feature_meta import TILESET_METADATA
-            n_all = len(TILESET_METADATA.datasets_of(st.get("url") or "")) if st is not None else 0
-            b = layout.box()            # the datasets of a tileset of tilesets: both settings are the scene's
-            b = _fold_header(b, props, "dataset_empties", "show_markers",
-                             f"Markers - datasets locations ({n_ds})" if n_ds else "Markers - datasets locations",
-                             "PINNED")
-            if b is not None:
-                b.prop(props, "dataset_marker_px", text="Dot radius (px)")
-                b.prop(props, "dataset_markers",
-                       text=f"Also the {n_all - n_ds} datasets not loaded yet (beta)" if n_all > n_ds
-                       else "Also the datasets not loaded yet (beta)")
-                if st is None or st.get("backend") is None:
-                    b.label(text="Start streaming: markers appear with the tiles", icon="INFO")
-                elif not n_ds and not n_all:
-                    b.label(text="This tileset has no datasets of its own", icon="INFO")
             b = layout.box()
             body = _fold_header(b, it, "use_clipping", "show_clipping",
                                 f"Clipping ({len(it.clip_polygons)})" if it.clip_polygons else "Clipping",
                                 "SHADING_BBOX")
             if body is not None:
                 _draw_clipping(body, it, st, props)
+            b = layout.box()            # raster overlays draped on this tileset (cesium-native backend)
+            body = _fold_header(b, it, "use_overlays", "show_overlays",
+                                f"Raster overlays ({len(it.overlays)})" if it.overlays else "Raster overlays", "TEXTURE")
+            if body is not None:
+                _draw_overlays(body, it, st)
             body = _fold_header(layout.box(), it, "use_color", "show_color", "Color correction", "FCURVE")
             if body is not None:
                 _draw_color(body, it, st, props)
+            n_ds = len(st.get("datasets") or ()) if st is not None else 0
+            from ..tileset.feature_meta import TILESET_METADATA
+            n_all = len(TILESET_METADATA.datasets_of(st.get("url") or "")) if st is not None else 0
+            if it.kind == "AGGREGATE" or n_ds or n_all:      # only a tileset of tilesets has datasets to mark
+                b = layout.box()        # both settings are the scene's
+                b = _fold_header(b, props, "dataset_empties", "show_markers",
+                                 f"Markers - datasets locations ({n_ds})" if n_ds else "Markers - datasets locations",
+                                 "PINNED")
+                if b is not None:
+                    b.prop(props, "dataset_marker_px", text="Dot radius (px)")
+                    b.prop(props, "dataset_markers",
+                           text=f"Also the {n_all - n_ds} datasets not loaded yet (beta)" if n_all > n_ds
+                           else "Also the datasets not loaded yet (beta)")
+                    if st is None or st.get("backend") is None:
+                        b.label(text="Start streaming: markers appear with the tiles", icon="INFO")
             if blend.enabled() and (it.use_blend or background):
                 body = _fold_header(layout.box(), it, "use_blend", "show_blend", "Terrain blending (beta)", "MOD_OCEAN")
                 if body is not None:

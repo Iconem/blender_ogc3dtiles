@@ -8,6 +8,17 @@ main branch and not in a release zip yet.
 
 ## Unreleased
 
+- **Terrain blending reaches every tile at once.** Ticking the box, or editing one of its settings, now puts
+  the blend in all the tiles shown in one go. It was left to the streaming tick, a few tiles at a time: with
+  a thousand Google tiles on a scene at rest, 369 had it after 25 s, and Google stayed in front of the
+  dataset where it was not done. Tiles that stream in later get it faster too while many wait.
+- **The boxes of a tileset, in a new order:** Properties, Clipping, Raster overlays, Color correction,
+  Markers, Terrain blending. Markers shows only for a tileset of tilesets.
+- **Scene Origin: no more Keep current.** Custom does the same: its fields hold the current origin, so
+  switching from Auto keeps it. A scene saved on Keep current comes back without a mode: pick one.
+- **Docs:** a download button on the home and Installation pages, a sitemap, and a canonical address and
+  social tags on every page.
+
 ## 0.6.10 (2026-11-26)
 
 - **Icons on the boxes of a tileset.** Raster overlays, Markers, Clipping, Color correction and Terrain

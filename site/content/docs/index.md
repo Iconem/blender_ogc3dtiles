@@ -3,6 +3,12 @@ title: "OGC 3D Tiles for Blender"
 description: "Stream 3D Tiles (meshes, point clouds, Gaussian splats, voxels) into Blender"
 ---
 
+A free, open-source **Blender add-on** (extension) that streams **OGC 3D Tiles** into the viewport and into
+renders: Google Photorealistic 3D Tiles, Cesium ion assets, tiled meshes, point clouds, Gaussian splats and
+terrain, with raster overlays on top.
+
+[Download the latest release](https://github.com/Iconem/blender_ogc3dtiles/releases/latest)
+
 [cesium-native](https://github.com/CesiumGS/cesium-native) does the tile selection,
 loading and decoding through the [cesium-native-python](https://github.com/calebbuffa/cesium-native-python)
 bindings + some niceties like raster overlays or clips. Tiles load and unload around

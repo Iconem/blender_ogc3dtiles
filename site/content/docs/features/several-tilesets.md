@@ -60,7 +60,7 @@ Each dataset also gets:
   dataset has one: hide the dataset, or its tileset, and its dot goes. **Click a dot** to select the
   dataset's Empty (Shift click adds to the selection). Not in renders.
 
-The box **Markers - datasets locations** of the main panel, under *Raster overlays*, works like the boxes
+The box **Markers - datasets locations** of the main panel, shown for a tileset of tilesets under *Color correction*, works like the boxes
 around it: its checkbox turns the Empties and the dots on, and the arrow beside it folds the box. It is the
 scene's, not one tileset's, and shows whatever the tileset: on one that has no datasets, or is not streaming
 yet, a line says so.

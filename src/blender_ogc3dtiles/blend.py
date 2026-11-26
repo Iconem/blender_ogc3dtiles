@@ -43,6 +43,8 @@ DATASET_CENTRE_M = 6.3e6     # a dataset's centre is at least this far from the 
 SCAN_PERIOD_S = 0.25
 CELLS_BUDGET_S = 0.015      # rasterising new tiles, per tick
 MATS_BUDGET_S = 0.008       # material edits, per tick
+MATS_BACKLOG = 24           # more tiles than this waiting for their mix: the wider budget
+MATS_BACKLOG_S = 0.05
 REBUILD_PERIOD_S = 3.0      # the coverage follows the tiles shown at most this often (at once in a render)
 AUTO_SHARE = 0.05           # Auto: the dataset fades over this share of the smallest dataset's width
 
@@ -502,8 +504,14 @@ def tick(scene, props, streams, now) -> bool:
         _state["vis"] = {uid: [o.name for o in _tile_objects(streams[uid])] for uid in rl}
     vis = _state["vis"]
     # materials of the tiles that came in
+    # Switched on, or a setting edited: every tile shown gets it in this one tick. Left to the budget, a
+    # thousand Google tiles took minutes on a scene at rest, and the terrain stayed in front of the dataset
+    # meanwhile. Tiles that stream in afterwards go by the budget, wider while many wait.
     t0 = time.perf_counter()
     objs = bpy.data.objects
+    catch_up = _state.pop("catch_up", False)
+    waiting = sum(1 for uid, names in vis.items() for n in names if n not in _state["done"].get(uid, ()))
+    budget = math.inf if catch_up else MATS_BACKLOG_S if waiting > MATS_BACKLOG else MATS_BUDGET_S
     for uid, names in vis.items():
         done = _state["done"].setdefault(uid, set())
         for name in names:
@@ -512,7 +520,7 @@ def tick(scene, props, streams, now) -> bool:
             _apply_object(objs.get(name), rl[uid])
             done.add(name)
             changed = True
-            if time.perf_counter() - t0 > MATS_BUDGET_S:
+            if time.perf_counter() - t0 > budget:
                 break
         if len(done) > 4 * len(names) + 64:
             done.intersection_update(names)
@@ -594,6 +602,7 @@ def on_change(self, context) -> None:
         mark_dirty()
         _state["done"].clear()                       # roles may have changed: look at every tile again
         _state["strip"] = True
+        _state["catch_up"] = True
         if not wanted(props):
             teardown()
     except Exception as e:                           # noqa: BLE001

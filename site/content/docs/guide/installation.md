@@ -1,12 +1,14 @@
 ---
 title: "Installation"
-description: "Install the extension and the cesium-native backend"
+description: "Install the OGC 3D Tiles add-on in Blender 4.2 or newer, and its cesium-native backend"
 ---
 
 The add-on is a Blender extension, for Blender 4.2 or newer. It is tested on 5.3 and has been used
 on 4.5 LTS, 5.1 and 5.2 LTS. Gaussian splats need 5.3.
 
 ## Install the extension
+
+[Download the latest release](https://github.com/Iconem/blender_ogc3dtiles/releases/latest)
 
 1. Download `ogc_3dtiles_streaming-<version>.zip` from the
    [Releases](https://github.com/jo-chemla/blender_ogc3dtiles/releases) page.

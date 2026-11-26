@@ -699,14 +699,15 @@ class TilesSceneProps(PropertyGroup):
         items=[
             ("AUTO", "Auto",
              "Centre on the first tileset; later starts keep the current origin when the "
-             "new tileset is within 'Reuse within' km of it (CloudCompare-style)"),
-            ("KEEP", "Keep current", "Never move the origin once it has been set"),
-            ("CUSTOM", "Custom", "Use the latitude / longitude / height entered below"),
+             "new tileset is within 'Reuse within' km of it (CloudCompare-style)", 0),
+            # 1 was "Keep current": Custom does the same, its fields hold the current origin
+            ("CUSTOM", "Custom", "Use the latitude / longitude / height entered below. They hold the current "
+             "origin, so switching from Auto keeps it where it is", 2),
             ("SEARCH", "Search place", "Find a place by name (Photon, OpenStreetMap) and put the "
-             "origin on the ground there; until a place is picked, behaves like Auto"),
+             "origin on the ground there; until a place is picked, behaves like Auto", 3),
             ("DATASET", "Dataset", "Put the origin at a dataset of a tileset of tilesets, picked by the "
              "name of its Empty (cesium-native backend, 'An Empty per dataset'); until one is "
-             "picked, behaves like Auto"),
+             "picked, behaves like Auto", 4),
         ],
         default="AUTO",
     )

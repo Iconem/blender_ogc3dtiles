@@ -11,6 +11,9 @@ export const basePath = '/blender_ogc3dtiles';
 const owner = process.env.PAGES_OWNER || 'jo-chemla';
 export const pagesHost = `https://${owner.toLowerCase()}.github.io`;
 
+// The site search engines should index: the other Pages site names it as canonical.
+export const canonicalHost = 'https://iconem.github.io';
+
 /** Pages write links to the jo-chemla site; on another owner's site they point at that one. */
 export function ownHost(href?: string): string | undefined {
   return href?.replace('https://jo-chemla.github.io', pagesHost);

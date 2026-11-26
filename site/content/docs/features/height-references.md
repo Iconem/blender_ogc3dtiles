@@ -116,7 +116,7 @@ have both streaming with the overlap in view, and press **Match Colors**. *Match
 picker: its eyedropper takes any tile of the reference in the 3D view, and the list holds the root Empty of
 each streaming tileset (and their tiles). The field then shows the root Empty of the tileset picked.
 
-![The boxes of a tileset: Properties, Raster overlays, Markers and Clipping folded or unticked, Color correction open with gamma and gain per channel and Match to set to the root Empty of Google](/img/panel_boxes_match_to.png)
+![The boxes of a tileset: Properties, Clipping and Raster overlays folded or unticked, Color correction open with gamma and gain per channel and Match to set to the root Empty of Google](/img/panel_boxes_match_to.png)
 
 The reference is read as it is drawn: a terrain with raster overlays gives the colors of its imagery, and
 a reference with its own color correction gives its corrected colors. Terrain blending hides nothing from

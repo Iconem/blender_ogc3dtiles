@@ -5,7 +5,8 @@ import './global.css';
 
 export const metadata: Metadata = {
   title: { default: appName, template: `%s — ${appName}` },
-  description: 'Stream 3D Tiles into Blender: user guide, features and developer notes.',
+  description: 'Blender add-on that streams OGC 3D Tiles (Google Photorealistic 3D Tiles, Cesium ion, point clouds, Gaussian splats): user guide, features and developer notes.',
+  metadataBase: new URL('https://iconem.github.io'),
 };
 
 export default function Layout({ children }: { children: React.ReactNode }) {

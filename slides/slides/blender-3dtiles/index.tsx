@@ -821,7 +821,7 @@ const P24bEntry: Page = () => (
           </Bullets>
         </>
       }
-      right={<Shot src={entryBoxes} width={452} height={478} caption="The Tilesets panel: each box has a checkbox, an icon, and folds" />}
+      right={<Shot src={entryBoxes} width={452} height={438} caption="The Tilesets panel: each box has a checkbox, an icon, and folds" />}
     />
   </Frame>
 );
@@ -829,14 +829,14 @@ const P24bEntry: Page = () => (
 const P24cSetIn: Page = () => (
   <Frame eyebrow="A dataset in its terrain" title="Three clicks from as loaded to set in the ground">
     <div style={{ display: 'flex', gap: 24 }}>
-      <Shot src={matchBefore} width={544} height={360} caption="As loaded: a photogrammetry mesh of St Peter's, 23 m off Google's ground and warmer" />
+      <Shot src={matchBefore} width={544} height={360} caption="As loaded: a photogrammetry mesh of St Peter's, 24 m off Google's ground and warmer" />
       <Shot src={matchAfter} width={544} height={360} caption="Match Height to Terrain, then Match Colors onto Google" />
       <Shot src={blendGiza} width={544} height={360} caption="Terrain blending: Google is transparent under the mesh, and the border fades over 12 m" />
     </div>
     <div style={{ marginTop: 20 }}>
       <Bullets size={23}>
-        <Li k="Match Height to Terrain">compares the lowest heights of both over the ground they share, and moves the tileset's Empty by the median: +23 m here.</Li>
-        <Li k="Match Colors">reads both from above where they overlap, 3,827 ground cells here, and fits a gain and a gamma per channel.</Li>
+        <Li k="Match Height to Terrain">compares the lowest heights of both over the ground they share, and moves the tileset's Empty by the median: +24 m here.</Li>
+        <Li k="Match Colors">reads both from above where they overlap, 5,235 ground cells here, and fits a gain and a gamma per channel.</Li>
         <Li k="Terrain blending">a coverage raster of the dataset's tiles, read by the terrain's material. Any globe, terrain layer, Google or Bing 3D Tiles is the background.</Li>
       </Bullets>
     </div>

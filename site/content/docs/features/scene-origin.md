@@ -10,8 +10,7 @@ the east, Y to the north, Z up, in metres.
 | Mode | The origin is |
 |---|---|
 | **Auto** | The centre of the first tileset of the list that is ticked, visible (its eye in the list) and has a place. A tileset further down, a hidden one and a global one (Google, a terrain layer, the bare globe) wait up to 10 s for those before them to say where they are. A later Start keeps it when the new tileset is within *Reuse within* km of it (10 km by default); otherwise the scene is re-centred. |
-| **Keep current** | Never moved once set. |
-| **Custom** | The latitude, longitude and height you type. |
+| **Custom** | The latitude, longitude and height you type. The fields hold the current origin, so switching from Auto keeps it where it is. |
 | **Search place** | A place found by name. |
 | **Dataset** | The centre of a dataset of a [tileset of tilesets](/features/several-tilesets#a-tileset-of-tilesets), picked by name. |
 

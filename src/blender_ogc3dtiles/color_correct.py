@@ -5,8 +5,9 @@ in every tile material between the tile's color (its texture, or the point color
 
     color → ^ Gamma (per channel) → × Gain (per channel) × 2^Exposure → Saturation → Contrast
 
-The numbers are nodes of that group: moving a slider recompiles nothing. It sits before the metadata
-colors (*Color tiles by*), which are not corrected.
+The numbers are custom properties of the scene, read by Attribute nodes of that group (shader_params): a
+slider touches no node tree. (As nodes of the group, each slider step re-evaluated every tile material of
+the tileset.) It sits before the metadata colors (*Color tiles by*), which are not corrected.
 
 *Match Colors* fills Gain and Gamma from another tileset: both are sampled where they overlap, from above,
 one mean color per ground cell each (color_match fits the numbers). The samples are the raw colors of the
@@ -23,6 +24,7 @@ import numpy as np
 
 from . import blend_raster as br
 from . import color_match as cm
+from . import shader_params as sp
 
 NODE = "OGC3D Color"
 MARK = "ogc3d_color"
@@ -42,68 +44,54 @@ def group_name(item) -> str:
     return f"{NODE} {item.uid[:8]}"
 
 
-def _value(ng, name, v):
-    n = ng.nodes.get(name)
-    if n is None:
-        n = ng.nodes.new("ShaderNodeValue")
-        n.name = n.label = name
-    n.outputs[0].default_value = float(v)
-    return n
-
-
-def _triple(ng, name, v):
-    n = ng.nodes.get(name)
-    if n is None:
-        n = ng.nodes.new("ShaderNodeCombineXYZ")
-        n.name = n.label = name
-    for i in range(3):
-        n.inputs[i].default_value = float(v[i])
-    return n
+def _param(item, name) -> str:
+    return f"color {item.uid[:8]} {name}"
 
 
 def ensure_group(item):
     name = group_name(item)
     ng = bpy.data.node_groups.get(name)
-    if ng is not None and ng.nodes.get("Contrast") is not None:
+    if ng is not None and sp.is_param(ng.nodes.get("Contrast")):
         return ng
     ng = ng or bpy.data.node_groups.new(name, "ShaderNodeTree")
-    ng.nodes.clear()
-    ng.interface.clear()
-    ng.interface.new_socket("Color", in_out="INPUT", socket_type="NodeSocketColor")
-    ng.interface.new_socket("Color", in_out="OUTPUT", socket_type="NodeSocketColor")
+    ng.nodes.clear()                                 # an older group (numbers in nodes) is made again; its
+    have = {(it.name, it.in_out) for it in ng.interface.items_tree if hasattr(it, "in_out")}
+    for in_out in ("INPUT", "OUTPUT"):               # sockets stay, so the tile materials keep their links
+        if ("Color", in_out) not in have:
+            ng.interface.new_socket("Color", in_out=in_out, socket_type="NodeSocketColor")
     N, L = ng.nodes.new, ng.links.new
+
+    def math_(op, a, b=None, value=None):
+        n = N("ShaderNodeMath")
+        n.operation = op
+        L(a, n.inputs[0])
+        if b is not None:
+            L(b, n.inputs[1])
+        if value is not None:
+            n.inputs[1].default_value = value
+        return n.outputs[0]
+
+    def number(key):                                 # stored as its offset from 1: a missing property changes nothing
+        return math_("ADD", sp.socket(ng, key, _param(item, key)), value=1.0)
+
     gin, gout = N("NodeGroupInput"), N("NodeGroupOutput")
-    gamma, gain = _triple(ng, "Gamma", (1, 1, 1)), _triple(ng, "Gain", (1, 1, 1))
     sep_c, sep_gamma, sep_gain = N("ShaderNodeSeparateColor"), N("ShaderNodeSeparateXYZ"), N("ShaderNodeSeparateXYZ")
     L(gin.outputs[0], sep_c.inputs[0])
-    L(gamma.outputs[0], sep_gamma.inputs[0])
-    L(gain.outputs[0], sep_gain.inputs[0])
-    exposure = _value(ng, "Exposure Gain", 1.0)
+    L(sp.socket(ng, "Gamma", _param(item, "Gamma"), vector=True), sep_gamma.inputs[0])
+    L(sp.socket(ng, "Gain", _param(item, "Gain"), vector=True), sep_gain.inputs[0])
+    exposure = number("Exposure Gain")
     comb = N("ShaderNodeCombineColor")
     for i in range(3):
-        pos = N("ShaderNodeMath")                    # a negative color has no power
-        pos.operation = "MAXIMUM"
-        pos.inputs[1].default_value = 0.0
-        L(sep_c.outputs[i], pos.inputs[0])
-        pw = N("ShaderNodeMath")
-        pw.operation = "POWER"
-        L(pos.outputs[0], pw.inputs[0])
-        L(sep_gamma.outputs[i], pw.inputs[1])
-        mul = N("ShaderNodeMath")
-        mul.operation = "MULTIPLY"
-        L(pw.outputs[0], mul.inputs[0])
-        L(sep_gain.outputs[i], mul.inputs[1])
-        ex = N("ShaderNodeMath")
-        ex.operation = "MULTIPLY"
-        L(mul.outputs[0], ex.inputs[0])
-        L(exposure.outputs[0], ex.inputs[1])
-        L(ex.outputs[0], comb.inputs[i])
+        pos = math_("MAXIMUM", sep_c.outputs[i], value=0.0)      # a negative color has no power
+        pw = math_("POWER", pos, math_("ADD", sep_gamma.outputs[i], value=1.0))
+        mul = math_("MULTIPLY", pw, math_("ADD", sep_gain.outputs[i], value=1.0))
+        L(math_("MULTIPLY", mul, exposure), comb.inputs[i])
     hsv = N("ShaderNodeHueSaturation")
     L(comb.outputs[0], hsv.inputs["Color"])
-    L(_value(ng, "Saturation", 1.0).outputs[0], hsv.inputs["Saturation"])
+    L(number("Saturation"), hsv.inputs["Saturation"])
     bc = N("ShaderNodeBrightContrast")
     L(hsv.outputs[0], bc.inputs["Color"])
-    L(_value(ng, "Contrast", 0.0).outputs[0], bc.inputs["Contrast"])
+    L(sp.socket(ng, "Contrast", _param(item, "Contrast")), bc.inputs["Contrast"])
     L(bc.outputs[0], gout.inputs[0])
     from .node_layout import arrange
     arrange(ng)
@@ -112,14 +100,12 @@ def ensure_group(item):
 
 
 def set_params(item) -> None:
-    ng = bpy.data.node_groups.get(group_name(item))
-    if ng is None or ng.nodes.get("Contrast") is None:
-        return
-    _triple(ng, "Gamma", item.color_gamma)
-    _triple(ng, "Gain", item.color_gain)
-    _value(ng, "Exposure Gain", 2.0 ** item.color_exposure)
-    _value(ng, "Saturation", item.color_saturation)
-    _value(ng, "Contrast", item.color_contrast)
+    """The tileset's numbers, as scene properties its group reads (live, no node is touched)."""
+    sp.write({_param(item, "Gamma"): [v - 1.0 for v in item.color_gamma],
+              _param(item, "Gain"): [v - 1.0 for v in item.color_gain],
+              _param(item, "Exposure Gain"): 2.0 ** item.color_exposure - 1.0,
+              _param(item, "Saturation"): item.color_saturation - 1.0,
+              _param(item, "Contrast"): item.color_contrast})
 
 
 # ── tile materials ───────────────────────────────────────────────────────────

@@ -8,6 +8,12 @@ main branch and not in a release zip yet.
 
 ## Unreleased
 
+- **Sliders of Terrain blending and Color correction no longer freeze the viewport.** Their numbers
+  were held in nodes of a shared group, and Blender looks at every material using a group again when
+  one of its nodes changes: with 1,000 tile materials, one slider step froze the viewport for 3 to 4 s
+  (Blender 5.3, measured), and so did each update of the blend coverage while tiles streamed in. The
+  numbers are now custom properties of the scene (`ogc3d_...`) read by Attribute nodes: 0.05 s.
+  Ticking a box on a thousand tiles already loaded still takes a few seconds, once.
 - **Terrain blending reaches every tile at once.** Ticking the box, or editing one of its settings, now puts
   the blend in all the tiles shown in one go. It was left to the streaming tick, a few tiles at a time: with
   a thousand Google tiles on a scene at rest, 369 had it after 25 s, and Google stayed in front of the

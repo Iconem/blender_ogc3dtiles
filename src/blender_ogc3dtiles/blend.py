@@ -18,7 +18,9 @@ frame of an Empty placed at the datasets (east, north, up there) that rides the 
 One coverage for the scene: every blended terrain reads the same one.
 
 Both fades are one Mix Shader with a Transparent BSDF, behind the clipping mixes, driven by the shared
-group ``OGC3D Blend``. Its numbers are Value nodes: moving a slider recompiles nothing.
+group ``OGC3D Blend``. Its numbers are custom properties of the scene, read by Attribute nodes
+(shader_params): a slider, or a coverage made again, touches no node tree. (As Value nodes of the group,
+each write re-evaluated every tile material: seconds of frozen viewport with a thousand tiles.)
 """
 from __future__ import annotations
 
@@ -29,6 +31,7 @@ import bpy
 import numpy as np
 
 from . import blend_raster as br
+from . import shader_params as sp
 
 PREF = "beta_terrain_blend"
 FRAME = "OGC3D Blend Frame"
@@ -121,24 +124,31 @@ def roles(props, streams) -> dict:
 
 
 # ── shader ───────────────────────────────────────────────────────────────────
-def _value(ng, name, v):
-    n = ng.nodes.get(name)
-    if n is None:
-        n = ng.nodes.new("ShaderNodeValue")
-        n.name = n.label = name
-    n.outputs[0].default_value = float(v)
-    return n
+PARAM = "blend "             # scene properties: ogc3d_blend_<name>
+# written when the group is made. A scene without the properties reads 0 everywhere: nothing covered, no
+# fade, the tiles whole
+DEFAULTS = {"Range": 0.0, "Low Range": 1.0, "Low Min": 0.0, "Below Margin": 2.0, "Keep Below": 1.0,
+            "Terrain Inset": 10.0, "Terrain Fade": 10.0, "Dataset Fade": 20.0,
+            "Place Scale": (1.0, 1.0, 1.0), "Place Location": (0.0, 0.0, 0.0)}
+
+
+def _write(values, only_missing=False) -> bool:
+    return sp.write({PARAM + k: v for k, v in values.items()}, only_missing=only_missing)
 
 
 def ensure_group():
     ng = bpy.data.node_groups.get(GROUP)
-    if ng is not None and ng.nodes.get("Low Range") is not None:
+    if ng is not None and sp.is_param(ng.nodes.get("Low Range")) and sp.is_param(ng.nodes.get("Place Scale")):
         return ng
     ng = ng or bpy.data.node_groups.new(GROUP, "ShaderNodeTree")
-    ng.nodes.clear()
-    ng.interface.clear()
-    for name in OUTPUTS.values():
-        ng.interface.new_socket(name, in_out="OUTPUT", socket_type="NodeSocketFloat")
+    ng.nodes.clear()                                 # an older group (numbers in Value nodes) is made again; its
+    have = {it.name for it in ng.interface.items_tree if getattr(it, "in_out", "") == "OUTPUT"}
+    for name in OUTPUTS.values():                    # outputs stay, so the tile materials keep their links
+        if name not in have:
+            ng.interface.new_socket(name, in_out="OUTPUT", socket_type="NodeSocketFloat")
+
+    def _value(ng, name, _default=None):
+        return sp.socket(ng, name, PARAM + name)
     N, L = ng.nodes.new, ng.links.new
 
     def math_(op, a=None, b=None, value=None):
@@ -162,30 +172,32 @@ def ensure_group():
     tex.interpolation = "Linear"
     tex.extension = "CLIP"
     L(co.outputs["Object"], mp.inputs["Vector"])
+    L(sp.socket(ng, "Place Scale", PARAM + "Place Scale", vector=True), mp.inputs["Scale"])
+    L(sp.socket(ng, "Place Location", PARAM + "Place Location", vector=True), mp.inputs["Location"])
     L(mp.outputs[0], tex.inputs["Vector"])
     rng = _value(ng, "Range", 1.0)                   # the image holds 0..1: metres inside / Range
     sep = N("ShaderNodeSeparateColor")
     L(tex.outputs["Color"], sep.inputs[0])
-    inside = math_("MULTIPLY", sep.outputs[0], rng.outputs[0])
+    inside = math_("MULTIPLY", sep.outputs[0], rng)
     # green: the datasets' lowest height in the cell, 0..1 over Low Min .. Low Min + Low Range
-    low = math_("ADD", math_("MULTIPLY", sep.outputs[1], _value(ng, "Low Range", 1.0).outputs[0]),
-                _value(ng, "Low Min", 0.0).outputs[0])
+    low = math_("ADD", math_("MULTIPLY", sep.outputs[1], _value(ng, "Low Range", 1.0)),
+                _value(ng, "Low Min", 0.0))
     xyz = N("ShaderNodeSeparateXYZ")
     L(co.outputs["Object"], xyz.inputs[0])
     under = N("ShaderNodeMapRange")                  # 1 where the surface is Margin under the datasets
     L(math_("SUBTRACT", low, xyz.outputs["Z"]), under.inputs["Value"])
     margin = _value(ng, "Below Margin", 2.0)
-    L(margin.outputs[0], under.inputs["From Min"])
-    L(math_("ADD", margin.outputs[0], value=1.0), under.inputs["From Max"])
-    below = math_("MULTIPLY", under.outputs[0], _value(ng, "Keep Below", 1.0).outputs[0])
+    L(margin, under.inputs["From Min"])
+    L(math_("ADD", margin, value=1.0), under.inputs["From Max"])
+    below = math_("MULTIPLY", under.outputs[0], _value(ng, "Keep Below", 1.0))
     inset, t_fade, d_fade = (_value(ng, k, v) for k, v in (("Terrain Inset", 10.0), ("Terrain Fade", 10.0),
                                                            ("Dataset Fade", 20.0)))
     # terrain: all there up to Inset metres inside the footprint, gone Fade metres further
-    t_to = math_("ADD", inset.outputs[0], math_("MAXIMUM", t_fade.outputs[0], value=0.01))
+    t_to = math_("ADD", inset, math_("MAXIMUM", t_fade, value=0.01))
     mr = N("ShaderNodeMapRange")
     mr.interpolation_type = "SMOOTHSTEP"
     L(inside, mr.inputs["Value"])
-    L(inset.outputs[0], mr.inputs["From Min"])
+    L(inset, mr.inputs["From Min"])
     L(t_to, mr.inputs["From Max"])
     mr.inputs["To Min"].default_value, mr.inputs["To Max"].default_value = 1.0, 0.0
     L(math_("MAXIMUM", mr.outputs[0], below), out.inputs[OUTPUTS["terrain"]])
@@ -194,24 +206,20 @@ def ensure_group():
     md.interpolation_type = "SMOOTHSTEP"
     L(inside, md.inputs["Value"])
     md.inputs["From Min"].default_value = 0.0
-    L(math_("MAXIMUM", d_fade.outputs[0], value=0.01), md.inputs["From Max"])
-    off = math_("LESS_THAN", d_fade.outputs[0], value=0.005)
+    L(math_("MAXIMUM", d_fade, value=0.01), md.inputs["From Max"])
+    off = math_("LESS_THAN", d_fade, value=0.005)
     L(math_("MAXIMUM", md.outputs[0], off), out.inputs[OUTPUTS["dataset"]])
     from .node_layout import arrange
     arrange(ng)
+    _write(DEFAULTS, only_missing=True)
     return ng
 
 
 def set_params(props) -> None:
-    """The sliders, written into the shared group (live)."""
-    ng = bpy.data.node_groups.get(GROUP)
-    if ng is None:
-        return
-    _value(ng, "Terrain Inset", props.blend_terrain_inset)
-    _value(ng, "Terrain Fade", props.blend_terrain_fade)
-    _value(ng, "Dataset Fade", props.blend_dataset_fade)
-    _value(ng, "Keep Below", 1.0 if props.blend_keep_below else 0.0)
-    _value(ng, "Below Margin", props.blend_below_margin)
+    """The sliders, as scene properties the shared group reads (live, no node is touched)."""
+    _write({"Terrain Inset": props.blend_terrain_inset, "Terrain Fade": props.blend_terrain_fade,
+            "Dataset Fade": props.blend_dataset_fade, "Keep Below": 1.0 if props.blend_keep_below else 0.0,
+            "Below Margin": props.blend_below_margin})
 
 
 def _remove_nodes(nt) -> bool:
@@ -424,13 +432,10 @@ def _upload(dist, low, x0, y0, c, max_m) -> None:
     img.update()
     img.pack()                                       # kept in the .blend: a saved scene keeps its fades
     ng = ensure_group()
-    ng.nodes["Coverage"].image = img
-    mp = ng.nodes["Place"]
-    mp.inputs["Scale"].default_value = (1.0 / (w * c), 1.0 / (h * c), 1.0)
-    mp.inputs["Location"].default_value = (-x0 / (w * c), -y0 / (h * c), 0.0)
-    _value(ng, "Range", max_m)
-    _value(ng, "Low Min", z0)
-    _value(ng, "Low Range", max(z1 - z0, 1e-3))
+    if ng.nodes["Coverage"].image != img:            # written only when it changes: a write to a node of the
+        ng.nodes["Coverage"].image = img             # group re-evaluates every tile material
+    _write({"Place Scale": (1.0 / (w * c), 1.0 / (h * c), 1.0), "Place Location": (-x0 / (w * c), -y0 / (h * c), 0.0),
+            "Range": max_m, "Low Min": z0, "Low Range": max(z1 - z0, 1e-3)})
 
 
 def _clear_coverage() -> bool:
@@ -439,9 +444,7 @@ def _clear_coverage() -> bool:
     dataset may be on the other side of the planet."""
     if _state.get("empty"):
         return False
-    ng = bpy.data.node_groups.get(GROUP)
-    if ng is not None:
-        _value(ng, "Range", 0.0)                     # every cell reads 0 m inside: outside every footprint
+    _write({"Range": 0.0})                           # every cell reads 0 m inside: outside every footprint
     _state.update(cells={}, boxes={}, cell=None, sig=None, frame_ecef=None, frame_sig=None, info="", empty=True)
     return True
 

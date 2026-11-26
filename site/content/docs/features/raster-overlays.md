@@ -60,7 +60,7 @@ Both cover the whole world, so give the scene an origin first: *Custom*, or *Sea
 ### A terrain server on your own machine
 
 Any server that answers with a `layer.json` works, one on your own machine included. Here the Terrain
-service of the 3D Tiled local middleware serves the Mapterhorn elevation data as quantized-mesh on
+service of the [3D Tiled](https://github.com/Iconem/3dtiled-to-3dtiles/releases) local middleware serves the Mapterhorn elevation data as quantized-mesh on
 `http://127.0.0.1:3400`. The entry is a *Quantized-mesh terrain*, and two *URL template* overlays from the
 same service are draped on it: a sky-view factor shading at 62% opacity over a hypsometric tint. The scene
 origin was put on the Matterhorn with *Search place*.

@@ -802,7 +802,8 @@ const P24aTerrain: Page = () => (
       left={
         <Bullets size={25}>
           <Li k="Quantized-mesh">an entry type of the list: the layer.json of a terrain server. Cesium World Terrain comes through Cesium ion.</Li>
-          <Li k="Local service">here a terrain service on 127.0.0.1 serves the Mapterhorn elevation data as quantized-mesh.</Li>
+          <Li k="Local service">here the terrain service of 3D Tiled, on 127.0.0.1, serves the Mapterhorn elevation data as quantized-mesh.</Li>
+          <Li k="3D Tiled"><A href="github.com/Iconem/3dtiled-to-3dtiles/releases" />: the desktop app and its releases.</Li>
           <Li k="Shaded by overlays">two URL template overlays from the same service: a sky-view factor shading over a hypsometric tint.</Li>
           <Li k="Where">Scene Origin, Search place: the Matterhorn, found by name.</Li>
           <Li k="Then">a scan on top, set in it with Match Height to Terrain and Terrain blending.</Li>

@@ -455,8 +455,9 @@ def tileset_of(obj):
 
 
 def _color_ref_poll(self, obj):
-    uid, _root = tileset_of(obj)
-    return uid is not None and uid != self.uid
+    """Only the root Empties of the other streaming tilesets: one row per tileset, not one per tile."""
+    uid, root = tileset_of(obj)
+    return uid is not None and uid != self.uid and root == obj
 
 
 def _on_color_ref_obj(self, context):
@@ -639,8 +640,8 @@ class TilesetItem(PropertyGroup):
     color_ref_obj: bpy.props.PointerProperty(
         name="Match to", type=bpy.types.Object, poll=_color_ref_poll, update=_on_color_ref_obj,
         description="The tileset whose colors Match Colors brings this one onto: Google Photorealistic "
-                    "3D Tiles under a photogrammetry mesh, for one. Pick one of its tiles in the 3D view with "
-                    "the eyedropper, or its root Empty in the list or the Outliner. It has to be streaming")
+                    "3D Tiles under a photogrammetry mesh, for one. The list holds the root Empty of every other "
+                    "tileset that is streaming")
     clip_geometry: BoolProperty(
         name="Slower: Also cut in solid view/exports",
         description="Also delete the mesh faces that are entirely cut (Geometry Nodes), so "
@@ -1025,7 +1026,7 @@ class TilesSceneProps(PropertyGroup):
         description="Terrain blending: the terrain is kept when it is at least this far under the lowest point "
                     "of the dataset above it. Raise it when terrain still shows through the dataset's ground",
         default=2.0, min=0.0, soft_max=50.0, unit="LENGTH", update=_on_blend)
-    show_markers: BoolProperty(name="Show", description="Unfold the markers settings", default=True)
+    show_markers: BoolProperty(name="Show", description="Unfold the markers settings", default=False)
     dataset_marker_px: FloatProperty(
         name="Marker size px",
         description="Every dataset Empty also gets a white dot of this radius in pixels in the 3D viewport, whatever the "

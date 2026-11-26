@@ -112,9 +112,8 @@ it never shows uncorrected.
 ### Match Colors
 
 Pick the reference in **Match to** (Google Photorealistic 3D Tiles under a photogrammetry mesh, for one),
-have both streaming with the overlap in view, and press **Match Colors**. *Match to* is Blender's object
-picker: its eyedropper takes any tile of the reference in the 3D view, and the list holds the root Empty of
-each streaming tileset (and their tiles). The field then shows the root Empty of the tileset picked.
+have both streaming with the overlap in view, and press **Match Colors**. *Match to* lists the root Empty of
+each other tileset that is streaming, one row per tileset.
 
 ![The boxes of a tileset: Properties, Clipping and Raster overlays folded or unticked, Color correction open with gamma and gain per channel and Match to set to the root Empty of Google](/img/panel_boxes_match_to.png)
 

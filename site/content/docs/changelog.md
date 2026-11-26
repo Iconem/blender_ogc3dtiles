@@ -21,6 +21,8 @@ main branch and not in a release zip yet.
   another scene or send to someone. The text holds keys and tokens as they are.
 - **A click on the name of a box folds it,** as on a Blender panel header: Properties, Clipping, Raster
   overlays, Color correction, Markers, Terrain blending. The arrow still does too.
+- **Match to lists tilesets only:** the root Empty of each other streaming tileset, no longer every tile.
+- **Markers stays folded** until you unfold it, ticked or not.
 - **Docs site on its own domain:** blender-3dtiles.iconem.com.
 - **Docs:** a download button on the home and Installation pages, a sitemap, and a canonical address and
   social tags on every page.

@@ -12,7 +12,7 @@ VERSION = 1
 SCENE_PREFIXES = ("origin_", "blend_", "dataset_")
 SCENE_NAMES = ("clip_materials", "max_sse")
 SKIP = {"rna_type", "uid", "dataset_offsets", "origin_text", "origin_text_status", "origin_dataset"}
-MESH_MAX_VERTS = 5000        # a clip object comes along with its mesh, up to this size
+MESH_MAX_VERTS = 100         # a clip object comes along with its mesh, up to this size
 
 
 def _object(o) -> dict:

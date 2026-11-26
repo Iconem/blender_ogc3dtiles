@@ -11,7 +11,7 @@ on 4.5 LTS, 5.1 and 5.2 LTS. Gaussian splats need 5.3.
 [Download the latest release](https://github.com/Iconem/blender_ogc3dtiles/releases/latest)
 
 1. Download `ogc_3dtiles_streaming-<version>.zip` from the
-   [Releases](https://github.com/jo-chemla/blender_ogc3dtiles/releases) page.
+   [Releases](https://github.com/Iconem/blender_ogc3dtiles/releases) page.
 2. In Blender: Preferences, Get Extensions, the drop-down arrow at the top right, *Install from Disk*.
 3. Open the sidebar of the 3D viewport (**N**): there is a **3D Tiles** tab.
 

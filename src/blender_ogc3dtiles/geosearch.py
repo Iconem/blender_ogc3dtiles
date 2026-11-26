@@ -26,7 +26,7 @@ import numpy as np
 PHOTON_URL = "https://photon.komoot.io/api/"
 TERRARIUM_URL = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"
 GEOID_URL = "https://raw.githubusercontent.com/CesiumGS/cesium-native/v0.59.0/data/WW15MGH.DAC"
-USER_AGENT = "blender_ogc3dtiles (place search; https://github.com/jo-chemla/blender_ogc3dtiles)"
+USER_AGENT = "blender_ogc3dtiles (place search; https://github.com/Iconem/blender_ogc3dtiles)"
 
 EGM96_ROWS, EGM96_COLS = 721, 1440
 EGM96_BYTES = EGM96_ROWS * EGM96_COLS * 2

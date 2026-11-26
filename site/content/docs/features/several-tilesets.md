@@ -45,7 +45,7 @@ Two buttons beside the list, under the bookmark:
   clips, color correction and blend settings, and the scene origin.
 - **Paste Setup** adds the tilesets of such a text to the list, in this scene or on another machine. The
   origin and the shared settings come along when the list is empty. A clip object the scene does not have is
-  made again from the copied mesh (up to 5,000 vertices).
+  made again from the copied mesh (up to 100 vertices; a larger one is passed by name only).
 
 The text holds the URLs as they are, keys and tokens included: send it as you would send the library file.
 

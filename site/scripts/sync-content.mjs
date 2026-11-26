@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 
 const site = join(dirname(fileURLToPath(import.meta.url)), '..');
 const repo = join(site, '..');
-const GH = 'https://github.com/jo-chemla/blender_ogc3dtiles/blob/main';
+const GH = 'https://github.com/Iconem/blender_ogc3dtiles/blob/main';
 
 // note file -> [slug, title when the file's first heading is not wanted as is]
 const NOTES = [

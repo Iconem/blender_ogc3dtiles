@@ -9,7 +9,7 @@ import timemaps from "../public/timemaps.json"
 
 const CARD = 96
 const BOTTOM = { x: 760, bottom: 70 }
-const FOOT = "blender ogc 3d tiles · demo · jo-chemla/blender_ogc3dtiles"
+const FOOT = "blender ogc 3d tiles · demo · Iconem/blender_ogc3dtiles"
 const MIN_CAPTION = 2.0
 
 type Scene = { eyebrow: string; title: React.ReactNode; subtitle: string; take: Take }

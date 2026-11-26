@@ -21,7 +21,7 @@ description: "Done and planned"
 - [x] Beta: paint or outline phases with Grease Pencil or Annotate strokes on the surface
 - [ ] Beta: write the class grid as an octree pyramid
 - [ ] Beta: try [OpenVDB's `meshToVolume`](https://openvdb.org/documentation/doxygen/MeshToVolume_8h.html) and [trimesh](https://github.com/mikedh/trimesh) as voxelizers
-- [ ] Beta: burn classes into point clouds with PDAL ([draft](https://github.com/jo-chemla/blender_ogc3dtiles/blob/main/scripts/pdal_burn_classes.py))
+- [ ] Beta: burn classes into point clouds with PDAL ([draft](https://github.com/Iconem/blender_ogc3dtiles/blob/main/scripts/pdal_burn_classes.py))
 - [x] Raster overlays on point clouds
 - [x] Intensity and other number columns on point clouds, with *Custom range* for the ramp
 - [x] Intensity and classification from 3dtiled's live COPC tiles (`&attributes=intensity,classification`)

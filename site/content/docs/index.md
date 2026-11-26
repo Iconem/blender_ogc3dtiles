@@ -70,4 +70,4 @@ What works today:
 ## License
 
 
-[MIT](https://github.com/jo-chemla/blender_ogc3dtiles/blob/main/LICENSE).
+[MIT](https://github.com/Iconem/blender_ogc3dtiles/blob/main/LICENSE).

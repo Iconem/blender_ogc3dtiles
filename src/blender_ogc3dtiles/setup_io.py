@@ -107,11 +107,49 @@ def _scene_setting(name: str) -> bool:
     return name.startswith(SCENE_PREFIXES) or name in SCENE_NAMES
 
 
-def to_text(props) -> str:
+def to_text(props, view=None) -> str:
+    """``view``: the 3D viewport's view (view_dict), to come along with the scene origin."""
     data = {"format": FORMAT, "version": VERSION,
             "scene": dump(props, only=_scene_setting),
             "tilesets": [dump(it) for it in props.tilesets]}
+    if view:
+        data["view"] = view
     return json.dumps(data, indent=1)
+
+
+def view_dict(rv3d, space=None) -> dict:
+    """Where a 3D viewport looks from, in scene coordinates: it means the same place wherever the scene
+    origin is the same."""
+    d = {"location": [float(v) for v in rv3d.view_location],
+         "rotation": [float(v) for v in rv3d.view_rotation],
+         "distance": float(rv3d.view_distance),
+         "perspective": "ORTHO" if rv3d.view_perspective == "ORTHO" else "PERSP"}
+    if space is not None:
+        d["lens"] = float(space.lens)
+    return d
+
+
+def apply_view(view: dict, rv3d, space=None) -> bool:
+    try:
+        from mathutils import Quaternion, Vector
+        rv3d.view_perspective = "ORTHO" if view.get("perspective") == "ORTHO" else "PERSP"
+        rv3d.view_location = Vector([float(v) for v in view["location"]][:3])
+        rv3d.view_rotation = Quaternion([float(v) for v in view["rotation"]][:4])
+        rv3d.view_distance = float(view["distance"])
+        if space is not None and view.get("lens"):
+            space.lens = float(view["lens"])
+        return True
+    except Exception:                                    # noqa: BLE001
+        return False
+
+
+def view_of(text: str):
+    """The view of a copied setup, or None."""
+    try:
+        v = json.loads(text).get("view")
+    except Exception:                                    # noqa: BLE001
+        return None
+    return v if isinstance(v, dict) else None
 
 
 def from_text(text: str, props, scene, with_scene: bool) -> tuple:

@@ -69,7 +69,7 @@ What works today:
 
 ## Credits
 
-Made by [Jonathan Chemla](https://github.com/jo-chemla), CTO of [Iconem](https://iconem.com/). The streaming
+Made by [Jonathan Chemla](https://github.com/jo-chemla), [Iconem](https://iconem.com/) CTO. The streaming
 engine is [cesium-native](https://github.com/CesiumGS/cesium-native), through
 [cesium-native-python](https://github.com/calebbuffa/cesium-native-python) by Caleb Buffa.
 

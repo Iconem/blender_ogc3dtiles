@@ -3,7 +3,7 @@
 **Documentation and slides**: [blender-3dtiles.iconem.com](https://blender-3dtiles.iconem.com/) ·
 **[Releases](../../releases)**
 
-Made by [Jonathan Chemla](https://github.com/jo-chemla), CTO of [Iconem](https://iconem.com/).
+Made by [Jonathan Chemla](https://github.com/jo-chemla), [Iconem](https://iconem.com/) CTO.
 
 ## Features
 

@@ -11,6 +11,14 @@ on 4.5 LTS, 5.1 and 5.2 LTS. Gaussian splats need 5.3.
 The releases are also a repository Blender can read, so Blender installs the add-on and offers each new
 version itself.
 
+**The quick way:** drag this link from the browser and drop it on a Blender window (4.2 or newer, online
+access allowed in Preferences > System > Network). Blender offers to add the repository and installs the
+add-on from it.
+
+[Drag me into Blender: OGC 3D Tiles Streaming](https://github.com/Iconem/blender_ogc3dtiles/releases/latest/download/ogc_3dtiles_streaming-0.6.10.zip?repository=https%3A%2F%2Fgithub.com%2FIconem%2Fblender_ogc3dtiles%2Freleases%2Flatest%2Fdownload%2Findex.json&blender_version_min=4.2.0)
+
+By hand, the same result:
+
 1. In Blender: Preferences, Get Extensions, the drop-down arrow at the top right, *Repositories*.
 2. Press **+**, *Add Remote Repository*, and paste this URL. Tick *Check for Updates on Startup*.
 

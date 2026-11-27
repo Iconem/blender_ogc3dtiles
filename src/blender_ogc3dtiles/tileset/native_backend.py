@@ -559,7 +559,16 @@ def _dataset_of(tile, cache):
     if hit is None:
         ok = all(not _flag(t.is_render_content) for t in chain[top + 1:])
         from ..dataset_empties import volume_centre
-        hit = cache[url] = (url, volume_centre(volume_shape(ext.bounding_volume))) if ok else False
+        centre = volume_centre(volume_shape(ext.bounding_volume)) if ok else None
+        if ok:
+            # Google's root holds no content either, and its first external files then pass for datasets.
+            # They are regions hundreds of kilometres wide, whose centre lies deep under the surface: a
+            # dataset has a place on the surface (blend.DATASET_CENTRE_M: under 70 km deep)
+            try:
+                ok = sum(float(c) ** 2 for c in list(centre)[:3]) ** 0.5 > 6.3e6
+            except Exception:                    # noqa: BLE001
+                ok = False
+        hit = cache[url] = (url, centre) if ok else False
     return hit or None
 
 

@@ -33,6 +33,18 @@ main branch and not in a release zip yet.
   now takes 13.5 ms to build instead of 19.9, and 19 % more tiles are built in the same time (714
   against 600 per 30 s). Tilesets without normals (Google) are unchanged; Blender 4.2 to 4.4 keep the old
   call.
+- **Tile materials from a template.** A textured tile starts from a copy of a finished material of its
+  tileset and only takes its own image: 7.0 ms per tile instead of 10.1 on the same walk, the materials
+  the same node for node. Off in Preferences > Developer.
+- **PNG textures no longer wait on Blender's main thread.** Blender takes 21 ms to read a 1024 px PNG at a
+  tile's first draw (a JPEG: 7 ms); such tiles are handed over as the pixels cesium-native decoded, read in
+  2 ms.
+- **Google Photorealistic 3D Tiles gets no dataset Empties** any more: its first external files passed for
+  the datasets of a tileset of tilesets (38 Empties over Rome).
+- **Copy Setup takes the viewport's view along**, and Paste Setup restores it with the origin when the list
+  is empty.
+- **A [Performance](/dev/performance) page** in the docs: where the time of a tile goes, what to change
+  when the viewport stutters, how long Blender takes to read a texture by format.
 - **Several tilesets share one build budget.** The build time per tick (*Imports per tick*) was given
   whole to each tileset, so two tilesets loading at once held Blender twice as long. The median
   streaming step went from 170 to 125 ms and the viewport from 120 to 147 redraws per 30 s on that walk.

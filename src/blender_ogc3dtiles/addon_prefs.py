@@ -194,6 +194,12 @@ class OGC3DTilesPreferences(AddonPreferences):
                     "(faster). Off = use the glTF importer, to compare or to work around a "
                     "tile the direct path gets wrong. Applies at the next Start",
         default=True)
+    material_templates: BoolProperty(
+        name="Tile materials from a template",
+        description="A textured mesh tile starts from a copy of the finished material of an earlier tile of "
+                    "its tileset, and only takes its own image (about 5 ms less per tile). Off = build and "
+                    "dress every material node by node, to compare or to work around a tile it gets wrong",
+        default=True)
     cesium_install_path: StringProperty(
         name="cesium-native-python source dir",
         description=(
@@ -298,6 +304,7 @@ class OGC3DTilesPreferences(AddonPreferences):
             return
         body.prop(self, "traversal_backend", text="Backend")
         body.prop(self, "direct_mesh")
+        body.prop(self, "material_templates")
         if wheel_install:
             body.prop(self, "cesium_wheel_repo", text="Wheel release repo")
             row = body.row(align=True)

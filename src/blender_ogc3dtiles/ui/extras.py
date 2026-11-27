@@ -606,19 +606,32 @@ def draw_entry_tools(layout, it) -> None:
         row.operator("ogc3dtiles.tileset_copy_cancel", text="", icon="X")
 
 
+def _view3d(context):
+    """(space, region_3d) of the 3D viewport the operator runs in, else of the first one on screen."""
+    sp = getattr(context, "space_data", None)
+    if sp is not None and sp.type == "VIEW_3D" and getattr(sp, "region_3d", None) is not None:
+        return sp, sp.region_3d
+    for a in (context.screen.areas if context.screen else ()):
+        if a.type == "VIEW_3D":
+            return a.spaces.active, a.spaces.active.region_3d
+    return None, None
+
+
 class OGC3D_OT_SetupCopy(Operator):
     bl_idname = "ogc3dtiles.setup_copy"
     bl_label = "Copy Setup"
     bl_description = ("Copy the whole list to the clipboard as JSON text: every tileset with its raster overlays, "
-                      "clips, color correction and blend settings, and the scene origin. Paste it in another "
+                      "clips, color correction and blend settings, the scene origin and the viewport's view. Paste it in another "
                       "scene or send it to someone. The text holds the URLs as they are, keys and tokens included")
     bl_options = {"REGISTER"}
 
     def execute(self, context):
         from .. import setup_io
         props = context.scene.ogc3dtiles
-        context.window_manager.clipboard = setup_io.to_text(props)
-        self.report({"INFO"}, f"{len(props.tilesets)} tilesets copied as JSON")
+        space, rv3d = _view3d(context)
+        view = setup_io.view_dict(rv3d, space) if rv3d is not None else None
+        context.window_manager.clipboard = setup_io.to_text(props, view)
+        self.report({"INFO"}, f"{len(props.tilesets)} tilesets copied as JSON" + (", with the view" if view else ""))
         return {"FINISHED"}
 
 
@@ -725,16 +738,22 @@ class OGC3D_OT_SetupPaste(Operator):
     def execute(self, context):
         from .. import setup_io
         props = context.scene.ogc3dtiles
+        text = context.window_manager.clipboard or ""
+        with_scene = not len(props.tilesets)
         try:
-            n, skipped = setup_io.from_text(context.window_manager.clipboard or "", props, context.scene,
-                                            with_scene=not len(props.tilesets))
+            n, skipped = setup_io.from_text(text, props, context.scene, with_scene=with_scene)
         except ValueError as e:
             self.report({"ERROR"}, f"Paste Setup: {e}")
             return {"CANCELLED"}
         if skipped:
             print("[3DTiles] Paste Setup, not read:", ", ".join(sorted(set(skipped))))
-        self.report({"INFO"}, f"{n} tilesets added" + (f", {len(set(skipped))} settings not read (see the console)"
-                                                       if skipped else ""))
+        viewed = False
+        if with_scene:                               # the view means that place only with the copied origin
+            view = setup_io.view_of(text)
+            space, rv3d = _view3d(context)
+            viewed = bool(view) and rv3d is not None and setup_io.apply_view(view, rv3d, space)
+        self.report({"INFO"}, f"{n} tilesets added" + (", view restored" if viewed else "")
+                    + (f", {len(set(skipped))} settings not read (see the console)" if skipped else ""))
         _redraw(context)
         return {"FINISHED"}
 

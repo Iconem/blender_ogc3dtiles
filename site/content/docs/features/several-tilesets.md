@@ -42,9 +42,9 @@ Ion, globe and terrain entries need the cesium-native backend.
 Two buttons beside the list, under the bookmark:
 
 - **Copy Setup** puts the whole list on the clipboard as JSON text: every tileset with its raster overlays,
-  clips, color correction and blend settings, and the scene origin.
+  clips, color correction and blend settings, the scene origin, and where the 3D viewport looks from.
 - **Paste Setup** adds the tilesets of such a text to the list, in this scene or on another machine. The
-  origin and the shared settings come along when the list is empty. A clip object the scene does not have is
+  origin, the shared settings and the view come along when the list is empty. A clip object the scene does not have is
   made again from the copied mesh (up to 100 vertices; a larger one is passed by name only).
 
 The text holds the URLs as they are, keys and tokens included: send it as you would send the library file.

@@ -1452,6 +1452,11 @@ def _teardown_stream(st, remove_objects: bool):
             pass
     st["backend"] = None
     from .. import dataset_empties
+    try:
+        from ..io import clear_templates
+        clear_templates()
+    except Exception:                                # noqa: BLE001
+        pass
     if remove_objects:
         root = bpy.data.objects.get(st.get("root_obj") or "")
         if root is not None:                         # clipping objects outlive the root
@@ -2102,6 +2107,13 @@ def _build_native_tile(scene, props, st, rt) -> bool:
         if info:
             from ..io import set_tile_info
             set_tile_info(r[0], info, scene)
+        try:                                         # before the overlays: they are the tile's own
+            from ..io import keep_templates
+            built = bpy.data.objects.get(r[0])
+            if built is not None and built.type == "MESH" and built.data is not None:
+                keep_templates(built.data.materials)
+        except Exception as e:                       # noqa: BLE001
+            print(f"[3DTiles] material template: {e}")
         waiting = st.get("pending_overlays", {}).pop(rt.key, None)
         if waiting:
             from .. import overlays as ovl

@@ -4,6 +4,7 @@
   "pages": [
     "setup-and-tests",
     "architecture",
+    "performance",
     "cesium-native",
     "extensions-platform",
     "roadmap",

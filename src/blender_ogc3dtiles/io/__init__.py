@@ -554,8 +554,110 @@ def _node_of_type(nt, type_):
     return next((n for n in nodes if getattr(n, "is_active_output", False)), nodes[0] if nodes else None)
 
 
-def _material_from_payload(mp: dict, img, key: str):
-    mat = bpy.data.materials.new(f"{mp.get('name') or 'mat'}_{abs(hash(key)) % 10_000_000}"[:60])
+# ── tile material templates ──────────────────────────────────────────────────
+# Building a tile's material and dressing it (clip mix, color group, blend mix) is a dozen node and link
+# calls from Python, 6 ms a tile; a copy of a finished one is 0.2 ms. The first textured tile of a tileset is
+# built the long way and a copy of its material is kept; the next ones start from that copy and only take
+# their own image. The hooks still run on them and find their nodes in place.
+MAT_TEMPLATES: dict = {}             # key -> name of the template material
+TEMPLATE_KEY = "ogc3d_template_key"  # on a tile material: the key it can be a template for
+TEMPLATE_MARK = "ogc3d_template"     # on a template only: its key
+TILE_TEX = "OGC3D Tile Texture"
+_toggles = {"t": 0.0, "sig": None}
+
+
+def _toggle_sig(scene):
+    """Every checkbox and mode of the panel, as one value: what the hooks decide from. Read at most 4 times
+    a second."""
+    import time
+    now = time.monotonic()
+    if _toggles["sig"] is None or now - _toggles["t"] > 0.25:
+        props = scene.ogc3dtiles
+        out = []
+        for pg in [props, *props.tilesets]:
+            for p in pg.bl_rna.properties:
+                if p.type in ("BOOLEAN", "ENUM") and p.identifier != "rna_type":
+                    try:
+                        v = getattr(pg, p.identifier)
+                    except Exception:               # noqa: BLE001
+                        continue
+                    out.append(tuple(sorted(v)) if isinstance(v, (set, frozenset)) else
+                               (tuple(v) if hasattr(v, "__len__") and not isinstance(v, str) else v))
+        from .. import blend
+        out.append((blend.enabled(), bool(addon_pref("material_templates", True))))
+        _toggles.update(t=now, sig=hash(tuple(out)))
+    return _toggles["sig"]
+
+
+def template_key(scene, root, mp: dict, img, payload: dict):
+    """The key of the template a plain textured mesh tile can start from, or None: points, splats, voxels,
+    tiles with metadata, and the display modes whose hooks are not known to leave a finished material alone
+    are built the long way."""
+    props = scene.ogc3dtiles
+    if img is None or root is None or not addon_pref("material_templates", True):
+        return None
+    if any(payload.get(k) for k in ("points", "voxel", "splats", "texels", "features", "vertex_columns")):
+        return None
+    if payload.get("colors") is not None:
+        return None
+    if (getattr(props, "read_metadata", False) or getattr(props, "meta_color", False)
+            or getattr(props, "xray", False) or getattr(props, "auto_relight", False)
+            or getattr(props, "shadeless", False) or getattr(props, "voxel_display", "") == "PROJECT"):
+        return None
+    return f"{root.name}|{_toggle_sig(scene)}|{int(bool(mp.get('double_sided', True)))}{int(bool(mp.get('unlit')))}"
+
+
+def _material_from_template(tkey: str, img, name: str):
+    tmpl = bpy.data.materials.get(MAT_TEMPLATES.get(tkey, ""))
+    if tmpl is None or tmpl.get(TEMPLATE_MARK) != tkey or tmpl.node_tree is None:
+        MAT_TEMPLATES.pop(tkey, None)
+        return None
+    mat = tmpl.copy()
+    tex = mat.node_tree.nodes.get(TILE_TEX) if mat.node_tree is not None else None
+    if tex is None:
+        bpy.data.materials.remove(mat)
+        MAT_TEMPLATES.pop(tkey, None)
+        return None
+    mat.name = name
+    del mat[TEMPLATE_MARK]
+    tex.image = img
+    return mat
+
+
+def keep_templates(mats) -> None:
+    """A tile was just built and dressed, overlays not on it yet: keep a copy of each of its materials that
+    can be a template and has none."""
+    for m in mats:
+        tkey = m.get(TEMPLATE_KEY) if m is not None else None
+        if not tkey or tkey in MAT_TEMPLATES or m.node_tree is None or m.node_tree.nodes.get(TILE_TEX) is None:
+            continue
+        if len(MAT_TEMPLATES) >= 24:                 # settings changed many times: start again
+            clear_templates()
+        tmpl = m.copy()
+        tmpl.name = "OGC3D Template"
+        tmpl[TEMPLATE_MARK] = tkey
+        tmpl.node_tree.nodes[TILE_TEX].image = None
+        MAT_TEMPLATES[tkey] = tmpl.name
+
+
+def clear_templates() -> None:
+    doomed = [m for m in (bpy.data.materials.get(n) for n in MAT_TEMPLATES.values())
+              if m is not None and m.get(TEMPLATE_MARK) and not m.users]
+    MAT_TEMPLATES.clear()
+    _toggles["sig"] = None
+    if doomed:
+        bpy.data.batch_remove(doomed)
+
+
+def _material_from_payload(mp: dict, img, key: str, tkey=None):
+    name = f"{mp.get('name') or 'mat'}_{abs(hash(key)) % 10_000_000}"[:60]
+    if tkey:
+        mat = _material_from_template(tkey, img, name)
+        if mat is not None:
+            return mat
+    mat = bpy.data.materials.new(name)
+    if tkey:
+        mat[TEMPLATE_KEY] = tkey
     mat.use_nodes = True
     mat.use_backface_culling = not mp.get("double_sided", True)
     nt = mat.node_tree
@@ -570,6 +672,7 @@ def _material_from_payload(mp: dict, img, key: str):
     bc = mp.get("base_color", (0.8, 0.8, 0.8, 1.0))
     if img is not None:
         tex = nt.nodes.new("ShaderNodeTexImage")
+        tex.name = TILE_TEX
         tex.image = img
         tex.location = (-400, 300)
         nt.links.new(tex.outputs["Color"], bsdf.inputs["Base Color"])
@@ -975,7 +1078,12 @@ def build_tile_from_payload(payload: dict, key: str, scene: bpy.types.Scene,
             flat = np.ascontiguousarray(ouv, dtype=np.float32).ravel()
             _fill(me, layer.name, "vector", flat, lambda layer=layer, flat=flat: layer.data.foreach_set("uv", flat))
     me.update(calc_edges=True)
-    me.validate(verbose=False)
+    # validate() walks the whole mesh, 0.9 ms on the average tile, to find what three array tests tell: an
+    # index out of range, a coordinate that is not a number, a triangle using a vertex twice
+    sound = n_f > 0 and bool(np.isfinite(V).all()) and int(F.min()) >= 0 and int(F.max()) < n_v and not bool(
+        ((F[:, 0] == F[:, 1]) | (F[:, 1] == F[:, 2]) | (F[:, 0] == F[:, 2])).any())
+    if not sound:
+        me.validate(verbose=False)
     nrm = payload.get("normals")
     if n_f and nrm is not None and len(nrm) == n_v:
         _set_vertex_normals(me, nrm)
@@ -1032,7 +1140,7 @@ def build_tile_from_payload(payload: dict, key: str, scene: bpy.types.Scene,
                 img = _image_from_payload(images[ii], key)
                 image_cache[ck] = img
                 data_names.append(img.name)
-        mat = _material_from_payload(mp, img, key)
+        mat = _material_from_payload(mp, img, key, template_key(scene, root, mp, img, payload))
         if (payload.get("points") or payload.get("voxel")) and (cols is not None or point_source):
             _wire_point_colors(mat)
         me.materials.append(mat)

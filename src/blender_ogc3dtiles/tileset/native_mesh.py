@@ -246,22 +246,31 @@ def rgba_tiff(width: int, height: int, pixels) -> bytes:
     return b"".join(out)
 
 
+PREFER_DECODED = False      # textures as the pixels cesium-native decoded, never as the JPEG or PNG file
+
+
 def _image_payload(cs, model, image_index: int):
     img = model.images[image_index]
     mime = (img.mime_type or "").lower()
     name = img.name or f"image_{image_index}"
+    png_file = None
     # 1. original compressed bytes still in the buffer → pack as a file (fast)
-    if img.buffer_view >= 0 and ("jpeg" in mime or "jpg" in mime or "png" in mime):
+    if not PREFER_DECODED and img.buffer_view >= 0 and ("jpeg" in mime or "jpg" in mime or "png" in mime):
         try:
             bv = model.buffer_views[img.buffer_view]
             buf = model.buffers[bv.buffer].cesium.data
             data = np.asarray(buf)[bv.byte_offset:bv.byte_offset + bv.byte_length].tobytes()
-            if data[:3] == b"\xff\xd8\xff" or data[:8] == b"\x89PNG\r\n\x1a\n":
-                return {"name": name, "kind": "file", "data": data,
-                        "ext": "jpg" if data[:3] == b"\xff\xd8\xff" else "png"}
+            if data[:3] == b"\xff\xd8\xff":
+                return {"name": name, "kind": "file", "data": data, "ext": "jpg"}
+            if data[:8] == b"\x89PNG\r\n\x1a\n":
+                # Blender reads a PNG on its main thread at the tile's first draw: 21 ms for a 1024 px texture,
+                # 76 ms at 2048 px (a JPEG: 7 and 23 ms). cesium-native has decoded it already, in a load
+                # thread: the same pixels in a TIFF without compression are read in 2 and 8 ms. The file is
+                # kept for when the pixels are not there
+                png_file = {"name": name, "kind": "file", "data": data, "ext": "png"}
         except Exception:
             pass
-    # 2. decoded pixels (KTX2 transcoded, or anything else) → PNG bytes
+    # 2. decoded pixels (KTX2 transcoded, a PNG, or anything else)
     asset = _val(img.asset)
     if asset is not None and int(asset.compressed_pixel_format) == 0:
         try:
@@ -273,11 +282,13 @@ def _image_payload(cs, model, image_index: int):
                 # thread encoded: tilesets with KTX2 textures stalled Blender for as long as they streamed
                 data = rgba_tiff(int(asset.width), int(asset.height), np.ascontiguousarray(asset.pixel_data))
                 return {"name": name, "kind": "file", "data": data, "ext": "tif"}
+            if png_file is not None:
+                return png_file
             png = bytes(cs.gltf.content.ImageManipulation.save_png(asset))
             return {"name": name, "kind": "file", "data": png, "ext": "png"}
         except Exception:
             pass
-    return None
+    return png_file
 
 
 OVERLAY_UV_PREFIX = "_CESIUMOVERLAY_"    # RasterOverlayUtilities default base name

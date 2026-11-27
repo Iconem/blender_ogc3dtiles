@@ -97,6 +97,8 @@ under it is fine enough and stays.
   cesium-native's own default. With the Python backend it is the number of parallel downloads, applied
   at the next Start. Raise it on a fast connection, lower it if a server refuses requests.
 
+What costs what, with figures, is on the [Performance](/dev/performance) page.
+
 *Viewport Performance*, a folded section after *Cache*, sets how much the viewport does at each step of the streaming
 loop (an update and a redraw of the view). Renders are not affected: a converged render waits for every
 tile whatever these are.

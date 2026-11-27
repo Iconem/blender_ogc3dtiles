@@ -24,6 +24,21 @@ The origin is saved in the .blend. *Reset Origin* forgets it.
 
 ![Origin on the Grand Canyon, from Yavapai Point](/img/origin_grand_canyon.jpg)
 
+## The sun of a date and a time
+
+Blender's own [Sun Position](https://extensions.blender.org/add-ons/sun-position/) extension places a Sun
+light from a latitude, a longitude, a date and a time. **Origin to Sun Position**, at the bottom of the
+panel, gives it the scene origin: latitude, longitude, and north along +Y, which is how the tiles are laid
+(X east, Y north, Z up). It enables the extension when it is installed and not enabled, and adds a Sun
+light when the scene has none.
+
+The date and the time are then set in *World Properties > Sun Position*. The time is the local time of the
+place, with the *UTC Zone* field beside it (and *Daylight Savings*): for a time in UTC, leave UTC Zone at 0.
+The button does not guess the time zone.
+
+The sun is right for the origin. A scene is a few kilometres wide at most, where the sun's direction changes
+by less than a hundredth of a degree.
+
 ## Precision
 
 Blender keeps the three fields in single precision: at longitude 150 the step between two

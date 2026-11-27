@@ -10,11 +10,11 @@ main branch and not in a release zip yet.
 
 - **Blender no longer stalls while tilesets with KTX2 textures stream.** Textures that cesium-native hands
   over decoded were written as PNG before going to Blender, 0.3 to 1.5 s each in a load thread that held
-  Python's lock all along, so the viewport waited on every one of them. Over a 20 minute walk through the
-  Iconem datasets on Google 3D Tiles the viewport fell from 220 redraws per 30 s to 5 to 30, with single
-  steps of the streaming tick of 2 to 8 s. They now go as TIFF without compression (2 ms for a 2048 px
-  texture): on the same walk the longest step is 0.4 to 0.8 s and it no longer gets worse with time.
-  Tilesets with JPEG or PNG textures (Google) never went through this.
+  Python's lock all along, so the viewport waited on every one of them. They now go as TIFF without
+  compression (2 ms for a 2048 px texture). On a 5 minute walk through the Iconem datasets over Google 3D
+  Tiles, the viewport redrew 52 to 56 times per 30 s before, with gaps up to 2.8 s, and 119 to 120 times
+  after; one streaming step in ten took over 1.1 s before, 0.23 s after. Tilesets with JPEG or PNG
+  textures (Google) never went through this.
 - **Match Height to Terrain compares open ground.** It compared the lowest height of the dataset and of the
   terrain in each ground cell, which is wrong when one of them has faces underneath: the scan of St Peter's,
   in place over Google, was moved up 21 m. Each cell now keeps its highest and lowest height, and the
@@ -23,16 +23,28 @@ main branch and not in a release zip yet.
   Blender goes through a material again each time nodes are added to it, so ticking Color correction
   or Terrain blending on a thousand loaded tiles froze the viewport for 4 to 7 s. With Instant
   switches every tile that loads carries both sets of nodes from the start, doing nothing until a box
-  is ticked: on Giza over Google (1,300 materials) every tick, untick and slider then redraws in under
-  0.4 s. The tiles cost a little more to draw. Instant switches is the default; Lighter tiles is the
-  behaviour of before.
-- **Tiles build faster, and several tilesets share one build budget.** Measured on a walk through the
-  Iconem datasets over Google 3D Tiles: building tiles took 11 of every 30 s of Blender's main thread, 17
-  of the 21 ms of a tile going to its mesh. The mesh arrays are now written as attributes, not through a
-  setter per element: 9 ms instead of 19.5 for a 33,000 triangle tile, the same mesh. The build time per
-  tick (*Imports per tick*) was given whole to each tileset, so two tilesets loading at once held
-  Blender twice as long; they now share it. Two lookups that went through every object of the file at
-  each tick are gone.
+  is ticked: on Giza over Google every tick and untick then redraws in about a second or less, where it
+  took 5 to 13 s. A tile takes 3 ms longer to build (13.5 ms against 10.2). Instant switches is the
+  default; Lighter tiles is the behaviour of before.
+- **Tiles with normals build in half the time.** A profile of the tile build, line by line, on a walk
+  through the Iconem datasets over Google 3D Tiles: 46 % of it was one call, the one that gives a mesh
+  the normals of its tile (about 42 ms on each tile that has normals, a fifth of them). Since Blender 4.5
+  normals can be a plain attribute of the vertices, read as it is: same shading, no conversion. A tile
+  now takes 13.5 ms to build instead of 19.9, and 19 % more tiles are built in the same time (714
+  against 600 per 30 s). Tilesets without normals (Google) are unchanged; Blender 4.2 to 4.4 keep the old
+  call.
+- **Several tilesets share one build budget.** The build time per tick (*Imports per tick*) was given
+  whole to each tileset, so two tilesets loading at once held Blender twice as long. The median
+  streaming step went from 170 to 125 ms and the viewport from 120 to 147 redraws per 30 s on that walk.
+  The mesh arrays are also written as attributes, not through a setter per element: a gain only on large
+  tiles (9 ms instead of 19.5 at 33,000 triangles, about 1 ms on the average tile of the walk).
+- **Origin to Sun Position** (Scene Origin panel): gives the origin's latitude and longitude to Blender's
+  Sun Position extension, north along +Y, and adds a Sun light when there is none. Date and time are set
+  in World Properties > Sun Position.
+- **Install with updates from Blender.** The releases are a repository Blender reads: add
+  `https://github.com/Iconem/blender_ogc3dtiles/releases/latest/download/index.json` once in Preferences
+  > Get Extensions > Repositories, and Blender offers each new version.
+- **Copy URL gives a whole address** when the tileset of tilesets names its datasets by a relative path.
 - **Markers are per tileset.** The checkbox, the dot radius and *Also the datasets not loaded yet* of
   *Markers - datasets locations* were the scene's; each tileset of tilesets now has its own, like
   Clipping and Raster overlays. A scene saved before starts from the defaults.

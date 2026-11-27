@@ -11,6 +11,9 @@ description: "Done and planned"
 - [x] Gaussian splat tiles (`KHR_gaussian_splatting`, SPZ) as Blender 5.3 splats
 - [x] `pnts` point clouds on the native path (Angkor tilesets verified)
 - [ ] `pnts` / `i3dm` on the pure Python path
+- [ ] Point clouds drawn by the add-on's own GPU calls in the viewport, outside EEVEE and Cycles, as the
+  Point Cloud Visualizer add-on does: far more points on screen. Such points exist only in the viewport: no
+  render, no material nodes, no clipping or blending through them. An optional viewport mode, not started.
 - [x] Feature tables → vertex attributes and per-class colors
 - [x] Per-point metadata on point clouds
 - [x] Tileset, group, tile and content metadata from `tileset.json`

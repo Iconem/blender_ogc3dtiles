@@ -6,9 +6,31 @@ description: "Install the OGC 3D Tiles add-on in Blender 4.2 or newer, and its c
 The add-on is a Blender extension, for Blender 4.2 or newer. It is tested on 5.3 and has been used
 on 4.5 LTS, 5.1 and 5.2 LTS. Gaussian splats need 5.3.
 
-## Install the extension
+## Install the extension, with updates from Blender
+
+The releases are also a repository Blender can read, so Blender installs the add-on and offers each new
+version itself.
+
+1. In Blender: Preferences, Get Extensions, the drop-down arrow at the top right, *Repositories*.
+2. Press **+**, *Add Remote Repository*, and paste this URL. Tick *Check for Updates on Startup*.
+
+   ```text
+   https://github.com/Iconem/blender_ogc3dtiles/releases/latest/download/index.json
+   ```
+3. Back in Get Extensions, search *OGC 3D Tiles* and press **Install**.
+4. Open the sidebar of the 3D viewport (**N**): there is a **3D Tiles** tab.
+
+A new release then shows an **Update** button in Get Extensions, and in the status bar when Blender starts.
+From a terminal: `blender --command extension update`.
+
+The cesium-native library is a separate download, see below: an update of the add-on keeps it, and says
+so when a newer one is needed.
+
+## Install the extension from a zip
 
 [Download the latest release](https://github.com/Iconem/blender_ogc3dtiles/releases/latest)
+
+Installed this way, the add-on is updated by installing a newer zip over it.
 
 1. Download `ogc_3dtiles_streaming-<version>.zip` from the
    [Releases](https://github.com/Iconem/blender_ogc3dtiles/releases) page.

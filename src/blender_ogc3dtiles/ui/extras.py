@@ -2,6 +2,7 @@
 copy (and crop) a tileset into the project, cache trim."""
 from __future__ import annotations
 
+import math
 import os
 import threading
 
@@ -635,9 +636,82 @@ class OGC3D_OT_DatasetUrlCopy(Operator):
         if not url:
             self.report({"WARNING"}, "The active object is not a dataset Empty")
             return {"CANCELLED"}
-        context.window_manager.clipboard = str(url)
-        self.report({"INFO"}, f"Copied: {str(url)[:80]}")
+        url = str(url)
+        if "://" not in url:                         # given relative to its tileset of tilesets (Google)
+            from urllib.parse import urljoin
+            from ..tileset.props import tileset_of
+            uid, _root = tileset_of(o)
+            item = next((it for it in context.scene.ogc3dtiles.tilesets if it.uid == uid), None)
+            base = str(getattr(item, "url", "") or "")
+            if "://" in base:
+                url = urljoin(base, url)
+        context.window_manager.clipboard = url
+        self.report({"INFO"}, f"Copied: {url[:80]}")
         return {"FINISHED"}
+
+
+SUN_MODULES = ("bl_ext.blender_org.sun_position", "sun_position")
+
+
+def sun_position_props(scene):
+    """The settings of Blender's Sun Position extension on this scene, or None while it is not enabled."""
+    return getattr(scene, "sun_pos_properties", None)
+
+
+class OGC3D_OT_SunFromOrigin(Operator):
+    bl_idname = "ogc3dtiles.sun_from_origin"
+    bl_label = "Origin to Sun Position"
+    bl_description = ("Give the scene origin's latitude and longitude to Blender's Sun Position extension, with north "
+                      "along +Y as the tiles have it, and a Sun light when the scene has none. The date and the "
+                      "time are then set in World Properties > Sun Position: local time, with its UTC Zone field")
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        import addon_utils
+        from ..tileset.origin import origin_lla
+        scene = context.scene
+        sp = sun_position_props(scene)
+        if sp is None:
+            for mod in SUN_MODULES:
+                try:
+                    addon_utils.enable(mod, default_set=True, persistent=True)
+                except Exception:                    # noqa: BLE001
+                    continue
+                sp = sun_position_props(scene)
+                if sp is not None:
+                    break
+        if sp is None:
+            self.report({"ERROR"}, "Sun Position is not installed: Preferences > Get Extensions, search Sun Position")
+            return {"CANCELLED"}
+        props = scene.ogc3dtiles
+        if not props.origin_valid:
+            self.report({"WARNING"}, "The scene origin is not set yet")
+            return {"CANCELLED"}
+        lat, lon, _h = origin_lla(props)
+        sp.latitude = math.radians(lat) if _is_angle(sp, "latitude") else lat
+        sp.longitude = math.radians(lon) if _is_angle(sp, "longitude") else lon
+        try:
+            sp.north_offset = 0.0                    # the scene is east, north, up: north is +Y
+        except Exception:                            # noqa: BLE001
+            pass
+        made = ""
+        if getattr(sp, "sun_object", None) is None:
+            sun = next((o for o in scene.objects if o.type == "LIGHT" and o.data.type == "SUN"), None)
+            if sun is None:
+                sun = bpy.data.objects.new("Sun", bpy.data.lights.new("Sun", "SUN"))
+                sun.data.energy = 4.0
+                scene.collection.objects.link(sun)
+                made = ", Sun light added"
+            sp.sun_object = sun
+        self.report({"INFO"}, f"Sun Position at {lat:.4f}, {lon:.4f}{made}. Date and time: World Properties > Sun Position")
+        return {"FINISHED"}
+
+
+def _is_angle(sp, name: str) -> bool:
+    try:
+        return sp.bl_rna.properties[name].unit == "ROTATION"
+    except Exception:                                # noqa: BLE001
+        return False
 
 
 class OGC3D_OT_SetupPaste(Operator):
@@ -669,6 +743,7 @@ _classes = [
     OGC3D_OT_SetupCopy,
     OGC3D_OT_SetupPaste,
     OGC3D_OT_DatasetUrlCopy,
+    OGC3D_OT_SunFromOrigin,
     OGC3D_OT_TilesetBrowse,
     OGC3D_OT_CacheTrim,
     OGC3D_LibraryRow,

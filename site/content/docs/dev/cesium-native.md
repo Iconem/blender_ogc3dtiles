@@ -118,6 +118,46 @@ A view state taking an eye position, a culling volume and an error function
 is requested upstream:
 [cesium-native#1501](https://github.com/CesiumGS/cesium-native/issues/1501).
 
+## Which tiles load, and in which order
+
+cesium-native decides both. The add-on sets a few of its `TilesetOptions` and leaves the others at
+cesium-native's defaults (read from the binding, cesium-native v0.59):
+
+| Option | cesium-native | The add-on | What it does |
+|---|---|---|---|
+| `maximum_screen_space_error` | 16 | 8, *Max SSE* per tileset | A tile is refined while its error on screen is above this, in pixels. |
+| `maximum_simultaneous_tile_loads` | 20 | 20, *Concurrent Requests* | Tiles downloading or decoding at once. |
+| `maximum_cached_bytes` | 512 MB | 512 MB, *cesium-native cache* | Tiles no longer shown are kept up to this, for a quick return to a view. |
+| `main_thread_loading_time_limit` | 0, no limit | 4 to 48 ms, from *Imports / tick* and *Build ms while navigating* | Time per update for the work done on the main thread. The Blender objects are built there. |
+| `forbid_holes` | false | **true** | A tile is not refined until all its children are loaded, so no gap shows while they load. |
+| `preload_siblings` | true | **false** | Load the siblings of the shown tiles, out of view. Off: fewer objects built for nothing. |
+| `preload_ancestors` | true | default | Load the parents of the shown tiles, so zooming out has something to show at once. |
+| `loading_descendant_limit` | 20 | default | With more than this many descendants still loading under a tile, that tile is loaded and shown in the meantime. |
+| `enable_frustum_culling` | true | default | Tiles outside the view are not selected. |
+| `enable_fog_culling` | true | **false** | Drop far tiles hidden by distance haze. Off: it removed the far side of wide orthographic frames. |
+| `enable_occlusion_culling`, `delay_refinement_for_occlusion` | true | **false** | Skip tiles hidden behind others. It needs occlusion results from the renderer, which Blender does not give. |
+| `culled_screen_space_error`, `enforce_culled_screen_space_error` | 64, true | default | The coarser error for tiles kept although culled, when a culling test is off. |
+| `render_tiles_under_camera` | true | default | Keep the tiles under the camera when it looks at the horizon. |
+| `enable_lod_transition_period`, `lod_transition_length`, `kick_descendants_while_fading_in` | false, 1 s, true | false | Cross-fade between levels of detail. It needs a renderer that fades tiles. |
+| `tile_cache_unload_time_limit` | 0, no limit | default | Time per update spent unloading tiles. |
+| `content_options.ktx2_transcode_targets` | GPU formats | none | KTX2 textures are decoded to RGBA pixels, which is what Blender takes. |
+| `excluders` | none | the clip objects, hidden datasets | Tiles that are never loaded. |
+
+The **load order** is not an option. Each tile to load gets a group and a number
+(`Cesium3DTilesSelection/src/TilesetSelection.cpp`, `computeTilePriority`):
+
+1. The group. *Urgent*: tiles whose absence makes cesium-native show more detail than asked. *Normal*:
+   tiles needed for the view at its level of detail. *Preload*: ancestors and siblings. A group is
+   emptied before the next is touched.
+2. Inside a group, the smallest `(1 - cos(angle to the view direction)) x distance` first: the centre of
+   the view before its edges, near before far.
+
+So the order is neither by depth in the tree nor by error, and the binding offers no hook to change it.
+3DTilesRendererJS has one: the `priorityCallback` of its download and parse queues is a function of two
+tiles that an application can replace (its default: shallower first, in the frustum, used, higher error,
+nearer). The same in cesium-native would be a comparison function, or a choice between a few built-in
+orders, on `TilesetOptions`.
+
 ## Tiled formats cesium-native reads, and what needs a converter
 
 cesium-native loads 3D Tiles 1.0 / 1.1 (`tileset.json`, implicit tiling,

@@ -67,6 +67,12 @@ What works today:
 ![Sidebar in three columns: main panel with raster overlays, clipping and viewport-region clip - Scene Origin, LOD / Streaming, Nodes: Material, Nodes: Geometry, Coordinate Info - Nodes: Compositing, Nodes: Metadata, Render](/img/sidebar.jpg)
 
 
+## Credits
+
+Made by [Jonathan Chemla](https://github.com/jo-chemla), CTO of [Iconem](https://iconem.com/). The streaming
+engine is [cesium-native](https://github.com/CesiumGS/cesium-native), through
+[cesium-native-python](https://github.com/calebbuffa/cesium-native-python) by Caleb Buffa.
+
 ## License
 
 

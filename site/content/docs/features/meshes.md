@@ -28,6 +28,14 @@ material and texture.
 With the cesium-native backend all of these are decoded by cesium-native. The pure Python backend
 goes through Blender's glTF importer, which on some Blender versions does not read meshopt or KTX2.
 
+**KTX2 costs more than JPEG in Blender.** Blender has no GPU-compressed textures: every image ends as plain
+pixels. A JPEG or PNG texture goes to Blender as the file it is, and Blender decodes it when it draws. A
+KTX2 texture is decoded by cesium-native first and handed over as pixels, 16 MB for a 2048 px texture
+before Blender has drawn anything. Blender 5.3 ships the KTX library and its glTF importer reads
+`KHR_texture_basisu` with it, the same way: decoded to pixels, as a float image. KTX2 saves bandwidth and,
+in a web viewer, GPU memory; in Blender it saves neither memory nor time. When you convert a dataset for
+Blender only, JPEG textures are the light choice.
+
 ## Things to know
 
 - **Level of detail**: *Max SSE* in LOD / Streaming. Lower is finer and heavier.

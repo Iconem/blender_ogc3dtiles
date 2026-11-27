@@ -2822,6 +2822,8 @@ class OGC3D_PT_OriginPanel(_OGC3DSidebar, Panel):
             row.label(text="Origin set" if props.origin_valid else "Origin not set yet",
                       icon="CHECKMARK" if props.origin_valid else "INFO")
         row.operator("ogc3dtiles.origin_reset", text="", icon="FILE_REFRESH")
+        if props.origin_valid and not is_local_origin(props):
+            layout.operator("ogc3dtiles.sun_from_origin", icon="LIGHT_SUN")
 
 
 class OGC3D_PT_LodPanel(_OGC3DSidebar, Panel):

@@ -896,6 +896,28 @@ def build_voxel_volume(payload: dict, key: str, scene: bpy.types.Scene,
     return obj.name, [vol.name]
 
 
+def _set_vertex_normals(me, normals) -> None:
+    """The tile's own normals, one per vertex. ``normals_split_custom_set_from_vertices`` converts them to a
+    normal per face corner in a space of its own, 17 ms for a 12,000 triangle tile and 46 % of all the time
+    spent building tiles on a walk through tilesets with normals. Since Blender 4.5 a ``custom_normal``
+    vector attribute on the vertices is read as it is: no conversion, the same shading."""
+    import numpy as np
+    arr = np.ascontiguousarray(normals, dtype=np.float32).reshape(-1, 3)
+    if bpy.app.version >= (4, 5, 0):
+        try:
+            length = np.linalg.norm(arr, axis=1, keepdims=True)
+            unit = np.where(length > 1e-8, arr / np.maximum(length, 1e-8), np.float32((0.0, 0.0, 1.0)))
+            attr = me.attributes.new("custom_normal", "FLOAT_VECTOR", "POINT")
+            attr.data.foreach_set("vector", np.ascontiguousarray(unit, dtype=np.float32).ravel())
+            return
+        except Exception:                       # noqa: BLE001
+            pass
+    try:
+        me.normals_split_custom_set_from_vertices(arr)
+    except Exception:                           # noqa: BLE001
+        pass
+
+
 def _fill(me, attribute: str, field: str, values, slow) -> None:
     """Write an array into a mesh attribute by its name. ``vertices.foreach_set("co")`` and its kin go through a
     setter per element; the attribute takes the buffer as it is (a 33,000 triangle tile: 9 ms instead of 19.5,
@@ -931,7 +953,12 @@ def build_tile_from_payload(payload: dict, key: str, scene: bpy.types.Scene,
         me.polygons.foreach_set("loop_start", np.arange(0, n_f * 3, 3, dtype=np.int32))
         fm = payload.get("face_mat")
         if fm is not None and len(fm) == n_f:
-            me.polygons.foreach_set("material_index", np.ascontiguousarray(fm, dtype=np.int32))
+            fm = np.ascontiguousarray(fm, dtype=np.int32)
+            if fm.any():                        # all zero is what a mesh has without the attribute
+                try:
+                    me.attributes.new("material_index", "INT", "FACE").data.foreach_set("value", fm)
+                except Exception:               # noqa: BLE001
+                    me.polygons.foreach_set("material_index", fm)
         try:
             me.shade_smooth()                   # no sharp faces: nothing to write
         except Exception:                       # noqa: BLE001
@@ -951,10 +978,7 @@ def build_tile_from_payload(payload: dict, key: str, scene: bpy.types.Scene,
     me.validate(verbose=False)
     nrm = payload.get("normals")
     if n_f and nrm is not None and len(nrm) == n_v:
-        try:
-            me.normals_split_custom_set_from_vertices(np.ascontiguousarray(nrm, dtype=np.float32))
-        except Exception:
-            pass
+        _set_vertex_normals(me, nrm)
     elif n_f:
         # No normals in the tile (Google Photorealistic, most photogrammetry): Blender averages each vertex's
         # faces. Tiles end in a skirt, a near-vertical band that hides cracks between levels of detail; averaged

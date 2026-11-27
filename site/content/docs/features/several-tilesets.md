@@ -78,7 +78,7 @@ settings are the tileset's own, like those of *Clipping* and *Raster overlays*: 
 can have dots of different sizes, or one of them none. On a tileset that is not streaming yet, a line says so.
 
 With a dataset's Empty active, the box shows its name and **Copy URL**: the address of that dataset's own
-tileset.json, as the tileset of tilesets gives it. The same address is the custom property
+tileset.json, made whole when the tileset of tilesets gives it as a relative path. The same address is the custom property
 `ogc3dtiles_dataset` of the Empty (*Object Properties > Custom Properties*).
 
 The Empty sits at the centre of the dataset's bounding volume, unless that is far off the ground: the box

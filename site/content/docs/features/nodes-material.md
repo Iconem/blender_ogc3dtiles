@@ -50,6 +50,21 @@ The node button opens the group to edit it by hand. Its Value nodes are also ava
   from -1 to 2. Off, the buttons remain and the shared `OGC3D Relight` node group is where to edit
   these values.
 
+### Why the sliders are scene properties, not group inputs
+
+A node group can have inputs, and it is tempting to drive every tile through them. An input's value is
+kept on each material's own copy of the group node, so setting it for 1,000 tiles is 1,000 writes into
+1,000 node trees, and Blender (5.3, EEVEE) goes through each material again: 2.7 to 4 s for one slider
+move. A Value node inside the shared group is one write, and Blender still goes through every material
+that uses the group.
+
+The sliders of *Color correction* and *Terrain blending* are therefore custom properties of the scene
+(`ogc3d_...`), which the groups read with Attribute nodes; what differs per tile, such as its part in the
+blending, is a custom property of the tile's object. They play the
+part of uniforms: a write touches no node tree, and 1,000 tiles follow in 0.04 to 0.12 s. Your own groups
+can read them the same way: an Attribute node, type *View Layer* for a scene property or *Object* for one
+of the tile's object.
+
 ## Lighting with your own lamps
 
 ![Albedo Strength at 0: clay, the geometry shaded by a sun lamp and a sky](/img/shader_clay.jpg)

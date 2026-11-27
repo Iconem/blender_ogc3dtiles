@@ -183,6 +183,60 @@ Tiles are deleted in one `bpy.data.batch_remove` per tick (deleting them one
 by one is quadratic in the number of objects), so a restart or *Clear All
 Tiles* takes well under a second.
 
+### Measuring it
+
+Blender has no profiler for add-ons; the numbers of this page come from plain Python, in a script run
+with `blender --python`:
+
+- every function of the streaming loop is replaced by a wrapper that adds up `time.perf_counter()`
+  around it (`ui.stream_tick`, `_build_native_tile`, `build_tile_from_payload`, the backend's
+  `update_view`...);
+- a draw handler on the 3D viewport (`SpaceView3D.draw_handler_add`) notes each redraw: their count per
+  30 s and the gaps between them are what a person at the screen feels;
+- `depsgraph_update_pre` / `_post` handlers time Blender's own scene updates;
+- for one function line by line, its source is rewritten with a timer around each statement (`ast`),
+  keeping wall time and the thread's CPU time: a line whose wall time is far above its CPU time is
+  waiting for Python's lock, held by a load thread.
+
+`cProfile` is of little use here: on Python 3.12 and later it also counts the load threads. Windows
+draws a window about once a second while the session is locked, so redraw counts are only valid with the
+session open. Runs vary with the machine's state, up to three times on the same build: builds are
+compared by alternating them, twice.
+
+The same 5 minute walk (Iconem datasets over Google 3D Tiles at St Peter's, a view change every 4 s,
+4K screen, RTX A1000 laptop), per 30 s:
+
+| Build | Redraws | One gap in ten above | Streaming step, median | Tiles built | Per tile |
+|---|---|---|---|---|---|
+| PNG encoding of decoded textures | 52 to 56 | 1.5 s | 153 to 164 ms (one in ten above 1.1 s) | 350 to 420 | 15 to 17 ms |
+| Decoded textures as TIFF | 119 to 120 | 0.33 to 0.37 s | 170 ms | 640 to 650 | 21 to 22 ms |
+| One build budget for all tilesets | 143 to 151 | 0.28 to 0.29 s | 120 to 132 ms | 554 to 600 | 20 to 22 ms |
+| Normals as a plain attribute | 166 | 0.26 s | 100 ms | 714 | 13.5 ms |
+| the same, *Lighter tiles* | 164 | 0.25 s | 102 ms | 851 | 10.2 ms |
+
+The last two rows are one clean run each. The streaming step still takes over half of the main thread
+while tiles pour in: that is the build budget (*Imports / tick*, 48 ms at rest), which a faster build
+fills with more tiles. Lowering *Imports / tick* is what makes the viewport smoother, at the cost of a
+slower fill. Over 20 minutes of that walk the viewport slows from about 150 to 100 redraws per 30 s, with
+Blender at 6.9 GB of memory and 3.3 of the laptop's 4 GB of video memory; the cause is not found yet.
+
+### Giving a mesh to Blender from Python
+
+Three ways, from slowest to fastest, to hand the arrays of a tile to a `bpy` mesh:
+
+| | How | Cost |
+|---|---|---|
+| `mesh.from_pydata(verts, edges, faces)` | Python lists, one object per vertex and face | the slowest; not measured here |
+| `mesh.vertices.foreach_set("co", array)`, `loops.foreach_set("vertex_index", ...)`, `uv_layer.data.foreach_set("uv", ...)` | a numpy array, copied through the property's setter, element by element | 19.5 ms at 33,000 triangles |
+| `mesh.attributes["position"].data.foreach_set("vector", array)`, `".corner_vert"`, the UV map by its name | the same array, copied into the attribute's own buffer | 9 ms at 33,000 triangles |
+
+The add-on uses the third, with the second as a fallback. Vertex normals follow the same idea: a
+`custom_normal` vector attribute on the vertices (Blender 4.5 and later) instead of
+`normals_split_custom_set_from_vertices`, 0 ms against 17 ms at 12,000 triangles. The face smoothing is
+`mesh.shade_smooth()`, and a material index is written only when a tile has more than one material.
+What remains per tile on the walk above, 9 ms inside `build_tile_from_payload`: the material hooks
+2.2 ms, the material 1.3 ms, `validate` 0.9 ms, the face corners 0.8 ms, the image 0.8 ms.
+
 ## Pure Python backend (`tileset/traversal.py`)
 
 - Tile `transform` matrices compose down the tree; `box`/`sphere` volumes

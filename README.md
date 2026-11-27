@@ -3,6 +3,8 @@
 **Documentation and slides**: [blender-3dtiles.iconem.com](https://blender-3dtiles.iconem.com/) ·
 **[Releases](../../releases)**
 
+Made by [Jonathan Chemla](https://github.com/jo-chemla), CTO of [Iconem](https://iconem.com/).
+
 ## Features
 
 - **Content:** cesium-native brings for free all supported flavors of
@@ -56,8 +58,12 @@ although I keep a python native fallback.
 
 The add-on is a Blender extension, for Blender 4.2 or newer (Gaussian splats need 5.3).
 
-1. Download `ogc_3dtiles_streaming-<version>.zip` from the [Releases](../../releases) page.
-2. In Blender: Preferences, Get Extensions, the drop-down arrow, *Install from Disk*.
+1. In Blender: Preferences, Get Extensions, the drop-down arrow, *Repositories*, **+**, *Add Remote
+   Repository*, with this URL and *Check for Updates on Startup* ticked:
+   `https://github.com/Iconem/blender_ogc3dtiles/releases/latest/download/index.json`
+2. Still in Get Extensions, search *OGC 3D Tiles* and press Install. Blender then offers each new
+   version there. Without a repository: download `ogc_3dtiles_streaming-<version>.zip` from the
+   [Releases](../../releases) page and use *Install from Disk* in the same drop-down.
 3. For the cesium-native backend (faster; raster overlays, point clouds, splats, voxels,
    Cesium ion, the globe and terrain need it): open the add-on preferences and press **Install wheel from GitHub
    Release**, then restart Blender. No compiler is needed. Without it, the pure Python

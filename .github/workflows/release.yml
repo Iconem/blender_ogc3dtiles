@@ -56,6 +56,16 @@ jobs:
           mkdir blender && tar -xJf blender.tar.xz -C blender --strip-components=1
           ./blender/blender -b --command extension validate "${{ steps.zip.outputs.name }}"
 
+      # index.json: what makes the release a repository Blender can read. Added once in Preferences > Get Extensions
+      # > Repositories as https://github.com/<owner>/blender_ogc3dtiles/releases/latest/download/index.json,
+      # Blender then offers each new version. The zip is named in it by a relative path, next to the index.
+      - name: Repository index, for updates from Blender
+        run: |
+          mkdir repo && cp "${{ steps.zip.outputs.name }}" repo/
+          ./blender/blender -b --command extension server-generate --repo-dir repo
+          cp repo/index.json index.json
+          cat index.json
+
       - uses: actions/upload-artifact@v4
         with:
           name: extension
@@ -69,8 +79,8 @@ jobs:
           ZIP: ${{ steps.zip.outputs.name }}
         run: |
           gh release view "$TAG" >/dev/null 2>&1 || \
-            gh release create "$TAG" --title "$TAG" --notes "OGC 3D Tiles Streaming extension for Blender 4.2+ (tested on 4.5 LTS, 5.1, 5.2 LTS and 5.3 beta). Install: Preferences > Get Extensions > Install from Disk, or 'blender --command extension install-file -r user_default -e $ZIP'. The recommended cesium-native backend is installed from the add-on preferences (Install wheel from GitHub Release), which fetches the pre-built wheel for your Blender's Python from https://github.com/jo-chemla/cesium-native-python/releases."
-          gh release upload "$TAG" "$ZIP" --clobber
+            gh release create "$TAG" --title "$TAG" --notes "OGC 3D Tiles Streaming extension for Blender 4.2+ (tested on 4.5 LTS, 5.1, 5.2 LTS and 5.3). Install with updates from Blender: Preferences > Get Extensions > Repositories > + > Add Remote Repository, URL https://github.com/${{ github.repository }}/releases/latest/download/index.json, then search OGC 3D Tiles in Get Extensions. Or from the zip: Preferences > Get Extensions > Install from Disk, or 'blender --command extension install-file -r user_default -e $ZIP'. The recommended cesium-native backend is installed from the add-on preferences (Install wheel from GitHub Release), which fetches the pre-built wheel for your Blender's Python from https://github.com/jo-chemla/cesium-native-python/releases."
+          gh release upload "$TAG" "$ZIP" index.json --clobber
 
   # Zips with the wheel inside, for extensions.blender.org: one per platform, for each Python Blender ships
   # (cp311: Blender 5.0, cp313: 5.1 and later). Run by hand: Actions > release extension > Run workflow.

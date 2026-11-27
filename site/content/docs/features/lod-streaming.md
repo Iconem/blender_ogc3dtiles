@@ -121,19 +121,25 @@ thousand tiles loaded, ticking one of those boxes freezes the viewport for 4 to 
 RTX A1000 laptop).
 
 - **Instant switches**, the default: every tile gets the nodes when it loads, doing nothing until a box is
-  ticked. The tiles cost a little more to draw.
+  ticked. A tile takes about 3 ms longer to build (13.5 ms against 10.2 on a walk through the Iconem
+  datasets over Google), so a view fills about a sixth slower: 714 tiles built per 30 s against 851.
 - **Lighter tiles**: the nodes go in when a box is ticked. Tiles draw at their fastest, and ticking or
   unticking a box on many loaded tiles costs that freeze, once.
 
-The choice applies to the tiles that load after it is made. Time until the viewport redraws, on Giza over
-Google Photorealistic 3D Tiles (584 Google tiles shown, 1,300 tile materials):
+The choice applies to the tiles that load after it is made. Longest time the viewport stays without a
+redraw after the edit, on Giza over Google Photorealistic 3D Tiles, on a 4K screen (1,450 to 1,700 Google
+tiles shown, 2,200 to 3,000 tile materials; two runs each):
 
 | Edit | Lighter tiles | Instant switches |
 |---|---|---|
-| Tick *Terrain blending* | 4.8 s | 0.3 s |
-| Tick *Color correction* on Google | 5.8 s | 0.2 s |
-| Untick *Terrain blending* | 2.6 s | 0.4 s |
-| Any slider | 0.1 to 0.2 s | 0.1 to 0.3 s |
+| Tick *Terrain blending* | 11 to 13 s | 0.8 s |
+| Tick *Color correction* on Google | 11 to 13 s | 0.6 to 1.2 s |
+| Tick *Color correction* on Giza | 1.1 to 1.2 s | 0.5 to 0.7 s |
+| Untick *Terrain blending* | 4.5 to 4.9 s | 0.5 s |
+| Any slider | 0.4 to 0.6 s | 0.6 to 0.8 s |
+
+On a smaller view (584 Google tiles shown, 1,300 materials) the same edits took 2.6 to 5.8 s with Lighter
+tiles and 0.2 to 0.4 s with Instant switches.
 
 The sliders of both boxes are immediate either way: their numbers are custom properties of the scene
 (`ogc3d_...`), which the shader groups read, so moving one touches no material.

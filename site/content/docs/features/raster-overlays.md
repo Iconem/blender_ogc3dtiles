@@ -35,8 +35,29 @@ template can also hold `{q}` (or `{quadkey}`), the Bing quadkey of the tile, and
 - **Opacity** is live.
 - Ticking or unticking an overlay is live. To apply an edited URL, untick it, then tick it again.
 - Several overlays stack in the order of the list.
-- **Raster detail px** sets how sharp the imagery is: higher is coarser, with far fewer downloads.
+- **Raster detail px** (4 by default) sets how sharp the imagery is: higher is coarser, with far fewer
+  downloads. See below.
 - The images are saved in the .blend, so a saved scene keeps its drape.
+
+## How the imagery level is chosen
+
+For each geometry tile, cesium-native estimates how many pixels the tile covers on screen at the moment
+it is replaced by its children: its size on the ground x the tileset's *Max SSE* / its geometric error.
+It divides that by *Raster detail px* and picks the imagery level whose texels come closest to that
+count, within the overlay's *Min level* and *Max level*.
+
+So one imagery texel covers about *Raster detail px* screen pixels on the tile being shown, wherever you
+look from:
+
+- **Raster detail px** is what sets the sharpness on screen: 1 for a texel per pixel, 4 for a texel per
+  4 pixels (the default), higher for blurrier imagery and fewer downloads.
+- **Max SSE** changes which geometry tiles are shown. A higher value shows coarser tiles, and each gets
+  imagery as many times finer, so the sharpness on screen stays about the same; what changes is the number of
+  tiles and the imagery requests that go with them.
+- **Max level** caps it: past the finest level the server has, the imagery stops getting sharper.
+
+(cesium-native v0.59: `RasterOverlayUtilities::computeDesiredScreenPixels`,
+`QuadtreeRasterOverlayTileProvider::computeLevelFromTargetScreenPixels`.)
 
 ## On point clouds and splats
 

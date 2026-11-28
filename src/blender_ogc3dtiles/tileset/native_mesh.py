@@ -246,6 +246,16 @@ def rgba_tiff(width: int, height: int, pixels) -> bytes:
     return b"".join(out)
 
 
+def level0(asset):
+    """The full-size level of a decoded image: a KTX2 texture with mipmaps comes out of cesium-native with
+    every level one after the other in the same buffer (5.6 MB for a 1024 px RGBA texture, not 4)."""
+    data = np.asarray(asset.pixel_data)
+    mips = list(asset.mip_positions)
+    if mips:
+        data = data[mips[0].byte_offset:mips[0].byte_offset + mips[0].byte_size]
+    return np.ascontiguousarray(data)
+
+
 PREFER_DECODED = False      # textures as the pixels cesium-native decoded, never as the JPEG or PNG file
 
 
@@ -280,7 +290,7 @@ def _image_payload(cs, model, image_index: int):
                 # as they are, in a TIFF without compression: 2 ms for a 2048 px texture. save_png took 0.3 to
                 # 1.5 s each and holds Python's lock all along, so the viewport waited on every texture a load
                 # thread encoded: tilesets with KTX2 textures stalled Blender for as long as they streamed
-                data = rgba_tiff(int(asset.width), int(asset.height), np.ascontiguousarray(asset.pixel_data))
+                data = rgba_tiff(int(asset.width), int(asset.height), level0(asset))
                 return {"name": name, "kind": "file", "data": data, "ext": "tif"}
             if png_file is not None:
                 return png_file

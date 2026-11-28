@@ -197,7 +197,7 @@ class OGC3DTilesPreferences(AddonPreferences):
     material_templates: BoolProperty(
         name="Tile materials from a template",
         description="A textured mesh tile starts from a copy of the finished material of an earlier tile of "
-                    "its tileset, and only takes its own image (about 5 ms less per tile). Off = build and "
+                    "its tileset, and only takes its own image (about 3 ms less per tile). Off = build and "
                     "dress every material node by node, to compare or to work around a tile it gets wrong",
         default=True)
     cesium_install_path: StringProperty(

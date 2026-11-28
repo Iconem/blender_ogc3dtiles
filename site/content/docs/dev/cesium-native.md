@@ -143,20 +143,34 @@ cesium-native's defaults (read from the binding, cesium-native v0.59):
 | `content_options.ktx2_transcode_targets` | GPU formats | none | KTX2 textures are decoded to RGBA pixels, which is what Blender takes. |
 | `excluders` | none | the clip objects, hidden datasets | Tiles that are never loaded. |
 
-The **load order** is not an option. Each tile to load gets a group and a number
-(`Cesium3DTilesSelection/src/TilesetSelection.cpp`, `computeTilePriority`):
+The **load order** is not an option. Each tile to load gets a group and a number (cesium-native v0.59:
+`Tileset.cpp`, `computeTilePriority`; `TileLoadTask.h` for the sorting):
 
-1. The group. *Urgent*: tiles whose absence makes cesium-native show more detail than asked. *Normal*:
-   tiles needed for the view at its level of detail. *Preload*: ancestors and siblings. A group is
-   emptied before the next is touched.
+1. The group, and a group is emptied before the next is touched:
+   - *Urgent*: a tile that now meets the screen-space error, whose children were shown at the last update,
+     and that is not loaded. Until it loads, cesium-native keeps drawing its children: more detail than
+     asked, more triangles and more objects. The common case is zooming out, or the camera moving away:
+     the coarser tile that should replace the fine ones is missing, so loading it frees more than it
+     costs. With `forbid_holes` on, as in the add-on, those children stay until it is there.
+   - *Normal*: tiles needed for the view at its level of detail.
+   - *Preload*: ancestors and siblings of the shown tiles.
 2. Inside a group, the smallest `(1 - cos(angle to the view direction)) x distance` first: the centre of
    the view before its edges, near before far.
 
 So the order is neither by depth in the tree nor by error, and the binding offers no hook to change it.
-3DTilesRendererJS has one: the `priorityCallback` of its download and parse queues is a function of two
-tiles that an application can replace (its default: shallower first, in the frustum, used, higher error,
-nearer). The same in cesium-native would be a comparison function, or a choice between a few built-in
-orders, on `TilesetOptions`.
+
+Other viewers order differently:
+
+- **CesiumJS** mixes several factors into one number per tile: its distance, whether it sits in the
+  central part of the screen (foveated screen-space error), its depth in the tree, and flags for
+  progressive resolution and for preloading along a camera flight. By default shallower tiles come
+  first (`preferLeaves` is off). cesium-native kept only the angle and the distance.
+- **3DTilesRendererJS** lets an application replace the `priorityCallback` of its download and parse
+  queues, a function comparing two tiles (its default: shallower first, in the frustum, used, higher
+  error, nearer).
+
+The same in cesium-native would be a comparison function, or a choice between a few built-in orders,
+on `TilesetOptions`.
 
 ## Tiled formats cesium-native reads, and what needs a converter
 

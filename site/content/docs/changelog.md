@@ -8,6 +8,20 @@ main branch and not in a release zip yet.
 
 ## Unreleased
 
+- **KTX2 textures with mipmaps show again.** cesium-native hands every mip level over in one buffer, which
+  the add-on refused, so such tiles (the Vestibolo of St Peter's, meshopt and KTX2) showed without texture.
+  The full-size level is now taken.
+- **Raster overlay tiles cost almost nothing on the main thread.** Each overlay image was made there from
+  float pixels and packed, which encodes a PNG: 7.5 ms for a 256 px tile, 31 ms at 512 px. It is now
+  prepared in a load thread as a TIFF without compression and only packed: 0.06 and 0.17 ms.
+- **Views fill 15 to 25 % faster.** While tiles are built and the view is still, the viewport is redrawn at
+  most twice a second instead of after every step of the streaming loop: Google Photorealistic 3D Tiles
+  over St Peter's filled in 59 to 63 s instead of 69 to 86 s. Blender still redraws at every move of the view.
+- **Start / Stop on its own line**, twice as tall, with Clear All Tiles and Freeze below it.
+- **Tile materials from a template** is now also in LOD / Streaming > Viewport Performance.
+- Docs: KTX2 measured on a real tileset (decode times, video memory), how the imagery level of an overlay
+  is chosen, the *Urgent* load group explained and compared with CesiumJS.
+
 - **Blender no longer stalls while tilesets with KTX2 textures stream.** Textures that cesium-native hands
   over decoded were written as PNG before going to Blender, 0.3 to 1.5 s each in a load thread that held
   Python's lock all along, so the viewport waited on every one of them. They now go as TIFF without

@@ -108,6 +108,11 @@ tile whatever these are.
   interface. Higher fills the view faster but makes navigation stutter while tiles pour in; lower
   keeps the interface smooth and fills more slowly.
 
+- **Tile materials from a template** (on by default): a textured tile starts from a copy of a finished
+  material of its tileset and only takes its own image, about 3 ms less per tile. It is an add-on
+  preference, so it applies to every scene; see the [Performance](/dev/performance#tile-materials-from-a-template)
+  page for how a template is matched.
+
 ## Max points / vertices (beta)
 
 In *Viewport Performance*. A ceiling, in millions, on what is shown across all tilesets. Over it, every tileset is streamed

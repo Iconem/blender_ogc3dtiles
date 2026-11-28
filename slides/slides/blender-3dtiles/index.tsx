@@ -615,7 +615,8 @@ const P16PointNodes: Page = () => (
       leftWidth={760}
       left={
         <Bullets>
-          <Li k="Display">points with a shared Geometry Nodes group, in EEVEE and Cycles.</Li>
+          <Li k="Tile">a mesh of vertices only, with a colour attribute: no faces.</Li>
+          <Li k="Display">one shared Geometry Nodes group turns them into points, in EEVEE and Cycles.</Li>
           <Li k="Colours">RGB, intensity, classification, or the imagery draped over them.</Li>
           <Li k="LiDAR classes">LAS names and colours, one opacity per class: hide the ground.</Li>
           <Li k="Or as">tiny tetrahedra coloured in Solid view, or disc splats along the normals.</Li>

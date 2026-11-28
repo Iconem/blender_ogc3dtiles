@@ -36,6 +36,12 @@ The date and the time are then set in *World Properties > Sun Position*. The tim
 place, with the *UTC Zone* field beside it (and *Daylight Savings*): for a time in UTC, leave UTC Zone at 0.
 The button does not guess the time zone.
 
+![World Properties > Sun Position open beside the Église de la Trinité, Paris: location from the scene origin, date and time below](/img/sun_position_trinite.jpg)
+
+![The same façade at 9:00 and at 17:00 on 21 June, Cycles with a clay material](/img/sun_trinite_morning_afternoon.jpg)
+
+A day of it, frame by frame, is on the [Videos](/guide/videos) page.
+
 The sun is right for the origin. A scene is a few kilometres wide at most, where the sun's direction changes
 by less than a hundredth of a degree.
 

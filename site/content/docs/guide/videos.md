@@ -96,6 +96,16 @@ and the chapels appear through the walls.
 **X-ray on Gaussian splats.** Kirants monastery in its forest, as splat tiles in EEVEE. A diagonal wipe turns
 every splat into a point of light in its own colour, and a second one into a single tint.
 
+<video src="/video/sun_trinite_wide.mp4" poster="/video/sun_trinite_wide.jpg" autoplay loop muted playsinline style="width:100%;height:auto;aspect-ratio:auto 16/9;border-radius:8px"></video>
+
+<video src="/video/sun_trinite_rose.mp4" poster="/video/sun_trinite_rose.jpg" autoplay loop muted playsinline style="width:100%;height:auto;aspect-ratio:auto 16/9;border-radius:8px"></video>
+
+**A day on the Église de la Trinité, Paris.** The Iconem scan, a point cloud at this detail, in Cycles with a
+clay material, lit by the Sun Position extension through *Origin to Sun Position*: 21 June, one frame every 20
+minutes from 6:00 to 22:00, once from afar and once close on the rose window. Max SSE 2, 48 samples with
+denoising, 1920 x 1080 frames: 31 s per frame for the first clip, 44 s for the close one, which has far more
+fine tiles in view, on the laptop below.
+
 ## What they were rendered on
 
 A laptop: Intel Core i7-12800H, 32 GB of RAM, NVIDIA RTX A1000 Laptop GPU with 4 GB of VRAM, Blender 5.3 beta
